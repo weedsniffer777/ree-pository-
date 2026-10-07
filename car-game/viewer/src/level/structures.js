@@ -357,7 +357,7 @@ export function buildStructures() {
   const posts = [], wires = [];
   for (const side of [-1, 1]) {
     const pts = [];
-    for (let i = idxForZ(-220); i < I_FINISH + Math.round(70 / STEP); i += 4) {
+    for (let i = idxForZ(-220); i < I_FINISH + Math.round(900 / STEP); i += 4) {
       const p = pointAt(i, side * FENCE);
       pts.push(sideDist(p.x, p.z) < 7 ? null : p);
     }
@@ -379,7 +379,7 @@ export function buildStructures() {
   const insul = std(0x6b3a22, { roughness: 0.35 });
   const pWires = [];
   let prevArm = null;
-  for (let i = idxForZ(-250), k = 0; i < I_FINISH + Math.round(60 / STEP); i += Math.round(55 / STEP), k++) {
+  for (let i = idxForZ(-250), k = 0; i < I_FINISH + Math.round(1300 / STEP); i += Math.round(55 / STEP), k++) {
     const p = pointAt(i, -27);
     const pole = new THREE.Group();
     pole.position.set(p.x, terrainHeight(p.x, p.z), p.z);

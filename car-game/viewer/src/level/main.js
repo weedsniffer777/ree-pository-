@@ -40,18 +40,19 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(HORIZON);
 scene.fog = new THREE.Fog(HORIZON, 140, 1150);
 scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
-scene.environmentIntensity = 0.3;
+scene.environmentIntensity = 0.22;
 
 const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.1, 6000);
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
 composer.addPass(new OutputPass());
 const grade = new ShaderPass(GradeShader);
-grade.uniforms.saturation.value = 1.4; // punchier than the garage; the sky dome is pre-desaturated to match
+grade.uniforms.saturation.value = 1.58;
+grade.uniforms.contrast.value = 1.14; // punchier than the garage; the sky dome is pre-desaturated to match
 composer.addPass(grade);
 
-scene.add(new THREE.HemisphereLight(0xe2ecf2, 0xd09460, 1.55));
-const sun = new THREE.DirectionalLight(0xffd3a0, 3.5);
+scene.add(new THREE.HemisphereLight(0xdfe9f2, 0xc98a55, 1.15));
+const sun = new THREE.DirectionalLight(0xffd6a2, 4.8);
 const SUN_DIR = new THREE.Vector3(70, 85, 45).normalize();
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
@@ -237,7 +238,7 @@ function screenPointer(x, y, z, label) {
     const k = Math.min(0.88 / Math.max(1e-4, Math.abs(px)), 0.8 / Math.max(1e-4, Math.abs(py)));
     px *= k; py *= k;
     angle = Math.atan2(px, py);
-  } else py += 0.08;
+  } else py += 0.16;
   return { x: (px * 0.5 + 0.5) * innerWidth, y: (0.5 - py * 0.5) * innerHeight, angle, label: `${label} ${dist} m` };
 }
 
@@ -323,7 +324,7 @@ function buildSky() {
     else c.copy(mid).lerp(top, Math.min(1, (t - 0.16) / 0.5));
     // pre-compensate for the level's stronger saturation so the sky reads as in the garage
     const l = c.r * 0.299 + c.g * 0.587 + c.b * 0.114;
-    c.r = l + (c.r - l) * 0.87; c.g = l + (c.g - l) * 0.87; c.b = l + (c.b - l) * 0.87;
+    c.r = l + (c.r - l) * 0.77; c.g = l + (c.g - l) * 0.77; c.b = l + (c.b - l) * 0.77;
     col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
   }
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));

@@ -178,7 +178,7 @@ export function buildProps(exclusions = []) {
   const colliders = [];
   const r = rng(2026);
   const I0 = idxForZ(-260);
-  const I1 = Math.min(S.count - 1, I_FINISH + 150);
+  const I1 = Math.min(S.count - 1, I_FINISH + 900);
 
   const sample = (latMax, power, latMin = ROAD_BEVEL + 1.4) => {
     const i = I0 + Math.floor(r() * (I1 - I0));

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { makeNoise2D, fbm, smoothstep, rng } from './noise.js';
-import { nearest, sideDist, ROAD_HALF, ROAD_BEVEL, FINISH } from './track.js';
+import { nearest, sideDist, ROAD_HALF, ROAD_BEVEL } from './track.js';
 
 // Heightfield desert: flat driving corridor, shallow ditches, dunes, then rising
 // hills and crags that close the world in. Columns are dense near the route.
@@ -11,7 +11,7 @@ const nC = makeNoise2D(37);
 const nD = makeNoise2D(51);
 
 export const TZ0 = -320;
-export const TZ1 = 1900;
+export const TZ1 = 2950;
 export const TDZ = 3.5;
 export const XS = (() => {
   const pos = [0];
@@ -29,8 +29,6 @@ const H = new Float32Array(COLS * ROWS);
 
 function heightAt(x, z, n) {
   let d = Math.abs(n.lat);
-  const past = n.s - FINISH.s - 70; // close the valley beyond the finish barricade
-  if (past > 0) d = Math.max(d, 24 + past * 3);
   const ds = sideDist(x, z); // the side road carves its own shallow valley
   const dEff = Math.min(d, ds + 1);
   const gentle = fbm(nA, x / 34, z / 34, 3) * 0.8 + fbm(nB, x / 8, z / 8, 2) * 0.1;

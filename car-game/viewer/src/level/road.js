@@ -25,7 +25,7 @@ export function buildRoad() {
   const group = new THREE.Group();
   group.name = 'road';
 
-  const rows = Math.min(I_END, I_FINISH + 75) + 1; // asphalt stops just past the finish
+  const rows = I_END + 1;
   const m = LATS.length;
   const pos = new Float32Array(rows * m * 3);
   const uv = new Float32Array(rows * m * 2);

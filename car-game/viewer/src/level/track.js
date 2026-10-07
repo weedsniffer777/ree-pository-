@@ -12,7 +12,7 @@ export const RAIL_LAT = 7.2; // guardrail line
 
 const CTRL = [
   [0, -300], [0, -150], [0, 0], [5, 150], [-9, 300], [-27, 450], [-30, 560], [-20, 690],
-  [6, 840], [30, 980], [36, 1110], [18, 1250], [3, 1380], [0, 1480], [0, 1620], [0, 1860],
+  [6, 840], [30, 980], [36, 1110], [18, 1250], [3, 1380], [0, 1480], [-6, 1700], [4, 1950], [-10, 2250], [0, 2600], [0, 2900],
 ];
 const curve = new THREE.CatmullRomCurve3(CTRL.map(([x, z]) => new THREE.Vector3(x, 0, z)), false, 'centripetal');
 const LEN = curve.getLength();

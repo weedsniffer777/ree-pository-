@@ -205,7 +205,7 @@ export class CarController {
       const vn = this.vx * S.tx[i] + this.vz * S.tz[i];
       if ((n.i < lo && vn < 0) || (n.i > hi && vn > 0)) { this.vx -= S.tx[i] * vn * 1.2; this.vz -= S.tz[i] * vn * 1.2; this.hit(Math.abs(vn)); }
     };
-    const lo = I_START - 100, hi = I_FINISH + Math.round(55 / STEP);
+    const lo = I_START - 100, hi = I_FINISH + Math.round(400 / STEP);
     if (n.i < lo || n.i > hi) along(lo, hi);
     n = nearest(this.x, this.z, this.hint);
     for (const r of RAILS) {
