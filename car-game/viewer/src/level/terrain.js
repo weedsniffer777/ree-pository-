@@ -84,7 +84,7 @@ export function buildTerrain() {
   const col = new Float32Array(count * 3);
   const C = (h) => new THREE.Color(h);
   const sandA = C('#d6965a'), sandB = C('#e4b07a'), pale = C('#ecc898'), dark = C('#b77a48');
-  const rockA = C('#a55636'), rockB = C('#c47a50'), rockD = C('#7d4530'), gravel = C('#a8927c');
+  const rockA = C('#a55636'), rockB = C('#c47a50'), rockD = C('#7d4530'), gravel = C('#c79a6c');
   const tmp = new THREE.Color(), rock = new THREE.Color();
   for (let k = 0; k < count; k++) {
     const x = pos[k * 3], h = pos[k * 3 + 1], z = pos[k * 3 + 2];
@@ -99,7 +99,7 @@ export function buildTerrain() {
       if (strata > 0.85) rock.lerp(rockD, 0.5);
       tmp.lerp(rock, rockiness);
     }
-    tmp.lerp(gravel, (1 - smoothstep(ROAD_BEVEL, ROAD_BEVEL + 2.5, dist[k])) * 0.75);
+    tmp.lerp(gravel, (1 - smoothstep(ROAD_BEVEL, ROAD_BEVEL + 3.5, dist[k])) * 0.4);
     col[k * 3] = tmp.r; col[k * 3 + 1] = tmp.g; col[k * 3 + 2] = tmp.b;
   }
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));

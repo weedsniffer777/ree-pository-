@@ -168,16 +168,32 @@ function paintRoad() {
   g.putImageData(img, 0, 0);
   const wrapY = (y, rad, fn) => { fn(y); if (y < rad) fn(y + H); if (y > H - rad) fn(y - H); };
 
-  // Sun-bleached and oily blotches
-  for (let i = 0; i < 260; i++) {
-    const x = r() * W, y = r() * H, rad = 30 + r() * 110, light = r() < 0.55, a = 0.02 + r() * 0.035;
-    wrapY(y, rad, (yy) => {
-      const gr = g.createRadialGradient(x, yy, 0, x, yy, rad);
-      gr.addColorStop(0, light ? `rgba(160,150,138,${a})` : `rgba(20,20,22,${a})`);
-      gr.addColorStop(1, 'rgba(0,0,0,0)');
-      g.fillStyle = gr;
-      g.fillRect(x - rad, yy - rad, rad * 2, rad * 2);
-    });
+  // Large soft tonal variation from upscaled noise (no visible shapes)
+  const noiseLayer = (gw, gh, seed) => {
+    const nc = document.createElement('canvas');
+    nc.width = gw; nc.height = gh;
+    const ng = nc.getContext('2d');
+    const nd = ng.createImageData(gw, gh);
+    const nr = lcg(seed);
+    for (let k = 0; k < gw * gh; k++) { const v = nr() * 255; nd.data[k * 4] = nd.data[k * 4 + 1] = nd.data[k * 4 + 2] = v; nd.data[k * 4 + 3] = 255; }
+    ng.putImageData(nd, 0, 0);
+    const big = document.createElement('canvas');
+    big.width = W; big.height = H;
+    const bg = big.getContext('2d');
+    bg.imageSmoothingEnabled = true;
+    bg.imageSmoothingQuality = 'high';
+    bg.drawImage(nc, 0, 0, W, H);
+    return bg.getImageData(0, 0, W, H).data;
+  };
+  {
+    const n1 = noiseLayer(10, 48, 3);
+    const img2 = g.getImageData(0, 0, W, H);
+    const d2 = img2.data;
+    for (let p = 0; p < W * H; p++) {
+      const k = (n1[p * 4] / 255 - 0.5) * 18;
+      d2[p * 4] += k; d2[p * 4 + 1] += k; d2[p * 4 + 2] += k * 0.9;
+    }
+    g.putImageData(img2, 0, 0);
   }
   // Polished wheel paths and the oil strip down each lane
   for (const lane of [-1.85, 1.85]) {
@@ -292,36 +308,34 @@ function paintRoad() {
       g.beginPath(); g.moveTo(x, y); g.lineTo(x + (r() - 0.5) * 26, y + (r() - 0.5) * 26); g.stroke();
     }
   }
-  // Sand blown over the shoulders, crumbling outer edge
-  for (const side of [-1, 1]) {
-    const gr = g.createLinearGradient(X(side * 4.5), 0, X(side * ROAD_BEVEL), 0);
-    gr.addColorStop(0, 'rgba(198,160,114,0)');
-    gr.addColorStop(1, 'rgba(198,160,114,0.6)');
-    g.fillStyle = gr;
-    g.fillRect(Math.min(X(side * 4.5), X(side * ROAD_BEVEL)), 0, Math.abs(X(side * ROAD_BEVEL) - X(side * 4.5)), H);
-    for (let k = 0; k < 140; k++) {
-      const lat = side * (5.0 + r() * 1.6), y = r() * H;
-      g.fillStyle = `rgba(${200 + r() * 20},${160 + r() * 20},${112 + r() * 20},${0.12 + r() * 0.22})`;
-      g.beginPath();
-      g.ellipse(X(lat), y, (0.12 + r() * 0.35) * PX, (1.5 + r() * 6) * PY, (r() - 0.5) * 0.08, 0, Math.PI * 2);
-      g.fill();
+  // Sand blown over the shoulders: coverage rises toward the edge and is broken up by
+  // noise stretched along the road, so it reads as drifts, not blobs.
+  {
+    const nA = noiseLayer(14, 120, 11); // drift streaks along the road
+    const nB = noiseLayer(60, 480, 12); // finer breakup
+    const img3 = g.getImageData(0, 0, W, H);
+    const d3 = img3.data;
+    const sand = [214, 160, 104], dark = [182, 132, 84];
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const lat = Math.abs((x / W) * 2 * ROAD_BEVEL - ROAD_BEVEL);
+        const edge = Math.min(1, Math.max(0, (lat - 4.3) / (ROAD_BEVEL - 4.3)));
+        const p = y * W + x;
+        const n = nA[p * 4] / 255 * 0.65 + nB[p * 4] / 255 * 0.35;
+        let a = edge * edge * 1.15 + (n - 0.55) * 0.9 * (0.25 + edge);
+        if (lat < 4.3) a = (n - 0.82) * 1.6 * 0.5; // the odd thin streak across the lanes
+        a = Math.min(0.95, Math.max(0, a));
+        if (a <= 0) continue;
+        const o = p * 4;
+        const t = nB[p * 4] / 255;
+        for (let ch = 0; ch < 3; ch++) {
+          const c0 = sand[ch] * (1 - t * 0.3) + dark[ch] * t * 0.3;
+          d3[o + ch] = d3[o + ch] * (1 - a) + c0 * a;
+        }
+      }
     }
-    for (let y = 0; y < H; y += 4) {
-      const lat = side * (6.0 + r() * 0.6);
-      g.fillStyle = r() < 0.6 ? 'rgba(196,158,112,0.85)' : 'rgba(60,58,56,0.8)';
-      g.fillRect(X(lat) - 4, y, 4 + r() * 10, 3 + r() * 6);
-    }
+    g.putImageData(img3, 0, 0);
   }
-  for (let k = 0; k < 30; k++) {
-    const y = r() * H, len = (2 + r() * 6) * PY;
-    const x0 = X(-5 + r() * 10);
-    g.fillStyle = 'rgba(205,170,125,0.12)';
-    g.beginPath();
-    g.ellipse(x0, y, (1 + r() * 3) * PX, len / 2, 0.3, 0, Math.PI * 2);
-    g.fill();
-  }
-  g.fillStyle = 'rgba(214,190,160,0.05)';
-  g.fillRect(0, 0, W, H);
 
   const t = new THREE.CanvasTexture(c);
   t.wrapS = THREE.ClampToEdgeWrapping;

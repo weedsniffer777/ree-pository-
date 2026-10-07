@@ -31,7 +31,7 @@ renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMappingExposure = 1.12;
 renderer.info.autoReset = false;
 document.getElementById('app').appendChild(renderer.domElement);
 
@@ -48,11 +48,13 @@ composer.addPass(new RenderPass(scene, camera));
 composer.addPass(new OutputPass());
 const grade = new ShaderPass(GradeShader);
 grade.uniforms.saturation.value = 1.58;
-grade.uniforms.contrast.value = 1.14; // punchier than the garage; the sky dome is pre-desaturated to match
+grade.uniforms.contrast.value = 1.04;
+grade.uniforms.lift.value = 0.07;
+grade.uniforms.toon.value = 0.45; // punchier than the garage; the sky dome is pre-desaturated to match
 composer.addPass(grade);
 
-scene.add(new THREE.HemisphereLight(0xdfe9f2, 0xc98a55, 1.15));
-const sun = new THREE.DirectionalLight(0xffd6a2, 4.8);
+scene.add(new THREE.HemisphereLight(0xe6eef4, 0xd9a06a, 1.9));
+const sun = new THREE.DirectionalLight(0xffdcae, 3.6);
 const SUN_DIR = new THREE.Vector3(70, 85, 45).normalize();
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
