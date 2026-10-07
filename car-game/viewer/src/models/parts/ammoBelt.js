@@ -21,14 +21,18 @@ export function buildAmmoBelt(points, { spacing = 0.022, forward = new THREE.Vec
   const m = new THREE.Matrix4();
   const q = new THREE.Quaternion();
   const one = new THREE.Vector3(1, 1, 1);
+  let prev = null;
   for (let i = 0; i < count; i++) {
     const u = (i + 0.5) / count;
     const p = curve.getPointAt(u);
     const t = curve.getTangentAt(u).normalize();
-    // cartridge axis: as close to "forward" as possible while staying across the belt
-    const a = forward.clone().sub(t.clone().multiplyScalar(t.dot(forward)));
-    if (a.lengthSq() < 0.04) a.crossVectors(t, up);
+    // cartridge axis: start as close to "forward" as possible, then carry it along the
+    // belt (parallel transport) so it never flips or twists between neighbouring rounds
+    const a = (prev ?? forward).clone();
+    a.sub(t.clone().multiplyScalar(t.dot(a)));
+    if (a.lengthSq() < 1e-4) a.crossVectors(t, up);
     a.normalize();
+    prev = a;
     // orient Y along the cartridge, Z along the belt so links face the right way
     const zAxis = t.clone().sub(a.clone().multiplyScalar(t.dot(a))).normalize();
     const xAxis = new THREE.Vector3().crossVectors(a, zAxis);

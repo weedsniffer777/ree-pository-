@@ -228,9 +228,8 @@ export function addDetails(car, { skinMats, dloRear }) {
     for (const dz of [-0.055, 0.055]) chute.add(box(0.142, 0.1, 0.012, metal, { pos: [cx, cy + 0.05, chuteZ + dz] }));
     chute.add(mesh(new THREE.TorusGeometry(0.075, 0.006, 4, 4).rotateX(Math.PI / 2).rotateY(Math.PI / 4), weld, { pos: [cx, cy + 0.1, chuteZ] }));
     chute.add(buildAmmoBelt([
-      f, new THREE.Vector3(s * 0.52, f.y - 0.06, f.z - 0.02), new THREE.Vector3(s * 0.45, topY(1.3, 0.45) + 0.12, 1.28),
-      new THREE.Vector3(s * 0.38, cy + 0.2, 1.06), new THREE.Vector3(cx, cy + 0.12, chuteZ + 0.005),
-      new THREE.Vector3(cx, cy + 0.03, chuteZ),
+      f, new THREE.Vector3(s * 0.5, f.y - 0.07, f.z - 0.05), new THREE.Vector3(s * 0.42, cy + 0.24, 1.15),
+      new THREE.Vector3(cx, cy + 0.15, chuteZ + 0.03), new THREE.Vector3(cx, cy + 0.03, chuteZ),
     ]));
     car.add(chute);
   }
