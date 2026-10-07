@@ -240,9 +240,9 @@ function skyTexture() {
   c.height = 256;
   const g = c.getContext('2d');
   const grad = g.createLinearGradient(0, 0, 0, 256);
-  grad.addColorStop(0, '#f1bd8c');
-  grad.addColorStop(0.45, '#f7d2a8');
-  grad.addColorStop(0.8, '#f9e0c2');
+  grad.addColorStop(0, '#6aaed6');
+  grad.addColorStop(0.5, '#aed2e6');
+  grad.addColorStop(0.82, '#f2d4b9');
   grad.addColorStop(1, '#f3d5b2');
   g.fillStyle = grad;
   g.fillRect(0, 0, 4, 256);
