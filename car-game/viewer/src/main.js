@@ -31,12 +31,12 @@ app.appendChild(labelRenderer.domElement);
 
 const scene = new THREE.Scene();
 scene.background = skyTexture();
-scene.fog = new THREE.Fog(0xead2b4, 25, 80);
+scene.fog = new THREE.Fog(0xf3d5b2, 25, 80);
 scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
 scene.environmentIntensity = 0.3;
 
 const GradeShader = {
-  uniforms: { tDiffuse: { value: null }, saturation: { value: 1.18 }, contrast: { value: 1.08 }, vignette: { value: 0.28 } },
+  uniforms: { tDiffuse: { value: null }, saturation: { value: 1.24 }, contrast: { value: 1.08 }, vignette: { value: 0.28 } },
   vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
   fragmentShader: `
     uniform sampler2D tDiffuse; uniform float saturation, contrast, vignette; varying vec2 vUv;
@@ -70,7 +70,7 @@ Object.assign(sun.shadow.camera, { left: -8, right: 8, top: 8, bottom: -8 });
 sun.shadow.bias = -0.0005;
 scene.add(sun);
 
-const GROUNDS = { sand: 0xd2a678, asphalt: 0x4c4a4a };
+const GROUNDS = { sand: 0xdda36a, asphalt: 0x4c4a4a };
 const ground = new THREE.Mesh(
   new THREE.CircleGeometry(60, 48),
   new THREE.MeshStandardMaterial({ color: GROUNDS.sand, roughness: 1 }),
@@ -240,10 +240,10 @@ function skyTexture() {
   c.height = 256;
   const g = c.getContext('2d');
   const grad = g.createLinearGradient(0, 0, 0, 256);
-  grad.addColorStop(0, '#b9c9cf');
-  grad.addColorStop(0.45, '#ecd6bd');
-  grad.addColorStop(0.8, '#f3d7b6');
-  grad.addColorStop(1, '#ead2b4');
+  grad.addColorStop(0, '#f1bd8c');
+  grad.addColorStop(0.45, '#f7d2a8');
+  grad.addColorStop(0.8, '#f9e0c2');
+  grad.addColorStop(1, '#f3d5b2');
   g.fillStyle = grad;
   g.fillRect(0, 0, 4, 256);
   const tex = new THREE.CanvasTexture(c);
