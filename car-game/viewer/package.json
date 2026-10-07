@@ -8,7 +8,9 @@
     "shot": "node scripts/screenshot.mjs"
   },
   "dependencies": {
-    "three": "^0.186.1"
+    "three": "^0.186.1",
+    "three-bvh-csg": "^0.0.18",
+    "three-mesh-bvh": "^0.9.15"
   },
   "devDependencies": {
     "playwright": "^1.56.1",

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { MODELS } from './registry.js';
 import { buildGoonRef } from './models/ref/goon.js';
 import { countTriangles } from './lib/geo.js';
@@ -27,6 +28,8 @@ app.appendChild(labelRenderer.domElement);
 const scene = new THREE.Scene();
 scene.background = skyTexture();
 scene.fog = new THREE.Fog(0xf3d6c0, 30, 70);
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.3;
 
 const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 200);
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -53,7 +56,7 @@ ground.receiveShadow = true;
 scene.add(ground);
 
 const goon = buildGoonRef();
-goon.position.set(-2.8, 0, 2.6);
+goon.position.set(-2.6, 0, 3.2);
 goon.traverse((o) => { if (o.isMesh) o.castShadow = true; });
 scene.add(goon);
 
@@ -68,6 +71,8 @@ const state = {
   steer: params.get('steer') === '1',
   wire: false,
   goon: params.get('goon') !== '0',
+  armor: params.get('armor') !== '0',
+  parts: params.get('parts') !== '0',
 };
 if (params.get('ui') === '0') document.body.classList.add('noui');
 
@@ -113,17 +118,23 @@ function applyToggles() {
   goon.visible = state.goon;
   ground.material.color.setHex(GROUNDS[state.ground]);
   current?.traverse((o) => {
-    if (o.isMesh && !o.userData.debug) o.material.wireframe = state.wire;
+    if (o.isMesh && !o.userData.debug) for (const m of [].concat(o.material)) m.wireframe = state.wire;
   });
+  const armor = current?.getObjectByName('armor');
+  if (armor) armor.visible = state.armor;
+  current?.traverse((o) => { if (o.userData.attachment) o.visible = state.parts; });
 }
 
 // Camera presets. Car faces +Z, so "chase" sits behind it at -Z.
 const VIEWS = {
-  chase: { pos: [2.2, 3.2, -7.2], target: [0, 1.0, 0.4] },
-  rear34: { pos: [4.6, 2.6, -5.4], target: [0, 0.9, 0] },
-  side: { pos: [7.8, 1.4, 0], target: [0, 0.9, 0] },
-  front34: { pos: [4.6, 2.2, 5.6], target: [0, 0.9, 0] },
-  top: { pos: [0, 10, 0.01], target: [0, 0, 0] },
+  chase: { pos: [1.6, 2.6, -6.4], target: [0, 0.7, 0.6] },
+  rearClose: { pos: [1.9, 1.3, -4.3], target: [0, 0.6, -1.4] },
+  frontClose: { pos: [2.2, 1.6, 4.4], target: [0, 0.8, 1.3] },
+  hoodClose: { pos: [1.3, 1.75, 3.1], target: [0, 0.9, 1.0] },
+  rear34: { pos: [4.0, 2.0, -4.8], target: [0, 0.6, 0] },
+  side: { pos: [7.2, 0.9, 0], target: [0, 0.6, 0] },
+  front34: { pos: [4.0, 1.8, 5.0], target: [0, 0.6, 0] },
+  top: { pos: [0, 9, 0.01], target: [0, 0, 0] },
 };
 function setView(name) {
   const v = VIEWS[name] ?? VIEWS.chase;
@@ -158,7 +169,7 @@ function refreshButtons() {
 }
 for (const v of Object.keys(VIEWS)) addButton('views', v, () => state.view === v, () => setView(v));
 for (const gname of Object.keys(GROUNDS)) addButton('grounds', gname, () => state.ground === gname, () => { state.ground = gname; applyToggles(); });
-for (const key of ['sockets', 'labels', 'spin', 'steer', 'wire', 'goon']) {
+for (const key of ['armor', 'parts', 'sockets', 'labels', 'spin', 'steer', 'wire', 'goon']) {
   addButton('toggles', key, () => state[key], () => { state[key] = !state[key]; applyToggles(); });
 }
 

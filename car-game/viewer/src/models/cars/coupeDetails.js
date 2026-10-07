@@ -1,0 +1,270 @@
+import * as THREE from 'three';
+import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mesh, box, cyl, tube, slabAlong, socket } from '../../lib/geo.js';
+import { loftRings, projectAndGroup } from '../../lib/loft.js';
+import { UV, gunmetalMaterial, weldMaterial, darkMaterial, steelMaterial, glassMaterial } from '../../lib/skin.js';
+import { glowMat } from '../../lib/materials.js';
+import { sideX, topY, bodyTop, cabinBase, cabinTop, WS, RG, along } from './coupeShape.js';
+import { buildCautionPlow } from '../parts/cautionPlow.js';
+import { buildBrowningM2 } from '../parts/browningM2.js';
+import { buildAmmoBelt } from '../parts/ammoBelt.js';
+import { buildEngineV8, buildRadiator } from '../parts/engineV8.js';
+
+const deg = THREE.MathUtils.degToRad;
+
+export function addDetails(car, { skinMats, dloRear }) {
+  const metal = gunmetalMaterial();
+  const weld = weldMaterial();
+  const dark = darkMaterial();
+
+  // =================== Armor: plates grown from the body surface ===================
+  const armor = new THREE.Group();
+  armor.name = 'armor';
+  car.add(armor);
+  const plate = (opts) => conformalPlate({ ...opts, skinMats, weld, group: armor });
+  const sideS = (y0, y1, k) => (z) => Array.from({ length: k }, (_, i) => { const y = y0 + ((y1 - y0) * i) / (k - 1); return [sideX(z, y), y]; });
+  const topS = (x0, x1, k) => (z) => Array.from({ length: k }, (_, i) => { const x = x0 + ((x1 - x0) * i) / (k - 1); return [x, topY(z, x)]; });
+  for (const s of [-1, 1]) {
+    plate({ z0: 0.8, z1: -0.38, sample: sideS(0.36, 0.79, 6), side: s }); // door
+    plate({ z0: 2.14, z1: 1.74, sample: sideS(0.32, 0.62, 5), side: s }); // front fender
+    plate({ z0: -1.67, z1: -2.1, sample: sideS(0.36, 0.76, 5), side: s }); // rear quarter
+    plate({ z0: 0.9, z1: -0.84, sample: sideS(0.21, 0.35, 4), side: s, thick: 0.045 }); // rocker skirt
+    plate({ z0: 2.1, z1: 0.98, sample: topS(0.87, 0.3, 7), side: s, steps: 4 }); // hood
+  }
+  plate({ z0: -1.93, z1: -2.16, sample: topS(0.82, -0.82, 9), side: 1 }); // trunk lid
+  // angular brows over the headlights
+  for (const s of [-1, 1]) {
+    armor.add(box(0.44, 0.04, 0.16, metal, { pos: [s * 0.62, 0.6, 2.25], rot: [0.55, 0, s * 0.06] }));
+  }
+  // door gun slits and a hinge strap
+  for (const s of [-1, 1]) {
+    armor.add(box(0.012, 0.035, 0.36, dark, { pos: [s * (sideX(0.2, 0.62) + 0.033), 0.62, 0.25] }));
+    armor.add(box(0.02, 0.05, 0.14, metal, { pos: [s * (sideX(0.7, 0.5) + 0.04), 0.5, 0.7] }));
+    armor.add(box(0.02, 0.05, 0.14, metal, { pos: [s * (sideX(0.7, 0.68) + 0.04), 0.68, 0.7] }));
+  }
+
+  // =================== Front: grille, quad lamps ===================
+  car.add(box(0.84, 0.21, 0.04, dark, { pos: [0, 0.5, 2.255] }));
+  for (let i = 0; i < 5; i++) car.add(box(0.8, 0.016, 0.03, metal, { pos: [0, 0.42 + i * 0.04, 2.272] }));
+  car.add(box(0.03, 0.2, 0.03, metal, { pos: [0, 0.5, 2.275] }));
+  for (const x of [-0.7, -0.53, 0.53, 0.7]) {
+    car.add(cyl(0.07, 0.07, 0.06, 16, dark, { pos: [x, 0.5, 2.27], rot: [Math.PI / 2, 0, 0] }));
+    car.add(cyl(0.058, 0.058, 0.01, 16, glowMat('light', 0.55), { pos: [x, 0.5, 2.3], rot: [Math.PI / 2, 0, 0] }));
+    car.add(mesh(new THREE.TorusGeometry(0.064, 0.008, 4, 16), steelMaterial(0x6b7177), { pos: [x, 0.5, 2.302] }));
+  }
+
+  // =================== Exposed supercharged V8 in the hood opening ===================
+  const engine = buildEngineV8();
+  engine.position.set(0, 0.42, 1.52);
+  engine.rotation.x = 0.04;
+  car.add(engine);
+  const rad = buildRadiator();
+  rad.position.set(0, 0.62, 1.95);
+  car.add(rad);
+  car.add(socket('HOOD', [0, 1.2, 1.52]));
+
+  // =================== Roof rack + four lamps ===================
+  const RY = 1.37;
+  const rack = new THREE.Group();
+  rack.name = 'roof_rack';
+  car.add(rack);
+  for (const s of [-1, 1]) {
+    for (const z of [0.1, -0.86]) rack.add(tube([s * 0.55, cabinTop(z) - 0.01, z], [s * 0.58, RY, z], 0.018, metal, 6));
+    rack.add(tube([s * 0.58, RY, 0.2], [s * 0.58, RY, -0.94], 0.02, metal, 6));
+  }
+  for (const z of [0.2, -0.94]) rack.add(tube([-0.58, RY, z], [0.58, RY, z], 0.02, metal, 6));
+  for (let i = 1; i < 6; i++) rack.add(box(1.14, 0.012, 0.04, metal, { pos: [0, RY - 0.005, 0.2 - i * 0.19] }));
+  rack.add(box(1.2, 0.03, 0.05, metal, { pos: [0, RY + 0.05, 0.22] }));
+  for (const s of [-1, 1]) rack.add(tube([s * 0.58, RY, 0.2], [s * 0.6, RY + 0.05, 0.22], 0.015, metal, 6));
+  for (const x of [-0.42, -0.14, 0.14, 0.42]) {
+    rack.add(box(0.03, 0.06, 0.03, metal, { pos: [x, RY + 0.09, 0.22] }));
+    rack.add(cyl(0.075, 0.068, 0.1, 16, dark, { pos: [x, RY + 0.16, 0.23], rot: [Math.PI / 2, 0, 0] }));
+    rack.add(cyl(0.062, 0.062, 0.01, 16, glowMat('light', 0.6), { pos: [x, RY + 0.16, 0.282], rot: [Math.PI / 2, 0, 0] }));
+    rack.add(mesh(new THREE.TorusGeometry(0.07, 0.008, 4, 18), steelMaterial(0x6b7177), { pos: [x, RY + 0.16, 0.284] }));
+    for (const r of [deg(45), deg(-45)]) rack.add(box(0.008, 0.13, 0.008, metal, { pos: [x, RY + 0.16, 0.292], rot: [0, 0, r] }));
+  }
+  car.add(socket('ROOF_MAIN', [0, RY + 0.02, -0.4]));
+
+  // =================== Windshield cage, door-window bars, rear louvres ===================
+  for (let i = 0; i < 5; i++) {
+    const x = -0.44 + i * 0.22;
+    car.add(slabAlong(...along(WS.base, WS.top, 0.06), ...along(WS.base, WS.top, 0.8), 0.028, 0.022, metal, 0.03, x));
+  }
+  // visor: armor plate over the top of the windshield, folding back onto the roof
+  const visorA = along(WS.base, WS.top, 0.74);
+  const roofEnd = [-0.12, cabinTop(-0.12)];
+  car.add(skinned(slabAlong(...visorA, ...WS.top, 1.34, 0.03, metal, 0.03), skinMats));
+  car.add(skinned(slabAlong(...WS.top, ...roofEnd, 1.3, 0.03, metal, 0.02), skinMats));
+  car.add(skinned(slabAlong(...along(WS.base, WS.top, 0.7), ...visorA, 1.34, 0.03, metal, 0.05), skinMats)); // chamfered lip
+  for (const x of [-0.67, 0.67]) car.add(tube([x, visorA[1] + 0.03, visorA[0] + 0.02], [x * 0.97, WS.top[1] + 0.03, WS.top[0]], 0.007, weld, 4));
+  car.add(tube([-0.67, visorA[1] + 0.01, visorA[0] + 0.035], [0.67, visorA[1] + 0.01, visorA[0] + 0.035], 0.007, weld, 4));
+  for (const t of [0.36, 0.7]) car.add(slabAlong(...along(WS.base, WS.top, t - 0.02), ...along(WS.base, WS.top, t + 0.02), 1.2, 0.022, metal, 0.045));
+  for (const s of [-1, 1]) {
+    for (const z of [0.3, 0.02, -0.24]) {
+      const yb = cabinBase(z) + 0.03;
+      const yt = cabinTop(z) - 0.07;
+      const xAt = (y) => 0.8 - 0.12 * ((y - cabinBase(z)) / Math.max(0.05, cabinTop(z) - 0.05 - cabinBase(z)));
+      car.add(tube([s * (xAt(yb) + 0.012), yb, z], [s * (xAt(yt) + 0.012), yt, z], 0.011, metal, 6));
+    }
+  }
+  for (let i = 0; i < 9; i++) {
+    const t = 0.06 + i * 0.1;
+    const l = slabAlong(...along(RG.top, RG.base, t), ...along(RG.top, RG.base, t + 0.07), 1.1, 0.012, metal, 0.035);
+    l.rotation.x += 0.45;
+    car.add(l);
+  }
+  for (const x of [-0.56, 0, 0.56]) car.add(slabAlong(...along(RG.top, RG.base, 0.03), ...along(RG.top, RG.base, 0.96), 0.035, 0.03, metal, 0.05, x));
+  // R17-style louvres filling the rear quarter openings
+  for (const s of [-1, 1]) {
+    for (let z = -0.58; z > -1.56; z -= 0.055) {
+      const yb = cabinBase(z) + 0.035;
+      const yt = cabinTop(z) - 0.078;
+      if (yt - yb < 0.04) continue;
+      car.add(box(0.07, yt - yb, 0.012, metal, { pos: [s * 0.715, (yb + yt) / 2, z], rot: [0, s * 0.7, s * 0.12] }));
+    }
+  }
+
+  // =================== Sides: mirrors, handles, side pipes ===================
+  for (const s of [-1, 1]) {
+    car.add(tube([s * 0.86, 0.84, 0.78], [s * 0.98, 0.9, 0.74], 0.012, metal, 6));
+    car.add(box(0.14, 0.08, 0.05, metal, { pos: [s * 1.02, 0.92, 0.74], rot: [0.1, s * 0.25, 0] }));
+    car.add(box(0.03, 0.022, 0.12, dark, { pos: [s * (sideX(-0.25, 0.82) + 0.005), 0.82, -0.25] }));
+    const heat = new THREE.MeshStandardMaterial({ color: 0x4a423b, roughness: 0.6, metalness: 0.6 });
+    for (const [dy, dx, zEnd] of [[0, 0, -0.78], [0.075, 0.012, -0.6]]) {
+      const path = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(s * 0.8, 0.5 + dy, 0.9), new THREE.Vector3(s * 0.95, 0.42 + dy, 0.86),
+        new THREE.Vector3(s * (1.0 + dx), 0.31 + dy, 0.74), new THREE.Vector3(s * (1.0 + dx), 0.31 + dy, 0.2),
+        new THREE.Vector3(s * (1.0 + dx), 0.31 + dy, zEnd),
+      ]);
+      car.add(mesh(new THREE.TubeGeometry(path, 32, 0.038, 8), heat));
+      const tip = path.getPointAt(1);
+      car.add(mesh(new THREE.TorusGeometry(0.038, 0.006, 4, 12), heat, { pos: [tip.x, tip.y, tip.z] }));
+      car.add(cyl(0.032, 0.032, 0.005, 10, darkMaterial(0x050505), { pos: [tip.x, tip.y, tip.z + 0.01], rot: [Math.PI / 2, 0, 0] }));
+    }
+    for (const z of [0.4, -0.3]) car.add(box(0.06, 0.04, 0.04, metal, { pos: [s * 0.97, 0.33, z] }));
+  }
+
+  // =================== Rear: tail panel, caged lights, ducktail, armored bumper, exhausts ===================
+  car.add(box(1.56, 0.17, 0.03, dark, { pos: [0, 0.66, -2.235] }));
+  for (let i = 0; i < 4; i++) car.add(box(0.3, 0.012, 0.02, metal, { pos: [0, 0.6 + i * 0.04, -2.25] }));
+  for (const s of [-1, 1]) {
+    car.add(box(0.36, 0.14, 0.05, dark, { pos: [s * 0.6, 0.66, -2.245] }));
+    for (let i = 0; i < 4; i++) {
+      const x = s * (0.47 + i * 0.085);
+      car.add(box(0.075, 0.1, 0.02, i === 0 ? glowMat('#e08a1c', 0.5) : glowMat('#c8261a', 0.65), { pos: [x, 0.66, -2.272] }));
+    }
+    // welded guard cage
+    for (let i = 0; i < 4; i++) car.add(tube([s * (0.44 + i * 0.105), 0.585, -2.31], [s * (0.44 + i * 0.105), 0.735, -2.31], 0.007, metal, 5));
+    for (const y of [0.6, 0.72]) car.add(tube([s * 0.43, y, -2.31], [s * 0.78, y, -2.31], 0.007, metal, 5));
+    for (const x of [0.43, 0.78]) car.add(box(0.015, 0.015, 0.07, metal, { pos: [s * x, 0.66, -2.28] }));
+  }
+  const duck = extrudeProfile([[-2.02, bodyTop(-2.02) + 0.03], [-2.27, 1.0], [-2.28, 0.97], [-2.2, 0.88]], 1.66);
+  car.add(mesh(projectAndGroup(toCreasedNormals(duck, deg(25)), [UV.side, UV.top, UV.front, UV.back]), skinMats));
+  const bumper = extrudeProfile([[-2.14, 0.2], [-2.32, 0.23], [-2.38, 0.33], [-2.36, 0.47], [-2.2, 0.5], [-2.14, 0.48]], 1.88);
+  car.add(mesh(projectAndGroup(toCreasedNormals(bumper, deg(25)), [UV.side, UV.top, UV.front, UV.back]), skinMats));
+  for (const x of [-0.78, -0.3, 0.3, 0.78]) car.add(box(0.03, 0.27, 0.2, metal, { pos: [x, 0.36, -2.33] }));
+  car.add(mesh(new THREE.TorusGeometry(0.04, 0.012, 6, 12), steelMaterial(), { pos: [0, 0.25, -2.39] }));
+  for (const s of [-1, 1]) {
+    for (const x of [0.36, 0.46]) {
+      car.add(cyl(0.036, 0.036, 0.2, 10, steelMaterial(0x6a625b), { pos: [s * x, 0.175, -2.3], rot: [Math.PI / 2, 0, 0] }));
+      car.add(cyl(0.028, 0.028, 0.005, 10, darkMaterial(0x050505), { pos: [s * x, 0.175, -2.401], rot: [Math.PI / 2, 0, 0] }));
+    }
+  }
+  // fuel filler on the rear deck
+  const fz = -1.9;
+  car.add(cyl(0.065, 0.065, 0.025, 14, steelMaterial(0x6d7379), { pos: [0.55, topY(fz, 0.55) + 0.012, fz] }));
+  car.add(cyl(0.05, 0.05, 0.02, 14, metal, { pos: [0.55, topY(fz, 0.55) + 0.03, fz] }));
+  car.add(socket('REAR', [0, 0.36, -2.4], [0, Math.PI, 0]));
+  car.add(socket('EXHAUST_L', [0.41, 0.175, -2.41], [0, Math.PI, 0]));
+  car.add(socket('EXHAUST_R', [-0.41, 0.175, -2.41], [0, Math.PI, 0]));
+
+  // =================== Attachments: dozer, twin Brownings + belts ===================
+  const front = socket('FRONT', [0, 0.36, 2.28]);
+  car.add(front);
+  const plow = buildCautionPlow();
+  plow.userData.attachment = true;
+  front.add(plow);
+
+  for (const s of [-1, 1]) {
+    const gz = 1.4;
+    const gx = s * 0.66;
+    const gy = topY(gz, gx) + 0.03;
+    const mount = socket(s > 0 ? 'GUN_L' : 'GUN_R', [gx, gy, gz]);
+    car.add(mount);
+    const gun = buildBrowningM2({ feedSide: -s });
+    gun.userData.attachment = true;
+    mount.add(gun);
+    // belt from the inboard feed tray down into an armored chute on the hood
+    const f = gun.userData.feedPoint.clone().add(mount.position);
+    const chuteZ = 1.0;
+    const chute = new THREE.Group();
+    chute.userData.attachment = true;
+    chute.add(box(0.15, 0.08, 0.13, metal, { pos: [s * 0.36, topY(chuteZ, 0.36) + 0.04, chuteZ] }));
+    chute.add(box(0.11, 0.02, 0.04, darkMaterial(0x060606), { pos: [s * 0.36, topY(chuteZ, 0.36) + 0.08, chuteZ + 0.04] }));
+    chute.add(buildAmmoBelt([
+      f, new THREE.Vector3(s * 0.52, f.y - 0.06, f.z - 0.02), new THREE.Vector3(s * 0.45, topY(1.3, 0.45) + 0.08, 1.3),
+      new THREE.Vector3(s * 0.39, topY(1.15, 0.39) + 0.07, 1.14), new THREE.Vector3(s * 0.36, topY(chuteZ, 0.36) + 0.08, chuteZ + 0.05),
+    ]));
+    car.add(chute);
+  }
+}
+
+// Plate whose inner face follows the body surface, with chamfered edges and weld beads.
+// sample(z) -> K points [x, y] on the right-side surface, ordered so (dy, -dx) points out.
+function conformalPlate({ z0, z1, sample, side = 1, thick = 0.03, bev = 0.04, steps = 3, skinMats, weld, group }) {
+  const zs = [z0];
+  for (let i = 0; i <= steps; i++) zs.push(z0 - bev + ((z1 + bev) - (z0 - bev)) * (i / steps));
+  zs.push(z1);
+  const rings = [];
+  const weldA = [];
+  const weldB = [];
+  zs.forEach((z, zi) => {
+    const pts = sample(z);
+    const k = pts.length;
+    const end = zi === 0 || zi === zs.length - 1;
+    const inner = [];
+    const outer = [];
+    pts.forEach((p, i) => {
+      const a = pts[Math.max(0, i - 1)];
+      const b = pts[Math.min(k - 1, i + 1)];
+      let nx = b[1] - a[1];
+      let ny = -(b[0] - a[0]);
+      const l = Math.hypot(nx, ny) || 1;
+      nx /= l; ny /= l;
+      const edge = i === 0 || i === k - 1;
+      const t = thick * (end ? 0.35 : 1) * (edge ? 0.4 : 1);
+      inner.push([(p[0] - nx * 0.006) * side, p[1] - ny * 0.006, z]);
+      outer.push([(p[0] + nx * t) * side, p[1] + ny * t, z]);
+      if (i === 0) weldA.push(new THREE.Vector3((p[0] + nx * 0.006) * side, p[1] + ny * 0.006, z));
+      if (i === k - 1) weldB.push(new THREE.Vector3((p[0] + nx * 0.006) * side, p[1] + ny * 0.006, z));
+    });
+    let ring = [...inner, ...outer.reverse()];
+    if (side > 0) ring = ring.reverse();
+    rings.push(ring);
+  });
+  const geo = toCreasedNormals(loftRings(rings, { caps: 'strip' }), deg(30));
+  group.add(mesh(projectAndGroup(geo, [UV.side, UV.top, UV.front, UV.back]), skinMats));
+  for (const line of [weldA, weldB]) {
+    group.add(mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(line), line.length * 3, 0.007, 4), weld));
+  }
+}
+
+// Bake a mesh's transform and repaint it with the body skins (world-space UVs) so a
+// bolt-on piece shares the exact paint, wear and rust of the panel under it.
+function skinned(m, skinMats) {
+  m.updateMatrix();
+  const geo = m.geometry.clone().applyMatrix4(m.matrix).toNonIndexed();
+  geo.clearGroups();
+  const out = mesh(projectAndGroup(toCreasedNormals(geo, deg(25)), [UV.side, UV.top, UV.front, UV.back]), skinMats);
+  return out;
+}
+
+function extrudeProfile(outline, width) {
+  const s = new THREE.Shape();
+  outline.forEach(([z, y], i) => (i ? s.lineTo(z, y) : s.moveTo(z, y)));
+  s.closePath();
+  const g = new THREE.ExtrudeGeometry(s, { depth: width, bevelEnabled: false });
+  g.rotateY(-Math.PI / 2);
+  g.translate(width / 2, 0, 0);
+  return g;
+}
