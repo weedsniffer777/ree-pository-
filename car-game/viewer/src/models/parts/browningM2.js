@@ -76,15 +76,21 @@ export function buildBrowningM2({ feedSide = 1 } = {}) {
   // top cover with latch, rear sight leaf
   gun.add(box(0.11, 0.022, 0.3, PARK_DARK, { pos: [0, 0.086, -0.03] }));
   gun.add(box(0.03, 0.02, 0.05, WORN, { pos: [0, 0.103, 0.09] }));
-  gun.add(box(0.035, 0.05, 0.008, PARK, { pos: [0, 0.12, -0.3] }));
-  gun.add(box(0.012, 0.02, 0.006, WORN, { pos: [0, 0.15, -0.3] }));
+  gun.add(box(0.05, 0.016, 0.06, PARK_DARK, { pos: [0, 0.083, -0.3] }));
+  gun.add(box(0.036, 0.05, 0.008, PARK, { pos: [0, 0.115, -0.3] }));
+  gun.add(box(0.012, 0.018, 0.01, WORN, { pos: [0, 0.145, -0.3] }));
   // backplate, spade grips, butterfly trigger
   gun.add(box(0.13, 0.17, 0.03, PARK_DARK, { pos: [0, -0.005, RZ0 - 0.015] }));
+  const GZ = RZ0 - 0.11; // grip centreline behind the backplate
   for (const s of [-1, 1]) {
-    gun.add(tube([s * 0.045, -0.04, RZ0 - 0.03], [s * 0.075, -0.12, RZ0 - 0.13], 0.016, BAND, 8));
-    gun.add(cyl(0.02, 0.02, 0.012, 8, PARK, { pos: [s * 0.075, -0.12, RZ0 - 0.13], rot: [Math.PI / 2 - 0.6, 0, 0] }));
+    gun.add(box(0.016, 0.022, 0.1, PARK, { pos: [s * 0.075, 0.035, RZ0 - 0.07] })); // upper arm
+    gun.add(box(0.016, 0.022, 0.1, PARK, { pos: [s * 0.075, -0.075, RZ0 - 0.07] })); // lower arm
+    gun.add(cyl(0.017, 0.017, 0.1, 10, BAND, { pos: [s * 0.075, -0.02, GZ] })); // grip
+    for (const y of [0.035, -0.075]) gun.add(cyl(0.02, 0.02, 0.016, 10, PARK_DARK, { pos: [s * 0.075, y, GZ] }));
   }
-  gun.add(box(0.06, 0.012, 0.03, WORN, { pos: [0, -0.02, RZ0 - 0.05] }));
+  // butterfly trigger, pivoting from the backplate between the grips
+  gun.add(box(0.016, 0.03, 0.04, PARK_DARK, { pos: [0, -0.02, RZ0 - 0.04] }));
+  for (const s of [-1, 1]) gun.add(box(0.045, 0.028, 0.006, WORN, { pos: [s * 0.024, -0.02, RZ0 - 0.065], rot: [0, s * 0.35, 0] }));
   // cocking handle on the side opposite the feed
   const ch = -feedSide;
   gun.add(box(0.01, 0.02, 0.2, PARK_DARK, { pos: [ch * 0.064, 0.03, -0.15] }));

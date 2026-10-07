@@ -25,7 +25,7 @@ export function buildCautionPlow() {
     half.add(box(1.04, 0.06, 0.07, dark, { pos: [s * 0.51, -0.2, 0.19], rot: [TILT, 0, 0] }));
     half.add(box(0.05, 0.5, 0.18, metal, { pos: [s * 1.01, 0.05, 0.06], rot: [TILT, 0, 0] }));
     // back ribs
-    for (const x of [0.2, 0.5, 0.8]) half.add(box(0.035, 0.44, 0.12, metal, { pos: [s * x, 0.05, 0.02], rot: [TILT, 0, 0] }));
+    for (const x of [0.2, 0.5, 0.8]) half.add(box(0.035, 0.44, 0.1, metal, { pos: [s * x, 0.05, -0.0], rot: [TILT, 0, 0] })); // stays behind the blade
     // spikes along the bottom edge
     for (let i = 0; i < 6; i++) {
       const x = s * (0.08 + i * 0.17);
@@ -40,7 +40,7 @@ export function buildCautionPlow() {
   // mounting arms back to the chassis
   for (const s of [-1, 1]) {
     g.add(box(0.07, 0.08, 0.4, metal, { pos: [s * 0.45, -0.02, -0.1] }));
-    g.add(tube([s * 0.45, 0.02, 0.05], [s * 0.6, 0.22, 0.12], 0.025, metal, 6));
+    g.add(tube([s * 0.45, 0.02, -0.05], [s * 0.6, 0.2, -0.04], 0.025, metal, 6));
     g.add(cyl(0.03, 0.03, 0.1, 8, dark, { pos: [s * 0.45, -0.02, 0.06], rot: [0, 0, Math.PI / 2] }));
   }
   return g;

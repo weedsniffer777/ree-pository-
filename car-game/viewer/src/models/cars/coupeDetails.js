@@ -128,7 +128,13 @@ export function addDetails(car, { skinMats, dloRear }) {
   for (const s of [-1, 1]) {
     car.add(tube([s * 0.86, 0.84, 0.78], [s * 0.98, 0.9, 0.74], 0.012, metal, 6));
     car.add(box(0.14, 0.08, 0.05, metal, { pos: [s * 1.02, 0.92, 0.74], rot: [0.1, s * 0.25, 0] }));
-    car.add(box(0.03, 0.022, 0.12, dark, { pos: [s * (sideX(-0.25, 0.82) + 0.005), 0.82, -0.25] }));
+    {
+      const hx = sideX(-0.2, 0.7) + 0.03; // door plate surface
+      car.add(box(0.006, 0.05, 0.18, dark, { pos: [s * (hx + 0.003), 0.7, -0.2] }));
+      for (const z of [-0.13, -0.27]) car.add(box(0.03, 0.022, 0.022, metal, { pos: [s * (hx + 0.018), 0.7, z] }));
+      car.add(cyl(0.01, 0.01, 0.17, 8, steelMaterial(0x5d6369), { pos: [s * (hx + 0.034), 0.7, -0.2], rot: [Math.PI / 2, 0, 0] }));
+      for (const z of [-0.115, -0.285]) car.add(cyl(0.007, 0.007, 0.004, 6, steelMaterial(), { pos: [s * (hx + 0.007), 0.7, z], rot: [0, 0, Math.PI / 2] }));
+    }
     const heat = new THREE.MeshStandardMaterial({ color: 0x4a423b, roughness: 0.6, metalness: 0.6 });
     for (const [dy, dx, zEnd] of [[0, 0, -0.78], [0.075, 0.012, -0.6]]) {
       const path = new THREE.CatmullRomCurve3([
@@ -163,10 +169,25 @@ export function addDetails(car, { skinMats, dloRear }) {
   const bumper = extrudeProfile([[-2.14, 0.2], [-2.32, 0.23], [-2.38, 0.33], [-2.36, 0.47], [-2.2, 0.5], [-2.14, 0.48]], 1.88);
   car.add(mesh(projectAndGroup(toCreasedNormals(bumper, deg(25)), [UV.side, UV.top, UV.front, UV.back]), skinMats));
   for (const x of [-0.78, -0.3, 0.3, 0.78]) car.add(box(0.03, 0.27, 0.2, metal, { pos: [x, 0.36, -2.33] }));
-  car.add(mesh(new THREE.TorusGeometry(0.04, 0.012, 6, 12), steelMaterial(), { pos: [0, 0.25, -2.39] }));
+  {
+    const shackle = new THREE.MeshStandardMaterial({ color: 0xb8962a, roughness: 0.65, metalness: 0.4 });
+    car.add(box(0.16, 0.05, 0.1, metal, { pos: [0, 0.215, -2.33] }));
+    for (const x of [-0.035, 0.035]) car.add(box(0.016, 0.07, 0.08, metal, { pos: [x, 0.17, -2.38] }));
+    car.add(cyl(0.011, 0.011, 0.11, 8, steelMaterial(), { pos: [0, 0.16, -2.39], rot: [0, 0, Math.PI / 2] }));
+    for (const x of [-0.055, 0.055]) car.add(cyl(0.016, 0.016, 0.012, 6, steelMaterial(), { pos: [x, 0.16, -2.39], rot: [0, 0, Math.PI / 2] }));
+    const d = mesh(new THREE.TorusGeometry(0.038, 0.011, 8, 16, Math.PI), shackle, { pos: [0, 0.16, -2.39] });
+    d.rotation.set(0, Math.PI / 2, -Math.PI / 2 - 0.5); // hangs back and down from the pin
+    car.add(d);
+  }
   for (const s of [-1, 1]) {
     for (const x of [0.36, 0.46]) {
-      car.add(cyl(0.036, 0.036, 0.2, 10, steelMaterial(0x6a625b), { pos: [s * x, 0.175, -2.3], rot: [Math.PI / 2, 0, 0] }));
+      const pipe = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(s * (x - 0.08), 0.3, -1.78), new THREE.Vector3(s * (x - 0.03), 0.22, -1.98),
+        new THREE.Vector3(s * x, 0.18, -2.18), new THREE.Vector3(s * x, 0.175, -2.4),
+      ]);
+      car.add(mesh(new THREE.TubeGeometry(pipe, 20, 0.036, 10), steelMaterial(0x6a625b)));
+      car.add(mesh(new THREE.TorusGeometry(0.036, 0.006, 4, 12), steelMaterial(0x6a625b), { pos: [s * x, 0.175, -2.4] }));
+      car.add(box(0.05, 0.06, 0.02, metal, { pos: [s * x, 0.215, -2.12] })); // hanger
       car.add(cyl(0.028, 0.028, 0.005, 10, darkMaterial(0x050505), { pos: [s * x, 0.175, -2.401], rot: [Math.PI / 2, 0, 0] }));
     }
   }
@@ -179,7 +200,7 @@ export function addDetails(car, { skinMats, dloRear }) {
   car.add(socket('EXHAUST_R', [-0.41, 0.175, -2.41], [0, Math.PI, 0]));
 
   // =================== Attachments: dozer, twin Brownings + belts ===================
-  const front = socket('FRONT', [0, 0.36, 2.28]);
+  const front = socket('FRONT', [0, 0.36, 2.42]);
   car.add(front);
   const plow = buildCautionPlow();
   plow.userData.attachment = true;
@@ -199,11 +220,17 @@ export function addDetails(car, { skinMats, dloRear }) {
     const chuteZ = 1.0;
     const chute = new THREE.Group();
     chute.userData.attachment = true;
-    chute.add(box(0.15, 0.08, 0.13, metal, { pos: [s * 0.36, topY(chuteZ, 0.36) + 0.04, chuteZ] }));
-    chute.add(box(0.11, 0.02, 0.04, darkMaterial(0x060606), { pos: [s * 0.36, topY(chuteZ, 0.36) + 0.08, chuteZ + 0.04] }));
+    const cy = topY(chuteZ, 0.36);
+    const cx = s * 0.36;
+    // hollow armored chute, open on top, dark inside
+    chute.add(box(0.14, 0.012, 0.12, darkMaterial(0x060606), { pos: [cx, cy + 0.01, chuteZ] }));
+    for (const dx of [-0.065, 0.065]) chute.add(box(0.012, 0.1, 0.12, metal, { pos: [cx + dx, cy + 0.05, chuteZ] }));
+    for (const dz of [-0.055, 0.055]) chute.add(box(0.142, 0.1, 0.012, metal, { pos: [cx, cy + 0.05, chuteZ + dz] }));
+    chute.add(mesh(new THREE.TorusGeometry(0.075, 0.006, 4, 4).rotateX(Math.PI / 2).rotateY(Math.PI / 4), weld, { pos: [cx, cy + 0.1, chuteZ] }));
     chute.add(buildAmmoBelt([
-      f, new THREE.Vector3(s * 0.52, f.y - 0.06, f.z - 0.02), new THREE.Vector3(s * 0.45, topY(1.3, 0.45) + 0.08, 1.3),
-      new THREE.Vector3(s * 0.39, topY(1.15, 0.39) + 0.07, 1.14), new THREE.Vector3(s * 0.36, topY(chuteZ, 0.36) + 0.08, chuteZ + 0.05),
+      f, new THREE.Vector3(s * 0.52, f.y - 0.06, f.z - 0.02), new THREE.Vector3(s * 0.45, topY(1.3, 0.45) + 0.12, 1.28),
+      new THREE.Vector3(s * 0.38, cy + 0.2, 1.06), new THREE.Vector3(cx, cy + 0.12, chuteZ + 0.005),
+      new THREE.Vector3(cx, cy + 0.03, chuteZ),
     ]));
     car.add(chute);
   }

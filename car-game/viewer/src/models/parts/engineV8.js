@@ -125,7 +125,7 @@ export function buildRadiator() {
   const g = new THREE.Group();
   g.add(box(0.66, 0.3, 0.06, CAST, { pos: [0, 0, 0] }));
   for (let i = 0; i < 30; i++) g.add(box(0.004, 0.27, 0.065, ALU_DARK, { pos: [-0.31 + i * 0.0214, 0, 0] }));
-  g.add(box(0.3, 0.06, 0.06, ALU, { pos: [0.12, 0.17, 0] }));
-  g.add(cyl(0.02, 0.02, 0.04, 8, ALU, { pos: [0.22, 0.21, 0] }));
+  g.add(box(0.3, 0.06, 0.085, ALU, { pos: [0.12, 0.18, 0] }));
+  g.add(cyl(0.02, 0.02, 0.04, 8, ALU, { pos: [0.22, 0.225, 0] }));
   return g;
 }

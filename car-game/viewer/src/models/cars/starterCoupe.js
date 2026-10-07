@@ -50,6 +50,15 @@ export function buildStarterCoupe() {
   for (const s of [-1, 1]) {
     for (const z of [0.82, -0.4]) cut(new THREE.BoxGeometry(0.06, 0.62, 0.007), gap, [s * 0.92, 0.55, z]);
   }
+  // rear wheel tubs: the arches open into the cabin tub, so close them off
+  for (const s of [-1, 1]) {
+    const tubMat = darkMaterial(0x111214);
+    tubMat.side = THREE.DoubleSide;
+    const roof = mesh(new THREE.CylinderGeometry(ARCH_R + 0.005, ARCH_R + 0.005, 0.3, 24, 1, true, 0, Math.PI).rotateZ(Math.PI / 2).rotateX(-Math.PI / 2), tubMat);
+    roof.position.set(s * 0.77, AXLE_Y + 0.03, AXLE_R);
+    car.add(roof);
+    car.add(box(0.02, ARCH_R + 0.1, ARCH_R * 2 + 0.02, tubMat, { pos: [s * 0.625, AXLE_Y + 0.03 + (ARCH_R + 0.1) / 2 - 0.06, AXLE_R] }));
+  }
   const bodyMesh = mesh(project(toCreasedNormals(shell.geometry, deg(25)), [well, interior, gap].map((m) => shell.material.indexOf(m))), [...skinMats, well, interior, gap]);
   bodyMesh.name = 'body';
   car.add(bodyMesh);
@@ -164,15 +173,20 @@ function addInterior(car) {
   g.add(box(0.22, 0.24, 0.9, dash, { pos: [0, FLOOR + 0.12, 0.05] }));
   g.add(cyl(0.012, 0.012, 0.18, 6, cage, { pos: [0, FLOOR + 0.3, 0.1], rot: [0.3, 0, 0] }));
   g.add(mesh(new THREE.SphereGeometry(0.025, 8, 6), dash, { pos: [0, FLOOR + 0.39, 0.13] }));
-  // steering wheel (left-hand drive: driver on +X)
-  g.add(tube([0.37, 0.76, 0.72], [0.37, 0.84, 0.46], 0.022, dash, 8));
-  const wheel = mesh(new THREE.TorusGeometry(0.17, 0.018, 6, 24), dash, { pos: [0.37, 0.86, 0.44] });
-  wheel.rotation.x = -0.9;
-  g.add(wheel);
-  for (let i = 0; i < 3; i++) {
-    const a = (i / 3) * Math.PI * 2 + Math.PI / 2;
-    const sp = box(0.02, 0.16, 0.015, dash, { pos: [0.37 + Math.cos(a) * 0.08, 0.86 + Math.sin(a) * 0.08 * Math.cos(0.9), 0.44 - Math.sin(a) * 0.08 * Math.sin(0.9)] });
-    g.add(sp);
+  // steering wheel (left-hand drive: driver on +X), square to the column
+  const colA = new THREE.Vector3(0.37, 0.74, 0.74);
+  const colB = new THREE.Vector3(0.37, 0.86, 0.46);
+  g.add(tube(colA.toArray(), colB.toArray(), 0.022, dash, 8));
+  const sw = new THREE.Group();
+  sw.position.copy(colB);
+  sw.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), colB.clone().sub(colA).normalize());
+  g.add(sw);
+  sw.add(mesh(new THREE.TorusGeometry(0.17, 0.018, 8, 28), dash));
+  sw.add(cyl(0.04, 0.045, 0.04, 12, dash, { rot: [Math.PI / 2, 0, 0] }));
+  for (const a of [Math.PI / 2 + Math.PI, Math.PI / 6 + Math.PI, Math.PI * 5 / 6 + Math.PI]) {
+    const sp = box(0.03, 0.15, 0.012, dash, { pos: [Math.cos(a) * 0.1, Math.sin(a) * 0.1, 0] });
+    sp.rotation.z = a - Math.PI / 2;
+    sw.add(sp);
   }
   // inner roll cage
   const hz = -0.88;

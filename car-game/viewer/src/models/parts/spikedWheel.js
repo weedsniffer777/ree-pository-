@@ -22,11 +22,11 @@ export function buildSpikedWheel(side = 1, { radius = 0.332 } = {}) {
     for (const row of [-1, 1]) {
       const a = (i / 26) * Math.PI * 2 + (row > 0 ? Math.PI / 26 : 0);
       const b = box(0.1, 0.018, 0.06, RUBBER, { pos: [row * 0.06, Math.cos(a) * S(0.338), Math.sin(a) * S(0.338)] });
-      b.rotation.x = -a;
+      b.rotation.x = a;
       g.add(b);
       if (i % 2 === 0) {
         const l = box(0.03, 0.03, 0.05, RUBBER, { pos: [row * 0.122, Math.cos(a) * S(0.322), Math.sin(a) * S(0.322)] });
-        l.rotation.x = -a;
+        l.rotation.x = a;
         g.add(l);
       }
     }
@@ -52,7 +52,7 @@ export function buildSpikedWheel(side = 1, { radius = 0.332 } = {}) {
   for (let i = 0; i < 6; i++) {
     const a = (i / 6) * Math.PI * 2;
     const sp = box(0.035, S(0.1), 0.045, RIM, { pos: [side * 0.035, Math.cos(a) * S(0.085), Math.sin(a) * S(0.085)] });
-    sp.rotation.x = -a;
+    sp.rotation.x = a;
     g.add(sp);
   }
   g.add(cyl(S(0.065), S(0.075), 0.05, 12, RIM, { pos: [side * 0.05, 0, 0], rot: [0, 0, -side * Math.PI / 2] }));
