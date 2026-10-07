@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Car Model Viewer</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #1b1d22; font: 13px/1.4 system-ui, sans-serif; color: #e8e8ea; }
+    #app { position: fixed; inset: 0; }
+    #panel { position: fixed; top: 12px; left: 12px; width: 220px; padding: 12px; background: rgba(20, 22, 28, 0.86); border-radius: 10px; display: flex; flex-direction: column; gap: 10px; }
+    #panel h1 { font-size: 14px; margin: 0; }
+    #panel section { display: flex; flex-direction: column; gap: 4px; }
+    #panel .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #9aa0ab; }
+    #panel button, #panel select { background: #2c303a; color: #e8e8ea; border: 1px solid #3d4250; border-radius: 6px; padding: 4px 6px; font: inherit; cursor: pointer; }
+    #panel button.active { background: #f2c21b; color: #1c1c22; border-color: #f2c21b; }
+    .row { display: flex; flex-wrap: wrap; gap: 4px; }
+    #stats { font-variant-numeric: tabular-nums; color: #c8ccd4; }
+    .sock-label { font: 10px/1 ui-monospace, monospace; color: #fff; background: rgba(0, 0, 0, 0.6); padding: 2px 4px; border-radius: 3px; }
+    body.noui #panel, body.noui .sock-label { display: none; }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <div id="panel">
+    <h1>Model Viewer</h1>
+    <section><span class="label">Model</span><select id="model"></select></section>
+    <section><span class="label">Camera</span><div class="row" id="views"></div></section>
+    <section><span class="label">Ground</span><div class="row" id="grounds"></div></section>
+    <section><span class="label">Toggles</span><div class="row" id="toggles"></div></section>
+    <section><span class="label">Stats</span><div id="stats"></div></section>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
