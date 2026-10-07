@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeNoise2D, rng } from './noise.js';
-import { S, LAKE, GAS, ROAD_BEVEL, I_BLOCK_BACK, I_BLOCK_FAR, gasLocal, nearest, openDist, lakeSD } from './track.js';
+import { S, I_FINISH, ROAD_BEVEL, FENCE, SIDE, idxForZ, pointAt, sideDist, nearest } from './track.js';
 import { terrainHeight } from './terrain.js';
 
 // Sonoran-style scatter: creosote bushes, dry grass, saguaros, ocotillo, rocks,
@@ -172,199 +172,97 @@ function instanced(geo, mat, list, shadows = true) {
   return m;
 }
 
-
-// Layered sandstone butte: talus skirt, 2-4 near-vertical tiers with ledges, flat cap.
-// Built as flat-shaded triangle soup in world space; colours follow the strata.
-function butte(out, cx, cy, cz, R, Hh, seed, spire = false) {
-  const r = rng(seed);
-  const sides = spire ? 6 + Math.floor(r() * 2) : 7 + Math.floor(r() * 4);
-  const ang = [], rad = [];
-  for (let k = 0; k < sides; k++) { ang.push(((k + (r() - 0.5) * 0.5) / sides) * Math.PI * 2); rad.push(0.72 + r() * 0.42); }
-  const ring = (y, s, jit = 0) => ang.map((a, k) => [cx + Math.cos(a) * R * s * rad[k] * (1 + (r() - 0.5) * jit), cy + y, cz + Math.sin(a) * R * s * rad[k] * (1 + (r() - 0.5) * jit)]);
-  const pal = ['#b4603c', '#cf8a5c', '#9b4a2f', '#ddb07c', '#b8673f', '#8b442c'].map((h) => new THREE.Color(h));
-  const cap = new THREE.Color('#d9a26c');
-  const talus = new THREE.Color('#bf7b4f');
-  const tri = (a, b, c, col) => {
-    out.pos.push(...a, ...b, ...c);
-    for (let k = 0; k < 3; k++) out.col.push(col.r, col.g, col.b);
-  };
-  const band = (lo, hi, col, shade = 1) => {
-    for (let k = 0; k < sides; k++) {
-      const j = (k + 1) % sides;
-      const c = col.clone().multiplyScalar(shade * (0.92 + r() * 0.12));
-      tri(lo[k], hi[k], hi[j], c);
-      tri(lo[k], hi[j], lo[j], c);
-    }
-  };
-  const base = -4;
-  const footH = spire ? 0.12 * Hh : 0.24 * Hh;
-  let lo = ring(base, spire ? 1.5 : 1.75, 0.15);
-  let hi = ring(footH, 1.04, 0.05);
-  band(lo, hi, talus);
-  const tiers = spire ? 3 : 2 + Math.floor(r() * 3);
-  let y = footH, s = 1.0;
-  for (let t = 0; t < tiers; t++) {
-    const h = ((Hh - footH) / tiers) * (0.8 + r() * 0.4);
-    const sub = 2 + Math.floor(r() * 2);
-    for (let b = 0; b < sub; b++) {
-      const y1 = y + h / sub;
-      const loR = ring(y, s), hiR = ring(y1, s * (0.97 - r() * 0.02));
-      band(loR, hiR, pal[Math.floor(r() * pal.length)]);
-      y = y1;
-      s *= 0.97;
-    }
-    if (t < tiers - 1) { // ledge stepping inward
-      const inset = spire ? 0.82 : 0.78 + r() * 0.12;
-      const a = ring(y, s), b = ring(y, s * inset);
-      band(a, b, cap, 1.05);
-      // short talus slope on the ledge
-      const c2 = ring(y + h * 0.08, s * inset * 0.98);
-      band(b, c2, talus, 0.95);
-      y += h * 0.08;
-      s *= inset * 0.98;
-    }
-  }
-  const top = ring(y, s);
-  const centre = [cx, cy + y + (spire ? 0.6 : 0.2), cz];
-  for (let k = 0; k < sides; k++) tri(top[k], centre, top[(k + 1) % sides], cap);
-}
-
 export function buildProps(exclusions = []) {
   const group = new THREE.Group();
   group.name = 'props';
   const colliders = [];
   const r = rng(2026);
-  const BX = 520, Z0 = -260, Z1 = 820;
+  const I0 = idxForZ(-260);
+  const I1 = Math.min(S.count - 1, I_FINISH + 150);
 
-  const info = (x, z) => {
-    const n = nearest(x, z);
-    const D = openDist(x, z, n);
-    return { n, D, lake: lakeSD(x, z) };
+  const sample = (latMax, power, latMin = ROAD_BEVEL + 1.4) => {
+    const i = I0 + Math.floor(r() * (I1 - I0));
+    const side = r() < 0.5 ? -1 : 1;
+    const lat = side * (latMin + Math.pow(r(), power) * (latMax - latMin));
+    const p = pointAt(i, lat);
+    return { x: p.x + (r() - 0.5) * 2, z: p.z + (r() - 0.5) * 2, i };
   };
-  const blocked = (x, z, n, pad) => {
-    if (Math.abs(n.lat) < ROAD_BEVEL + 1.0 + pad) return true;
-    const g = gasLocal(x, z);
-    if (g.lat > 3 && g.lat < GAS.latOut + 3 && Math.abs(g.along) < GAS.halfLen + 5) return true;
-    for (const e of exclusions) if (Math.hypot(x - e.x, z - e.z) < e.r + pad) return true;
+  const blocked = (pt, pad = 0, roadPad = 1.2) => {
+    if (sideDist(pt.x, pt.z) < SIDE.halfW + 2.5 + pad) return true;
+    const n = nearest(pt.x, pt.z, pt.i);
+    if (Math.abs(n.lat) < ROAD_BEVEL + roadPad + pad) return true;
+    pt.lat = n.lat;
+    for (const e of exclusions) if (Math.hypot(pt.x - e.x, pt.z - e.z) < e.r + pad) return true;
     return false;
   };
-  // density(D, lake) -> keep probability
-  const scatter = (count, box, density, pad = 0) => {
+  const scatter = (count, latMax, power, opts = {}) => {
     const out = [];
-    for (let k = 0; k < count * 6 && out.length < count; k++) {
-      const x = (r() - 0.5) * 2 * box.x, z = box.z0 + r() * (box.z1 - box.z0);
-      const it = info(x, z);
-      if (blocked(x, z, it.n, pad)) continue;
-      if (r() > density(it.D, it.lake, it.n)) continue;
-      out.push({ x, z, y: terrainHeight(x, z), D: it.D, lake: it.lake });
+    for (let k = 0; k < count * 3 && out.length < count; k++) {
+      const pt = sample(latMax, power, opts.latMin);
+      if (blocked(pt, opts.pad ?? 0, opts.roadPad)) continue;
+      if (opts.outside && Math.abs(pt.lat) < FENCE + 1.5) continue;
+      if (opts.inside && Math.abs(pt.lat) > FENCE - 1.5) continue;
+      pt.y = terrainHeight(pt.x, pt.z);
+      out.push(pt);
     }
     return out;
   };
-  const WIDE = { x: BX, z0: Z0, z1: Z1 };
-  const NEAR = { x: 230, z0: -120, z1: 560 };
-  const edgeLoving = (D, lake) => (lake < -10 ? 0.025 : D < 0 ? 0.55 : D < 50 ? 1 : 0.45);
 
   // Creosote
-  const bushes = scatter(2300, WIDE, edgeLoving).map((p) => ({ ...p, y: p.y - 0.08, ry: r() * 6.3, s: 0.55 + r() * 0.75, sy: 0.6 + r() * 0.6 }));
+  const bushes = scatter(2600, 230, 2.2).map((p) => ({ ...p, y: p.y - 0.08, ry: r() * 6.3, s: 0.55 + r() * 0.75, sy: 0.6 + r() * 0.6 }));
   bushes.forEach((b) => { b.sx = b.s; b.sz = b.s * (0.8 + r() * 0.4); });
   group.add(instanced(bushGeo(), vcMat(), bushes));
 
-  // Dry grass, hugging the highway and the shoreline
-  const tufts = scatter(4800, NEAR, (D, lake) => (lake < -14 ? 0.02 : D < 0 ? 0.8 : D < 25 ? 0.9 : 0.25), -0.7)
-    .map((p) => ({ ...p, ry: r() * 6.3, s: 0.7 + r() * 0.9 }));
+  // Dry grass tufts, denser near the road
+  const tufts = scatter(5200, 70, 1.8, { roadPad: 0.3 }).map((p) => ({ ...p, ry: r() * 6.3, s: 0.7 + r() * 0.9 }));
   group.add(instanced(grassGeo(), vcMat({ flatShading: false, side: THREE.DoubleSide }), tufts, false));
 
-  // Saguaros: on the benches outside, a few on the drivable flats as obstacles
+  // Saguaros: mostly beyond the fences; a few inside the corridor are solid obstacles
   const sagMat = vcMat({ flatShading: false });
   const sag = [[], [], []];
-  for (const p of scatter(220, WIDE, (D) => (D < 4 ? 0 : D < 80 ? 0.9 : 0.4), 2)) sag[Math.floor(r() * 3)].push({ ...p, y: p.y - 0.1, ry: r() * 6.3, s: 0.75 + r() * 0.55 });
-  for (const p of scatter(18, NEAR, (D, lake) => (D < -4 && lake > -40 ? 1 : 0), 3)) {
+  for (const p of scatter(240, 260, 1.6, { outside: true, pad: 2 })) sag[Math.floor(r() * 3)].push({ ...p, y: p.y - 0.1, ry: r() * 6.3, s: 0.75 + r() * 0.55 });
+  for (const p of scatter(16, FENCE - 2, 1, { latMin: 9, inside: true, pad: 2 })) {
     sag[1 + Math.floor(r() * 2)].push({ ...p, y: p.y - 0.1, ry: r() * 6.3, s: 0.8 + r() * 0.3 });
     colliders.push({ type: 'circle', x: p.x, z: p.z, r: 0.42 });
   }
   sag.forEach((list, k) => group.add(instanced(saguaroGeo(k, 20 + k), sagMat, list)));
 
   // Ocotillo
-  const oco = scatter(150, WIDE, (D) => (D < 2 ? 0.15 : D < 70 ? 1 : 0.3), 1).map((p) => ({ ...p, ry: r() * 6.3, s: 0.7 + r() * 0.5 }));
+  const oco = scatter(150, 200, 1.6, { latMin: 10, pad: 1 }).map((p) => ({ ...p, ry: r() * 6.3, s: 0.7 + r() * 0.5 }));
   group.add(instanced(ocotilloGeo(), vcMat({ flatShading: false }), oco));
-  for (const p of oco) if (p.D < 0) colliders.push({ type: 'circle', x: p.x, z: p.z, r: 0.35 });
+  for (const p of oco) if (Math.abs(p.lat) < FENCE) colliders.push({ type: 'circle', x: p.x, z: p.z, r: 0.35 });
 
-  // Rocks
-  const pebbles = scatter(1800, NEAR, (D, lake) => (lake < -12 ? 0.08 : 1), -0.6).map((p) => ({ ...p, y: p.y - 0.05, ry: r() * 6.3, rx: (r() - 0.5) * 0.4, s: 0.12 + r() * 0.3 }));
+  // Rocks: pebbles everywhere, medium rocks and boulders outside the corridor
+  const pebbles = scatter(1700, 120, 1.7, { roadPad: 0.4 }).map((p) => ({ ...p, y: p.y - 0.05, ry: r() * 6.3, rx: (r() - 0.5) * 0.4, s: 0.12 + r() * 0.3 }));
   group.add(instanced(rockGeo(0, 31, 0.25), vcMat(), pebbles, false));
-  const mids = scatter(520, WIDE, (D) => (D < 3 ? 0 : 1)).map((p) => ({ ...p, y: p.y - 0.2, ry: r() * 6.3, rx: (r() - 0.5) * 0.3, s: 0.6 + r() * 1.6 }));
+  const mids = scatter(480, 220, 1.4, { outside: true }).map((p) => ({ ...p, y: p.y - 0.2, ry: r() * 6.3, rx: (r() - 0.5) * 0.3, s: 0.6 + r() * 1.6 }));
+  const boulders = scatter(190, 280, 1.2, { latMin: 40, outside: true, pad: 3 }).map((p) => ({ ...p, y: p.y - 0.8, ry: r() * 6.3, rx: (r() - 0.5) * 0.3, s: 2.5 + r() * 5 }));
+
   group.add(instanced(rockGeo(1, 41, 0.3), vcMat(), mids));
+  group.add(instanced(rockGeo(1, 47, 0.35), vcMat(), boulders));
 
-  // Geometric outcrops on the lakebed: cover and things to slide around
-  const crag = new THREE.DodecahedronGeometry(1, 0);
-  crag.scale(1, 0.75, 1);
-  const cragGeo = colorize(crag.toNonIndexed(), (c, x, y) => c.set(y > 0.3 ? '#c98a5c' : '#a65a38'));
-  const outcrops = [];
-  for (const [cx, cz] of [[-62, 300], [58, 372], [-40, 410], [70, 262]]) {
-    const n = 3 + Math.floor(r() * 3);
-    for (let k = 0; k < n; k++) {
-      const x = cx + (r() - 0.5) * 12, z = cz + (r() - 0.5) * 12, s = 1.6 + r() * 2.6;
-      outcrops.push({ x, y: terrainHeight(x, z) - s * 0.25, z, ry: r() * 6.3, rx: (r() - 0.5) * 0.4, rz: (r() - 0.5) * 0.4, s });
-      colliders.push({ type: 'circle', x, z, r: s * 0.85 });
-    }
-  }
-  group.add(instanced(cragGeo, vcMat(), outcrops));
-
-  // Sandstone buttes and spires ringing the arena
-  const soup = { pos: [], col: [] };
-  const placed = [];
-  const tryButte = (minD, maxD, R0, R1, H0, H1, spire, tries) => {
-    for (let k = 0; k < tries; k++) {
-      const a = r() * Math.PI * 2, dist = LAKE.hx + 20 + r() * 380;
-      const x = LAKE.cx + Math.cos(a) * dist * 1.1, z = LAKE.cz + Math.sin(a) * dist;
-      const n = nearest(x, z);
-      const D = openDist(x, z, n);
-      const R = R0 + r() * (R1 - R0);
-      if (D < minD + R || D > maxD) continue;
-      if (Math.abs(n.lat) < R * 1.8 + 14) continue; // keep the highway cuts clear
-      if (n.i < I_BLOCK_BACK - 60 && Math.abs(n.lat) < 80) continue;
-      if (placed.some((p) => Math.hypot(p.x - x, p.z - z) < (p.R + R) * 1.6)) continue;
-      if (exclusions.some((e) => Math.hypot(e.x - x, e.z - z) < e.r + R * 1.8)) continue;
-      let gy = Infinity;
-      for (let q = 0; q < 8; q++) { const qa = (q / 8) * Math.PI * 2; gy = Math.min(gy, terrainHeight(x + Math.cos(qa) * R, z + Math.sin(qa) * R)); }
-      butte(soup, x, gy, z, R, H0 + r() * (H1 - H0), Math.floor(r() * 1e6), spire);
-      placed.push({ x, z, R });
-      return;
-    }
-  };
-  for (let k = 0; k < 14; k++) tryButte(14, 160, 14, 38, 22, 52, false, 60);
-  for (let k = 0; k < 9; k++) tryButte(8, 120, 3.5, 7, 14, 30, true, 60);
-  for (let k = 0; k < 8; k++) tryButte(160, 420, 40, 80, 40, 80, false, 60);
-  const bg = new THREE.BufferGeometry();
-  bg.setAttribute('position', new THREE.Float32BufferAttribute(soup.pos, 3));
-  bg.setAttribute('color', new THREE.Float32BufferAttribute(soup.col, 3));
-  bg.computeVertexNormals();
-  const buttes = new THREE.Mesh(bg, vcMat({ side: THREE.DoubleSide }));
-  buttes.castShadow = buttes.receiveShadow = true;
-  group.add(buttes);
-  for (const p of placed) if (openDist(p.x, p.z) < p.R + 4) colliders.push({ type: 'circle', x: p.x, z: p.z, r: p.R * 0.9 });
-
-  // Distant mesas on the horizon
+  // Mesas on the horizon
   const mesas = [];
   const mr = rng(88);
-  const clear = (x, z, rad) => {
-    for (let i = 0; i < S.count; i += 20) if (Math.hypot(x - S.px[i], z - S.pz[i]) < rad * 1.8 + 420) return false;
-    return Math.hypot(x - LAKE.cx, z - LAKE.cz) > rad * 1.8 + 520;
+  const clearOfRoute = (x, z, rad) => {
+    for (let i = 0; i < S.count; i += 20) if (Math.hypot(x - S.px[i], z - S.pz[i]) < rad * 1.8 + 380) return false;
+    return true;
   };
-  for (let tries = 0; mesas.length < 14 && tries < 300; tries++) {
+  for (let k = 0, tries = 0; mesas.length < 14 && tries < 200; tries++) {
     const a = mr() * Math.PI * 2;
-    const dist = 750 + mr() * 500;
-    const x = LAKE.cx + Math.cos(a) * dist, z = LAKE.cz + Math.sin(a) * dist * 1.1;
+    const dist = 700 + mr() * 500;
+    const x = Math.cos(a) * dist, z = 780 + Math.sin(a) * dist * 1.1;
     const rad = 70 + mr() * 120, h = 45 + mr() * 70;
-    if (!clear(x, z, rad)) continue;
+    if (!clearOfRoute(x, z, rad)) continue;
+    k++;
     mesas.push({ x, y: terrainHeight(x, z) - 12, z, sx: rad * (0.8 + mr() * 0.6), sy: h, sz: rad, ry: mr() * 6.3 });
   }
   group.add(instanced(mesaGeo(5), vcMat(), mesas, false));
 
+  // Far ground disc so the horizon never shows the terrain's edge
   const disc = new THREE.Mesh(new THREE.CircleGeometry(4000, 64).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0xd49a62, roughness: 1 }));
-  disc.position.set(0, -14, 330);
+  disc.position.set(0, -14, 800);
   group.add(disc);
 
-  void I_BLOCK_FAR;
   return { group, colliders };
 }

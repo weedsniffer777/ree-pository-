@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { S, STEP, I_END, I_BLOCK_BACK, I_LAKE_IN, ROAD_HALF, ROAD_BEVEL, LANE, RAILS, RAIL_LAT, GAS, pointAt } from './track.js';
+import { S, STEP, I_END, I_FINISH, I_MERGE, ROAD_HALF, ROAD_BEVEL, LANE, RAILS, RAIL_LAT, SIDE, pointAt } from './track.js';
+import { rng } from './noise.js';
 import { terrainHeight } from './terrain.js';
 import { smoothstep } from './noise.js';
 
@@ -24,7 +25,7 @@ export function buildRoad() {
   const group = new THREE.Group();
   group.name = 'road';
 
-  const rows = I_END + 1;
+  const rows = Math.min(I_END, I_FINISH + 75) + 1; // asphalt stops just past the finish
   const m = LATS.length;
   const pos = new Float32Array(rows * m * 3);
   const uv = new Float32Array(rows * m * 2);
@@ -66,10 +67,10 @@ export function buildRoad() {
 
   // Delineators: white reflectors on the right, amber on the left.
   const dPosts = [], dWhite = [], dAmber = [];
-  for (let i = I_BLOCK_BACK + 10; i < I_LAKE_IN - 10; i += Math.round(40 / STEP)) {
+  for (let i = 40; i < I_FINISH - 20; i += Math.round(50 / STEP)) {
     for (const side of [-1, 1]) {
       if (RAILS.some((r) => r.side === side && i >= r.i0 - 8 && i <= r.i1 + 8)) continue;
-      if (side === 1 && Math.abs(i * STEP - GAS.s) < GAS.halfLen + 10) continue;
+      if (side === 1 && Math.abs(i - I_MERGE) * STEP < 40) continue;
       const p = pointAt(i, side * (ROAD_BEVEL + 1.1));
       const y = terrainHeight(p.x, p.z);
       dPosts.push({ x: p.x, y: y + 0.55, z: p.z, yaw: p.yaw });
@@ -80,6 +81,7 @@ export function buildRoad() {
   group.add(instances(new THREE.BoxGeometry(0.09, 1.1, 0.04), new THREE.MeshStandardMaterial({ color: 0xe9e6de, roughness: 0.6 }), dPosts));
   group.add(instances(new THREE.BoxGeometry(0.07, 0.16, 0.012), new THREE.MeshStandardMaterial({ color: 0xf2f2f2, emissive: 0x777777, roughness: 0.2, metalness: 0.4 }), dWhite));
   group.add(instances(new THREE.BoxGeometry(0.07, 0.16, 0.012), new THREE.MeshStandardMaterial({ color: 0xf2a21b, emissive: 0x6b3d00, roughness: 0.2, metalness: 0.4 }), dAmber));
+  group.add(sideRoad());
   return group;
 }
 
@@ -327,4 +329,57 @@ function paintRoad() {
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 16;
   return t;
+}
+
+// Dirt side road ribbon draped over the terrain, fading into the highway shoulder.
+function sideRoad() {
+  const n = SIDE.count;
+  const lats = [-SIDE.halfW - 1.2, -SIDE.halfW, 0, SIDE.halfW, SIDE.halfW + 1.2];
+  const pos = [], uv = [], col = [], idx = [];
+  let along = 0;
+  for (let i = 0; i < n; i++) {
+    const a = Math.max(0, i - 1), b = Math.min(n - 1, i + 1);
+    let tx = SIDE.px[b] - SIDE.px[a], tz = SIDE.pz[b] - SIDE.pz[a];
+    const l = Math.hypot(tx, tz); tx /= l; tz /= l;
+    if (i > 0) along += Math.hypot(SIDE.px[i] - SIDE.px[i - 1], SIDE.pz[i] - SIDE.pz[i - 1]);
+    const fade = Math.min(1, (n - 1 - i) / 6);
+    lats.forEach((lat, j) => {
+      const x = SIDE.px[i] - tz * lat, z = SIDE.pz[i] + tx * lat;
+      pos.push(x, terrainHeight(x, z) + 0.05 + (j === 0 || j === 4 ? -0.04 : 0), z);
+      uv.push(j / 4, along / 24);
+      col.push(1, 1, 1, (j === 0 || j === 4 ? 0 : 1) * (0.3 + 0.7 * fade));
+    });
+  }
+  for (let i = 0; i < n - 1; i++) for (let j = 0; j < 4; j++) {
+    const a = i * 5 + j, b = a + 1, c = a + 5, d = c + 1;
+    idx.push(a, b, c, b, d, c);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  const tex = (() => {
+    const c = document.createElement('canvas');
+    c.width = 256; c.height = 1024;
+    const g = c.getContext('2d');
+    const r = rng(19);
+    g.fillStyle = '#b48c62'; g.fillRect(0, 0, 256, 1024);
+    for (let i = 0; i < 30000; i++) { const v = r(); g.fillStyle = v < 0.5 ? `rgba(90,66,44,${r() * 0.25})` : `rgba(230,200,160,${r() * 0.2})`; g.fillRect(r() * 256, r() * 1024, 2 + r() * 3, 2 + r() * 3); }
+    for (const x of [78, 178]) for (let y = 0; y < 1024; y += 3) { g.fillStyle = `rgba(80,58,38,${0.12 + r() * 0.12})`; g.fillRect(x - 14 + (r() - 0.5) * 6, y, 28, 4); }
+    for (let i = 0; i < 40; i++) { g.fillStyle = `rgba(120,96,70,${0.4 + r() * 0.4})`; g.beginPath(); g.ellipse(r() * 256, r() * 1024, 2 + r() * 4, 2 + r() * 3, 0, 0, 7); g.fill(); }
+    const t = new THREE.CanvasTexture(c);
+    t.wrapT = THREE.RepeatWrapping;
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 8;
+    return t;
+  })();
+  const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+    map: tex, vertexColors: true, transparent: true, depthWrite: false, roughness: 1,
+    polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
+  }));
+  m.receiveShadow = true;
+  m.renderOrder = 1;
+  return m;
 }

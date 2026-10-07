@@ -33,6 +33,7 @@ const CSS = `
 #hud .touch .btn { position: absolute; bottom: calc(150px + env(safe-area-inset-bottom, 0px)); width: 84px; height: 84px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.7); background: rgba(20,18,16,0.45); display: grid; place-items: center; font-size: 13px; letter-spacing: 0.1em; }
 #hud .touch .nitroBtn { right: 24px; }
 #hud .touch .brakeBtn { right: 124px; width: 64px; height: 64px; }
+#hud .touch .fireBtn { right: 24px; bottom: calc(250px + env(safe-area-inset-bottom, 0px)); background: rgba(160,30,20,0.5); }
 #hud .touch .btn.down { background: rgba(224,181,42,0.6); }
 @media (max-width: 600px) { #hud .speed { font-size: 46px; } #hud .nitro { width: 140px; } #hud .hint { display: none; } }
 `;
@@ -44,22 +45,18 @@ export function createHud({ touch = false } = {}) {
   const root = document.createElement('div');
   root.id = 'hud';
   root.innerHTML = `
-    <div class="kills">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 10.5a7 7 0 0 1 14 0v3l-2 1.4V18H7v-3.1L5 13.5z" fill="#f2efe8" stroke="#17181a" stroke-width="1.2"/><circle cx="9.3" cy="11.2" r="1.8" fill="#17181a"/><circle cx="14.7" cy="11.2" r="1.8" fill="#17181a"/><path d="M10 18v2M12 18v2M14 18v2" stroke="#17181a" stroke-width="1.2"/></svg>
-      <div><div class="count"><b>0</b><span>/ 60</span></div><div class="klabel">Kills</div></div>
-    </div>
     <div class="pointer" hidden><svg viewBox="0 0 24 24"><path d="M12 2l8 16-8-4-8 4z" fill="#e0b52a" stroke="#17181a" stroke-width="1.5"/></svg><span></span></div>
     <div class="gauge"><div class="speed">0</div><div class="unit">KM/H</div><div class="nitro"><i></i></div></div>
-    <div class="hint"><div><b>WASD</b>Drive</div><div><b>Shift</b>Nitro</div><div><b>Space</b>Handbrake</div><div><b>Mouse</b>Drag to look</div><div><b>R</b>Restart</div></div>
-    <div class="banner" hidden><h2>The lakebed</h2><p>Enemies arrive in the next build</p></div>
+    <div class="hint"><div><b>WASD</b>Drive</div><div><b>Shift</b>Nitro</div><div><b>S</b>Brake (turn to drift)</div><div><b>Space</b>Fire</div><div><b>Mouse</b>Drag to look</div><div><b>R</b>Restart</div></div>
+    <div class="banner" hidden><h2>Level complete</h2><p></p><p class="sub">Press R to drive it again</p></div>
     <pre class="debug" hidden></pre>`;
   document.body.append(root);
   const $ = (s) => root.querySelector(s);
-  const t = { steer: 0, nitro: false, brake: false, active: touch };
+  const t = { steer: 0, nitro: false, brake: false, fire: false, active: touch };
   if (touch) {
     const layer = document.createElement('div');
     layer.className = 'touch';
-    layer.innerHTML = '<div class="btn brakeBtn">Brake</div><div class="btn nitroBtn">Nitro</div>';
+    layer.innerHTML = '<div class="btn brakeBtn">Brake</div><div class="btn nitroBtn">Nitro</div><div class="btn fireBtn">Fire</div>';
     root.append(layer);
     const nitroBtn = layer.querySelector('.nitroBtn');
     const brakeBtn = layer.querySelector('.brakeBtn');
@@ -71,6 +68,7 @@ export function createHud({ touch = false } = {}) {
     };
     hold(nitroBtn, 'nitro');
     hold(brakeBtn, 'brake');
+    hold(layer.querySelector('.fireBtn'), 'fire');
     let sid = null, sx = 0;
     layer.addEventListener('pointerdown', (e) => { if (e.target !== layer) return; sid = e.pointerId; sx = e.clientX; layer.setPointerCapture(e.pointerId); });
     layer.addEventListener('pointermove', (e) => { if (e.pointerId === sid) t.steer = Math.max(-1, Math.min(1, (e.clientX - sx) / (innerWidth * 0.12))); });
@@ -82,13 +80,11 @@ export function createHud({ touch = false } = {}) {
   let hintTimer = setTimeout(() => { $('.hint').style.opacity = '0'; }, 9000);
   return {
     touch: t,
-    set({ speed, nitro, boosting, kills = 0, total = 60 }) {
+    set({ speed, nitro, boosting }) {
       $('.speed').textContent = String(Math.round(speed));
       const n = $('.nitro');
       n.firstChild.style.width = `${Math.round(nitro * 100)}%`;
       n.classList.toggle('on', boosting);
-      $('.count b').textContent = String(kills);
-      $('.count span').textContent = `/ ${total}`;
     },
     // screen-space pointer: x, y in px, angle in radians (0 = up), label; pass null to hide
     pointer(p) {
@@ -100,6 +96,11 @@ export function createHud({ touch = false } = {}) {
       el.lastChild.textContent = p.label;
     },
     banner(show) { $('.banner').hidden = !show; },
+    win(seconds) {
+      const b = $('.banner');
+      b.querySelector('p').textContent = `Time ${seconds.toFixed(1)} s`;
+      b.hidden = false;
+    },
     debug(text) { const d = $('.debug'); if (!d.hidden) d.textContent = text; },
     toggleDebug() { const d = $('.debug'); d.hidden = !d.hidden; },
     showHint() { clearTimeout(hintTimer); $('.hint').style.opacity = '1'; hintTimer = setTimeout(() => { $('.hint').style.opacity = '0'; }, 9000); },

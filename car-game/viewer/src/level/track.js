@@ -1,24 +1,18 @@
 import * as THREE from 'three';
-import { makeNoise2D, smoothstep } from './noise.js';
+import { smoothstep } from './noise.js';
 
-// Level 1: a short desert highway that runs into a dry lakebed arena, crosses it and
-// leaves through a rock cut. Both ends are barricaded. Driving direction is +Z.
+// Level 1 route: a desert highway sampled every ~1 m. Driving direction is +Z.
 // "lat" is the signed lateral offset from the centre line, positive = driver's right.
 
 export const ROAD_HALF = 6.1; // asphalt edge (two 3.7 m lanes + paved shoulders)
 export const ROAD_BEVEL = 6.6; // where the crumbling asphalt edge meets the ground
 export const LANE = 3.7; // centre line to edge line
-export const FENCE = 20.5; // ranch fence either side of the intro highway
-export const CORRIDOR = 19.5; // drivable half-width of the intro highway
-export const RAIL_LAT = 7.2;
-export const RAILS = [];
-
-// Lakebed arena: rounded rectangle with a wobbly shoreline
-export const LAKE = { cx: 0, cz: 330, hx: 125, hz: 120, r: 38 };
+export const FENCE = 19.5; // ranch fence either side of the corridor
+export const RAIL_LAT = 7.2; // guardrail line
 
 const CTRL = [
-  [0, -460], [0, -300], [0, -120], [0, 0], [5, 100], [0, 200], [0, 330], [0, 460],
-  [-10, 570], [-26, 700], [-40, 880],
+  [0, -300], [0, -150], [0, 0], [5, 150], [-9, 300], [-27, 450], [-30, 560], [-20, 690],
+  [6, 840], [30, 980], [36, 1110], [18, 1250], [3, 1380], [0, 1480], [0, 1620], [0, 1860],
 ];
 const curve = new THREE.CatmullRomCurve3(CTRL.map(([x, z]) => new THREE.Vector3(x, 0, z)), false, 'centripetal');
 const LEN = curve.getLength();
@@ -55,23 +49,29 @@ export function idxForZ(z) {
 }
 
 export const I_START = idxForZ(0);
-export const I_BLOCK_BACK = idxForZ(-40); // debris wall behind the start
-export const I_LAKE_IN = idxForZ(LAKE.cz - LAKE.hz); // where the highway reaches the lakebed
-export const I_BLOCK_FAR = idxForZ(LAKE.cz + LAKE.hz - 4); // barricade at the far shore
-export const I_GAS = idxForZ(258);
+export const I_MERGE = idxForZ(522); // side road joins from the right here
+export const I_FINISH = idxForZ(1420); // yellow barricade across the road
 export const I_END = N;
 
-// Gentle rolling on the intro, dead flat across the lakebed, climbing through the far cut.
+// Gentle rolling elevation, flattened at the gas station and the arena.
+const rawElev = (s) => 2.4 * Math.sin(s / 210 + 0.6) + 1.2 * Math.sin(s / 83 + 1.9) + 0.45 * Math.sin(s / 37);
+const sMerge = I_MERGE * STEP;
 for (let i = 0; i <= N; i++) {
   const s = i * STEP;
-  let y = 0.7 * Math.sin(s / 90) + 0.35 * Math.sin(s / 41 + 1);
-  y *= 1 - smoothstep(I_LAKE_IN - 70, I_LAKE_IN - 15, i);
-  y += Math.max(0, (i - I_BLOCK_FAR - 25) * STEP) * 0.045;
+  let y = rawElev(s);
+  y += (rawElev(sMerge) - y) * (1 - smoothstep(45, 85, Math.abs(s - sMerge)));
   S.y[i] = y;
 }
 
-export const GAS = { i: I_GAS, s: I_GAS * STEP, y: S.y[I_GAS], halfLen: 34, latIn: 6.4, latOut: 47 };
-export const ARENA = { x: LAKE.cx, z: LAKE.cz, y: 0, r: Math.min(LAKE.hx, LAKE.hz) };
+export const FINISH = { i: I_FINISH, s: I_FINISH * STEP, x: S.px[I_FINISH], z: S.pz[I_FINISH], y: S.y[I_FINISH] };
+export const MERGE = { i: I_MERGE, s: sMerge, y: S.y[I_MERGE] };
+
+// Guardrails on the outside of the three main curves. side: +1 right, -1 left.
+export const RAILS = [
+  { side: -1, i0: idxForZ(240), i1: idxForZ(400) },
+  { side: 1, i0: idxForZ(800), i1: idxForZ(930) },
+  { side: -1, i0: idxForZ(1150), i1: idxForZ(1290) },
+];
 
 export function pointAt(i, lat = 0) {
   i = Math.max(0, Math.min(N, Math.round(i)));
@@ -109,33 +109,37 @@ export function nearest(x, z, hint = -1) {
   return { i: best, s: f * STEP, lat, y: S.y[i0] + (S.y[i1] - S.y[i0]) * (f - i0) };
 }
 
-const shore = makeNoise2D(77);
-// Signed distance to the lakebed shoreline (negative inside).
-export function lakeSD(x, z) {
-  const qx = Math.abs(x - LAKE.cx) - (LAKE.hx - LAKE.r);
-  const qz = Math.abs(z - LAKE.cz) - (LAKE.hz - LAKE.r);
-  const sd = Math.hypot(Math.max(qx, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qz), 0) - LAKE.r;
-  return sd + shore(x / 70, z / 70) * 7;
+// Drivable lateral limits for the car centre at sample i.
+export function corridor() {
+  return { left: FENCE - 1.15, right: FENCE - 1.15 };
 }
 
-// Signed distance to the edge of the drivable area: lakebed plus the intro highway.
-export function openDist(x, z, n = nearest(x, z)) {
-  let d = lakeSD(x, z);
-  if (n.i >= I_BLOCK_BACK && n.i <= I_LAKE_IN + 30) d = Math.min(d, Math.abs(n.lat) - CORRIDOR);
-  return d;
-}
-
-export function inLake(x, z) {
-  return lakeSD(x, z) < -2;
-}
-
-// Gas station frame: along the road tangent at GAS.i, lat to the right.
-export function gasLocal(x, z) {
-  const i = GAS.i;
-  const dx = x - S.px[i], dz = z - S.pz[i];
-  return { along: dx * S.tx[i] + dz * S.tz[i], lat: -dx * S.tz[i] + dz * S.tx[i] };
-}
-export function gasToWorld(along, lat) {
-  const i = GAS.i;
-  return { x: S.px[i] + S.tx[i] * along - S.tz[i] * lat, z: S.pz[i] + S.tz[i] * along + S.tx[i] * lat };
+// Side road: a dirt track that comes out of the desert on the right and merges onto
+// the highway shoulder at I_MERGE. Defined in road-frame (z of the highway, lat).
+const SIDE_CTRL = [[260, 230], [330, 150], [400, 85], [455, 40], [495, 17], [522, 8.5]];
+const sideCurve = new THREE.CatmullRomCurve3(SIDE_CTRL.map(([z, lat]) => {
+  const p = pointAt(idxForZ(z), lat);
+  return new THREE.Vector3(p.x, 0, p.z);
+}), false, 'centripetal');
+const SN = Math.round(sideCurve.getLength() / 2);
+const sidePts = sideCurve.getSpacedPoints(SN);
+export const SIDE = {
+  count: SN + 1,
+  px: Float32Array.from(sidePts, (p) => p.x),
+  pz: Float32Array.from(sidePts, (p) => p.z),
+  len: sideCurve.getLength(),
+  halfW: 3.4,
+};
+let sxMin = Infinity, sxMax = -Infinity, szMin = Infinity, szMax = -Infinity;
+for (const p of sidePts) { sxMin = Math.min(sxMin, p.x); sxMax = Math.max(sxMax, p.x); szMin = Math.min(szMin, p.z); szMax = Math.max(szMax, p.z); }
+// Distance from (x, z) to the side road centre line (approximate, sample-based).
+export function sideDist(x, z) {
+  if (x < sxMin - 200 || x > sxMax + 200 || z < szMin - 200 || z > szMax + 200) return Infinity;
+  let bd = Infinity;
+  for (let i = 0; i < SIDE.count; i++) {
+    const dx = x - SIDE.px[i], dz = z - SIDE.pz[i];
+    const d = dx * dx + dz * dz;
+    if (d < bd) bd = d;
+  }
+  return Math.sqrt(bd);
 }

@@ -6,7 +6,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { GradeShader } from '../lib/grade.js';
 import { buildStarterCoupe } from '../models/cars/starterCoupe.js';
-import { S, STEP, I_START, I_BLOCK_FAR, LAKE, pointAt, lakeSD } from './track.js';
+import { S, STEP, I_START, I_FINISH, FINISH, pointAt } from './track.js';
 import { buildTerrain, terrainHeight } from './terrain.js';
 import { buildRoad } from './road.js';
 import { buildStructures } from './structures.js';
@@ -15,6 +15,8 @@ import { bakeGroup } from './bake.js';
 import { CarController } from './car.js';
 import { Dust, addFlames } from './fx.js';
 import { createHud } from './hud.js';
+import { Tracers, Guns } from './combat.js';
+import { buildFinish } from './finish.js';
 
 // Level 1: desert highway. Debug/screenshot params:
 // ?at=<m from start>&lat=<m>&view=chase|high|side|front|aerial|overview&orbit=<deg>&auto=1&sim=<s>&ui=0&stats=1
@@ -76,13 +78,18 @@ for (const w of Object.values(model.userData.wheels)) bakeGroup(w.spin);
 const flames = addFlames(model);
 const car = new CarController(model, [...structures.colliders, ...props.colliders]);
 scene.add(car.rig);
-const startI = () => Math.min(I_BLOCK_FAR - 20, I_START + Math.round(num('at', 0) / STEP));
+const startI = () => Math.min(I_FINISH - 10, I_START + Math.round(num('at', 0) / STEP));
 car.reset(startI(), num('lat', 1.85));
 
 const dust = new Dust(900);
 scene.add(dust.points);
-const embers = new Dust(220, { additive: true, fade: 0.8 });
+const embers = new Dust(400, { additive: true, fade: 0.8 });
 scene.add(embers.points);
+const tracers = new Tracers(scene);
+const guns = new Guns(model, scene, { tracers, dust, sparks: embers });
+const finish = buildFinish();
+scene.add(finish.group);
+let raceTime = 0, won = false;
 const buildMs = Math.round(performance.now() - tBuild);
 window.__scene = scene;
 
@@ -96,7 +103,7 @@ const keys = new Set();
 addEventListener('keydown', (e) => {
   keys.add(e.code);
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
-  if (e.code === 'KeyR') { car.reset(I_START, 1.85); arenaShown = false; hud.banner(false); hud.showHint(); }
+  if (e.code === 'KeyR') location.reload();
   if (e.code === 'F3' || e.code === 'Backquote') hud.toggleDebug();
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
@@ -121,8 +128,7 @@ function autopilot() {
   let diff = Math.atan2(tp.x - car.x, tp.z - car.z) - car.yaw;
   diff = Math.atan2(Math.sin(diff), Math.cos(diff));
   const steer = THREE.MathUtils.clamp(-diff * 2.4, -1, 1);
-  const done = n.i > I_BLOCK_FAR - 40;
-  return { throttle: done ? 0 : 1, brake: done && car.vf > 1 ? 1 : 0, steer, nitro: !done && Math.abs(steer) < 0.12 && car.nitro > 0.4, handbrake: false };
+  return { throttle: 1, brake: 0, steer, nitro: Math.abs(steer) < 0.12 && car.nitro > 0.4, fire: params.get('fire') === '1' };
 }
 
 function readInput() {
@@ -133,7 +139,7 @@ function readInput() {
     brake: k('KeyS', 'ArrowDown') ? 1 : 0,
     steer: (k('KeyD', 'ArrowRight') ? 1 : 0) - (k('KeyA', 'ArrowLeft') ? 1 : 0),
     nitro: k('ShiftLeft', 'ShiftRight'),
-    handbrake: k('Space'),
+    fire: k('Space'),
   };
   const t = hud.touch;
   if (t.active) {
@@ -141,6 +147,7 @@ function readInput() {
     inp.brake = t.brake ? 1 : inp.brake;
     inp.steer = t.steer || inp.steer;
     inp.nitro = t.nitro || inp.nitro;
+    inp.fire = t.fire || inp.fire;
   }
   return inp;
 }
@@ -151,7 +158,7 @@ let emitAcc = 0;
 function emitFx(dt, inp) {
   const speed = Math.hypot(car.vx, car.vz);
   const spin = car.wheelspin > 0.3;
-  const drifting = Math.abs(car.vl) > 3.2 || (inp.handbrake && speed > 4) || spin;
+  const drifting = Math.abs(car.vl) > 3.2 || (car.braking && Math.abs(car.steerS) > 0.3) || spin;
   if (car.airborne || (speed < 4 && !drifting) || (car.onRoad && !drifting)) return;
   emitAcc += dt * (car.onRoad ? 40 : 30 + speed * 2.2) * (spin ? 1.6 : 1);
   const c = car.onRoad ? SMOKE : SAND;
@@ -268,10 +275,16 @@ function frame(now) {
   sun.position.set(car.x + SUN_DIR.x * 150, car.y + SUN_DIR.y * 150, car.z + SUN_DIR.z * 150);
   sun.target.position.set(car.x, car.y, car.z);
 
-  hud.set({ speed: Math.abs(car.vf) * 3.6, nitro: car.nitro, boosting: car.boosting, kills: 0, total: 60 });
-  const inArena = lakeSD(car.x, car.z) < -12;
-  if (inArena && !arenaShown) { arenaShown = true; hud.banner(true); setTimeout(() => hud.banner(false), 4000); }
-  hud.pointer(inArena ? null : screenPointer(LAKE.cx, 1, LAKE.cz, 'Arena'));
+  guns.update(dt, inp.fire, car);
+  tracers.update(dt);
+  if (!won) raceTime += dt;
+  if (finish.update(dt, car)) {
+    won = true;
+    shake = 0.6;
+    hud.win(raceTime);
+  }
+  hud.set({ speed: Math.abs(car.vf) * 3.6, nitro: car.nitro, boosting: car.boosting });
+  hud.pointer(won ? null : screenPointer(FINISH.x, FINISH.y + 1.5, FINISH.z, 'Finish'));
 
   renderer.info.reset();
   composer.render();

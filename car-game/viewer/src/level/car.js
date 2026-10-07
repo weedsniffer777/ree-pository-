@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { I_START, I_END, GAS, ROAD_HALF, ROAD_BEVEL, nearest, openDist, pointAt, gasLocal } from './track.js';
+import { S, STEP, I_START, I_END, I_FINISH, RAILS, RAIL_LAT, ROAD_HALF, ROAD_BEVEL, nearest, corridor, pointAt } from './track.js';
 import { terrainHeight } from './terrain.js';
 import { roadSurfaceY } from './road.js';
 
@@ -19,8 +19,6 @@ const SURF = {
 export function groundAt(x, z, n) {
   let h = terrainHeight(x, z);
   if (n && n.i <= I_END && Math.abs(n.lat) < ROAD_BEVEL) h = Math.max(h, n.y + roadSurfaceY(n.lat));
-  const g = gasLocal(x, z);
-  if (g.lat > GAS.latIn && g.lat < GAS.latOut && Math.abs(g.along) < GAS.halfLen) h = Math.max(h, GAS.y + 0.045);
   return h;
 }
 
@@ -73,9 +71,7 @@ export class CarController {
     let vf = this.vx * fx + this.vz * fz;
     let vl = this.vx * rx + this.vz * rz;
     const n0 = this.n;
-    const gl = gasLocal(this.x, this.z);
-    this.onRoad = (n0.i <= I_END && Math.abs(n0.lat) < ROAD_HALF + 0.3)
-      || (gl.lat > GAS.latIn && gl.lat < GAS.latOut && Math.abs(gl.along) < GAS.halfLen);
+    this.onRoad = n0.i <= I_END && Math.abs(n0.lat) < ROAD_HALF + 0.3;
     const surf = this.onRoad ? SURF.road : SURF.sand;
 
     this.steerS += (inp.steer - this.steerS) * Math.min(1, dt * 7);
@@ -90,17 +86,18 @@ export class CarController {
       }
       if (vf > vmax) vf -= (vf - vmax) * 0.9 * dt;
       if (inp.brake > 0) {
-        if (vf > 0.5) vf -= 30 * dt * inp.brake;
+        if (vf > 0.5) vf -= 17 * dt * inp.brake;
         else vf = Math.max(-11, vf - 10 * dt * inp.brake);
       }
       if (!inp.throttle && !inp.brake) vf -= vf * 0.45 * dt;
       vf -= vf * surf.drag * dt * 0.4;
-      if (inp.handbrake) vf -= Math.sign(vf) * Math.min(Math.abs(vf), 8 * dt);
-      vl *= Math.exp(-(inp.handbrake ? 1.3 : surf.grip) * dt);
+      const braking = inp.brake > 0 && vf > 6;
+      this.braking = braking;
+      vl *= Math.exp(-(braking ? 1.4 : surf.grip) * dt);
       // rear wheels spinning: throttle at low speed or while rotating hard (donuts, launches)
       this.wheelspin = inp.throttle > 0 ? Math.max(Math.abs(this.yawRate) > 0.9 ? 1 : 0, 1 - Math.abs(vf) / 7) : 0;
       const sp = Math.abs(vf);
-      this.yawRate = -this.steerS * 2.3 * Math.min(1, sp / 4) / (1 + sp / 26) * (vf < -0.1 ? -1 : 1) * (inp.handbrake ? 1.5 : 1);
+      this.yawRate = -this.steerS * 2.3 * Math.min(1, sp / 4) / (1 + sp / 26) * (vf < -0.1 ? -1 : 1) * (this.braking ? 1.45 : 1);
     } else {
       this.yawRate *= Math.exp(-dt * 2);
     }
@@ -181,27 +178,43 @@ export class CarController {
     }
   }
 
-  // Keep the car inside the drivable area (intro highway + lakebed): push back along
-  // the gradient of the open-area distance field.
+  pushLat(i, dl) {
+    const rx = -S.tz[i], rz = S.tx[i];
+    this.x -= rx * dl;
+    this.z -= rz * dl;
+    const vn = this.vx * rx + this.vz * rz;
+    if (vn * dl > 0) {
+      this.vx -= rx * vn * 1.2;
+      this.vz -= rz * vn * 1.2;
+      this.hit(Math.abs(vn));
+    }
+  }
+
+  // Fenced highway corridor, guardrails, and the ends of the route.
   limit() {
-    const n = nearest(this.x, this.z, this.hint);
+    let n = nearest(this.x, this.z, this.hint);
     this.hint = n.i;
-    const M = 1.4;
-    const d = openDist(this.x, this.z, n);
-    if (d > -M) {
-      const e = 0.6;
-      const gx = openDist(this.x + e, this.z) - openDist(this.x - e, this.z);
-      const gz = openDist(this.x, this.z + e) - openDist(this.x, this.z - e);
-      const l = Math.hypot(gx, gz) || 1;
-      const nx = gx / l, nz = gz / l;
-      this.x -= nx * (d + M);
-      this.z -= nz * (d + M);
-      const vn = this.vx * nx + this.vz * nz;
-      if (vn > 0) {
-        this.vx -= nx * vn * 1.25;
-        this.vz -= nz * vn * 1.25;
-        this.hit(vn);
-      }
+    const lim = corridor(n.i);
+    if (n.lat > lim.right) this.pushLat(n.i, n.lat - lim.right);
+    else if (n.lat < -lim.left) this.pushLat(n.i, n.lat + lim.left);
+    const along = (lo, hi) => {
+      const i = n.i < lo ? lo : hi;
+      const back = (n.i < lo ? lo - n.i : hi - n.i) * STEP;
+      this.x += S.tx[i] * back;
+      this.z += S.tz[i] * back;
+      const vn = this.vx * S.tx[i] + this.vz * S.tz[i];
+      if ((n.i < lo && vn < 0) || (n.i > hi && vn > 0)) { this.vx -= S.tx[i] * vn * 1.2; this.vz -= S.tz[i] * vn * 1.2; this.hit(Math.abs(vn)); }
+    };
+    const lo = I_START - 100, hi = I_FINISH + Math.round(55 / STEP);
+    if (n.i < lo || n.i > hi) along(lo, hi);
+    n = nearest(this.x, this.z, this.hint);
+    for (const r of RAILS) {
+      if (n.i < r.i0 + 3 || n.i > r.i1 - 3) continue;
+      const ls = n.lat * r.side, prev = this.prevLat * r.side;
+      let tgt = null;
+      if (prev <= RAIL_LAT && ls > RAIL_LAT - 1.0) tgt = RAIL_LAT - 1.0;
+      else if (prev > RAIL_LAT && ls < RAIL_LAT + 1.0) tgt = RAIL_LAT + 1.0;
+      if (tgt !== null) this.pushLat(n.i, (ls - tgt) * r.side);
     }
     this.n = nearest(this.x, this.z, this.hint);
     this.prevLat = this.n.lat;
