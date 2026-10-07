@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { S, STEP, I_END, I_ARENA, ROAD_HALF, ROAD_BEVEL, LANE, RAILS, RAIL_LAT, GAS, pointAt } from './track.js';
+import { S, STEP, I_END, I_BLOCK_BACK, I_LAKE_IN, ROAD_HALF, ROAD_BEVEL, LANE, RAILS, RAIL_LAT, GAS, pointAt } from './track.js';
 import { terrainHeight } from './terrain.js';
 import { smoothstep } from './noise.js';
 
@@ -66,7 +66,7 @@ export function buildRoad() {
 
   // Delineators: white reflectors on the right, amber on the left.
   const dPosts = [], dWhite = [], dAmber = [];
-  for (let i = 40; i < I_ARENA - 70; i += Math.round(50 / STEP)) {
+  for (let i = I_BLOCK_BACK + 10; i < I_LAKE_IN - 10; i += Math.round(40 / STEP)) {
     for (const side of [-1, 1]) {
       if (RAILS.some((r) => r.side === side && i >= r.i0 - 8 && i <= r.i1 + 8)) continue;
       if (side === 1 && Math.abs(i * STEP - GAS.s) < GAS.halfLen + 10) continue;

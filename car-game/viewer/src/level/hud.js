@@ -3,7 +3,15 @@
 
 const CSS = `
 #hud { position: fixed; inset: 0; pointer-events: none; font-family: 'Chakra Petch', 'Arial Narrow', system-ui, sans-serif; color: #fff; }
-#hud .progress { position: absolute; top: calc(16px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); width: min(520px, calc(100% - 32px)); }
+#hud .kills { position: absolute; top: calc(16px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; background: rgba(20,18,16,0.5); padding: 6px 16px 6px 10px; border-bottom: 3px solid #e2571b; text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
+#hud .kills svg { width: 34px; height: 34px; }
+#hud .count { font: 600 28px/1 'Chakra Petch', system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+#hud .count span { font-size: 16px; opacity: 0.75; margin-left: 4px; }
+#hud .klabel { font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; opacity: 0.85; }
+#hud .pointer { position: absolute; left: 0; top: 0; width: 0; height: 0; }
+#hud .pointer svg { position: absolute; width: 34px; height: 34px; left: -17px; top: -17px; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.5)); }
+#hud .pointer span { position: absolute; left: -60px; top: 20px; width: 120px; white-space: nowrap; text-align: center; font-size: 12px; letter-spacing: 0.1em; text-shadow: 0 1px 3px rgba(0,0,0,0.8); }
+#hud .oldprogress { position: absolute; top: calc(16px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); width: min(520px, calc(100% - 32px)); }
 #hud .track { position: relative; height: 10px; background: rgba(20,18,16,0.55); border: 1px solid rgba(255,255,255,0.35); border-radius: 2px; }
 #hud .fill { position: absolute; inset: 0 auto 0 0; width: 0; background: linear-gradient(90deg, #e0b52a, #e2571b); }
 #hud .car { position: absolute; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; background: #fff; border: 2px solid #17181a; border-radius: 50%; left: 0; }
@@ -36,15 +44,14 @@ export function createHud({ touch = false } = {}) {
   const root = document.createElement('div');
   root.id = 'hud';
   root.innerHTML = `
-    <div class="progress">
-      <div class="track"><div class="fill"></div><div class="car"></div>
-        <svg class="boss" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#17181a" stroke="#e2571b" stroke-width="2"/><path d="M7 10.5a5 5 0 0 1 10 0v2.5l-1.5 1V16h-7v-2L7 13z" fill="#f2efe8"/><circle cx="10" cy="11" r="1.4" fill="#17181a"/><circle cx="14" cy="11" r="1.4" fill="#17181a"/></svg>
-      </div>
-      <div class="plabel"><span class="dist">0 m</span><span>Boss</span></div>
+    <div class="kills">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 10.5a7 7 0 0 1 14 0v3l-2 1.4V18H7v-3.1L5 13.5z" fill="#f2efe8" stroke="#17181a" stroke-width="1.2"/><circle cx="9.3" cy="11.2" r="1.8" fill="#17181a"/><circle cx="14.7" cy="11.2" r="1.8" fill="#17181a"/><path d="M10 18v2M12 18v2M14 18v2" stroke="#17181a" stroke-width="1.2"/></svg>
+      <div><div class="count"><b>0</b><span>/ 60</span></div><div class="klabel">Kills</div></div>
     </div>
+    <div class="pointer" hidden><svg viewBox="0 0 24 24"><path d="M12 2l8 16-8-4-8 4z" fill="#e0b52a" stroke="#17181a" stroke-width="1.5"/></svg><span></span></div>
     <div class="gauge"><div class="speed">0</div><div class="unit">KM/H</div><div class="nitro"><i></i></div></div>
     <div class="hint"><div><b>WASD</b>Drive</div><div><b>Shift</b>Nitro</div><div><b>Space</b>Handbrake</div><div><b>Mouse</b>Drag to look</div><div><b>R</b>Restart</div></div>
-    <div class="banner" hidden><h2>Boss arena</h2><p>The boss fight comes next</p></div>
+    <div class="banner" hidden><h2>The lakebed</h2><p>Enemies arrive in the next build</p></div>
     <pre class="debug" hidden></pre>`;
   document.body.append(root);
   const $ = (s) => root.querySelector(s);
@@ -75,14 +82,22 @@ export function createHud({ touch = false } = {}) {
   let hintTimer = setTimeout(() => { $('.hint').style.opacity = '0'; }, 9000);
   return {
     touch: t,
-    set({ speed, nitro, boosting, progress, dist }) {
+    set({ speed, nitro, boosting, kills = 0, total = 60 }) {
       $('.speed').textContent = String(Math.round(speed));
       const n = $('.nitro');
       n.firstChild.style.width = `${Math.round(nitro * 100)}%`;
       n.classList.toggle('on', boosting);
-      $('.fill').style.width = `${(progress * 100).toFixed(1)}%`;
-      $('.car').style.left = `${(progress * 100).toFixed(1)}%`;
-      $('.dist').textContent = `${Math.max(0, Math.round(dist))} m`;
+      $('.count b').textContent = String(kills);
+      $('.count span').textContent = `/ ${total}`;
+    },
+    // screen-space pointer: x, y in px, angle in radians (0 = up), label; pass null to hide
+    pointer(p) {
+      const el = $('.pointer');
+      el.hidden = !p;
+      if (!p) return;
+      el.style.transform = `translate(${p.x}px, ${p.y}px)`;
+      el.firstChild.style.transform = `rotate(${p.angle}rad)`;
+      el.lastChild.textContent = p.label;
     },
     banner(show) { $('.banner').hidden = !show; },
     debug(text) { const d = $('.debug'); if (!d.hidden) d.textContent = text; },

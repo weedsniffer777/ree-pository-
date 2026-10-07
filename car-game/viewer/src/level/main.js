@@ -6,7 +6,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { GradeShader } from '../lib/grade.js';
 import { buildStarterCoupe } from '../models/cars/starterCoupe.js';
-import { S, STEP, I_START, I_ARENA, ARENA, pointAt } from './track.js';
+import { S, STEP, I_START, I_BLOCK_FAR, LAKE, pointAt, lakeSD } from './track.js';
 import { buildTerrain, terrainHeight } from './terrain.js';
 import { buildRoad } from './road.js';
 import { buildStructures } from './structures.js';
@@ -76,11 +76,13 @@ for (const w of Object.values(model.userData.wheels)) bakeGroup(w.spin);
 const flames = addFlames(model);
 const car = new CarController(model, [...structures.colliders, ...props.colliders]);
 scene.add(car.rig);
-const startI = () => Math.min(I_ARENA, I_START + Math.round(num('at', 0) / STEP));
+const startI = () => Math.min(I_BLOCK_FAR - 20, I_START + Math.round(num('at', 0) / STEP));
 car.reset(startI(), num('lat', 1.85));
 
-const dust = new Dust(700);
+const dust = new Dust(900);
 scene.add(dust.points);
+const embers = new Dust(220, { additive: true, fade: 0.8 });
+scene.add(embers.points);
 const buildMs = Math.round(performance.now() - tBuild);
 window.__scene = scene;
 
@@ -119,7 +121,7 @@ function autopilot() {
   let diff = Math.atan2(tp.x - car.x, tp.z - car.z) - car.yaw;
   diff = Math.atan2(Math.sin(diff), Math.cos(diff));
   const steer = THREE.MathUtils.clamp(-diff * 2.4, -1, 1);
-  const done = n.i > I_ARENA - 20;
+  const done = n.i > I_BLOCK_FAR - 40;
   return { throttle: done ? 0 : 1, brake: done && car.vf > 1 ? 1 : 0, steer, nitro: !done && Math.abs(steer) < 0.12 && car.nitro > 0.4, handbrake: false };
 }
 
@@ -148,9 +150,10 @@ const SAND = [0.86, 0.68, 0.48], SMOKE = [0.86, 0.85, 0.83];
 let emitAcc = 0;
 function emitFx(dt, inp) {
   const speed = Math.hypot(car.vx, car.vz);
-  const drifting = Math.abs(car.vl) > 3.2 || (inp.handbrake && speed > 6);
+  const spin = car.wheelspin > 0.3;
+  const drifting = Math.abs(car.vl) > 3.2 || (inp.handbrake && speed > 4) || spin;
   if (car.airborne || (speed < 4 && !drifting) || (car.onRoad && !drifting)) return;
-  emitAcc += dt * (car.onRoad ? 40 : 30 + speed * 2.2);
+  emitAcc += dt * (car.onRoad ? 40 : 30 + speed * 2.2) * (spin ? 1.6 : 1);
   const c = car.onRoad ? SMOKE : SAND;
   const fx = Math.sin(car.yaw), fz = Math.cos(car.yaw), rx = -Math.cos(car.yaw), rz = Math.sin(car.yaw);
   while (emitAcc >= 1) {
@@ -214,6 +217,23 @@ function updateCamera(dt) {
   camera.updateProjectionMatrix();
 }
 
+// ---- HUD pointer: on-screen marker or edge arrow toward a world position ----
+const tmpV = new THREE.Vector3();
+function screenPointer(x, y, z, label) {
+  tmpV.set(x, y, z).project(camera);
+  const behind = tmpV.z > 1;
+  let px = behind ? -tmpV.x : tmpV.x, py = behind ? -tmpV.y : tmpV.y;
+  const dist = Math.round(Math.hypot(x - car.x, z - car.z));
+  const on = !behind && Math.abs(px) < 0.88 && Math.abs(py) < 0.8;
+  let angle = Math.PI;
+  if (!on) {
+    const k = Math.min(0.88 / Math.max(1e-4, Math.abs(px)), 0.8 / Math.max(1e-4, Math.abs(py)));
+    px *= k; py *= k;
+    angle = Math.atan2(px, py);
+  } else py += 0.08;
+  return { x: (px * 0.5 + 0.5) * innerWidth, y: (0.5 - py * 0.5) * innerHeight, angle, label: `${label} ${dist} m` };
+}
+
 // ---- Loop ----
 const H = 1 / 120;
 let acc = 0, last = performance.now(), frames = 0, fpsT = 0, fps = 0, arenaShown = false;
@@ -234,7 +254,13 @@ function frame(now) {
     acc -= H;
   }
   car.sync(dt);
-  flames.update(car.boosting);
+  if (flames.update(car.boosting, dt, Math.hypot(car.vx, car.vz), embers)) {
+    for (const f of flames.pipes) {
+      f.getWorldPosition(tmpV);
+      for (let k = 0; k < 4; k++) dust.emit(tmpV.x, tmpV.y, tmpV.z, -car.vx * 0.2 + (Math.random() - 0.5), 0.6, -car.vz * 0.2 + (Math.random() - 0.5), 0.5, 0.9, 0.55, 0.53, 0.5);
+    }
+  }
+  embers.update(dt);
   dust.update(dt);
   structures.update(dt);
   updateCamera(dt);
@@ -242,13 +268,10 @@ function frame(now) {
   sun.position.set(car.x + SUN_DIR.x * 150, car.y + SUN_DIR.y * 150, car.z + SUN_DIR.z * 150);
   sun.target.position.set(car.x, car.y, car.z);
 
-  const progress = THREE.MathUtils.clamp((car.n.i - I_START) / (I_ARENA - I_START), 0, 1);
-  hud.set({
-    speed: Math.abs(car.vf) * 3.6, nitro: car.nitro, boosting: car.boosting, progress,
-    dist: (I_ARENA - car.n.i) * STEP,
-  });
-  const inArena = Math.hypot(car.x - ARENA.x, car.z - ARENA.z) < ARENA.r - 4;
-  if (inArena !== arenaShown) { arenaShown = inArena; hud.banner(inArena); }
+  hud.set({ speed: Math.abs(car.vf) * 3.6, nitro: car.nitro, boosting: car.boosting, kills: 0, total: 60 });
+  const inArena = lakeSD(car.x, car.z) < -12;
+  if (inArena && !arenaShown) { arenaShown = true; hud.banner(true); setTimeout(() => hud.banner(false), 4000); }
+  hud.pointer(inArena ? null : screenPointer(LAKE.cx, 1, LAKE.cz, 'Arena'));
 
   renderer.info.reset();
   composer.render();
@@ -271,6 +294,7 @@ addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
   composer.setSize(innerWidth, innerHeight);
   dust.resize();
+  embers.resize();
 });
 
 function buildSky() {

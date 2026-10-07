@@ -3,7 +3,7 @@ import { mesh, box, cyl, tube } from '../lib/geo.js';
 import { makeCanvas, rust as paintRust } from '../lib/skin.js';
 import { rng } from './noise.js';
 import {
-  S, STEP, GAS, ARENA, I_ARENA, RAILS, RAIL_LAT, FENCE, ROAD_BEVEL, idxForZ, pointAt, gasToWorld,
+  STEP, GAS, LAKE, FENCE, I_BLOCK_BACK, I_BLOCK_FAR, I_LAKE_IN, idxForZ, pointAt, gasToWorld, nearest,
 } from './track.js';
 import { terrainHeight } from './terrain.js';
 import { bakeGroup } from './bake.js';
@@ -556,6 +556,69 @@ function barricade() {
   return g;
 }
 
+
+// Debris wall across the highway: jersey barriers, tyre stacks, sandbags, beams, boards.
+function debrisWall(seed) {
+  const g = new THREE.Group();
+  const r = rng(seed);
+  const concrete = std(0xbdb6aa, { roughness: 0.95 });
+  const shape = new THREE.Shape();
+  [[-0.3, 0], [0.3, 0], [0.3, 0.08], [0.12, 0.33], [0.08, 0.81], [-0.08, 0.81], [-0.12, 0.33], [-0.3, 0.08]]
+    .forEach(([a, y], i) => (i ? shape.lineTo(a, y) : shape.moveTo(a, y)));
+  const jersey = new THREE.ExtrudeGeometry(shape, { depth: 3, bevelEnabled: false }).translate(0, 0, -1.5).rotateY(Math.PI / 2);
+  for (let k = 0; k < 8; k++) {
+    const m = mesh(jersey, concrete, { pos: [-10.5 + k * 3.05 + (r() - 0.5) * 0.3, 0, (r() - 0.5) * 0.8] });
+    m.rotation.y = (r() - 0.5) * 0.25;
+    if (k === 2 || k === 6) { m.rotation.z = 0.25; m.position.y = 0.1; }
+    g.add(m);
+  }
+  const tyre = std(0x1c1c1e, { roughness: 0.9 });
+  for (const x of [-12.5, -4, 5.5, 12.6]) {
+    const h = 3 + Math.floor(r() * 3);
+    for (let k = 0; k < h; k++) g.add(mesh(new THREE.TorusGeometry(0.36, 0.14, 8, 18).rotateX(Math.PI / 2), tyre, { pos: [x + (r() - 0.5) * 0.15, 0.14 + k * 0.27, 1.0 + (r() - 0.5) * 0.15] }));
+  }
+  const sand = std(0xb39c76, { roughness: 1 });
+  for (let k = 0; k < 26; k++) {
+    const x = -12 + (k % 13) * 1.9 + (r() - 0.5) * 0.3, y = k < 13 ? 0.15 : 0.42;
+    const b = mesh(new THREE.CapsuleGeometry(0.17, 0.5, 3, 8).rotateZ(Math.PI / 2).scale(1, 0.7, 1), sand, { pos: [x, y, -1.0] });
+    b.rotation.y = (r() - 0.5) * 0.3;
+    g.add(b);
+  }
+  const beam = metal(0x6d5a4c, { roughness: 0.8 });
+  for (const [x, ry, rz] of [[-2, 0.4, 0.18], [8, -0.3, 0.12]]) {
+    const ib = new THREE.Group();
+    ib.add(box(6, 0.04, 0.3, beam, { pos: [0, 0.3, 0] }), box(6, 0.04, 0.3, beam, { pos: [0, 0, 0] }), box(6, 0.3, 0.03, beam, { pos: [0, 0.15, 0] }));
+    ib.position.set(x, 0.85, 0.2);
+    ib.rotation.set(0, ry, rz);
+    g.add(ib);
+  }
+  const b1 = barricade(); b1.position.set(-6.5, 0, 2.2); b1.rotation.y = 0.15; g.add(b1);
+  const b2 = barricade(); b2.position.set(3.5, 0, 2.4); b2.rotation.y = -0.2; g.add(b2);
+  return g;
+}
+
+function rrectPoints(hx, hz, rr, spacing) {
+  const pts = [];
+  const segs = [
+    [[hx - rr, -hz], [-(hx - rr), -hz]], null, [[-hx, -(hz - rr)], [-hx, hz - rr]], null,
+    [[-(hx - rr), hz], [hx - rr, hz]], null, [[hx, hz - rr], [hx, -(hz - rr)]], null,
+  ];
+  const corners = [[-(hx - rr), -(hz - rr), Math.PI * 1.5, Math.PI], [-(hx - rr), hz - rr, Math.PI, Math.PI / 2], [hx - rr, hz - rr, Math.PI / 2, 0], [hx - rr, -(hz - rr), 0, -Math.PI / 2]];
+  let ci = 0;
+  for (const s of segs) {
+    if (s) {
+      const [[x0, z0], [x1, z1]] = s;
+      const n = Math.max(1, Math.round(Math.hypot(x1 - x0, z1 - z0) / spacing));
+      for (let k = 0; k < n; k++) pts.push([x0 + ((x1 - x0) * k) / n, z0 + ((z1 - z0) * k) / n]);
+    } else {
+      const [cx, cz, a0, a1] = corners[ci++];
+      const n = Math.max(2, Math.round((Math.abs(a1 - a0) * rr) / spacing));
+      for (let k = 0; k < n; k++) { const a = a0 + ((a1 - a0) * k) / n; pts.push([cx + Math.cos(a) * rr, cz + Math.sin(a) * rr]); }
+    }
+  }
+  return pts;
+}
+
 export function buildStructures() {
   const group = new THREE.Group();
   group.name = 'structures';
@@ -563,36 +626,44 @@ export function buildStructures() {
   const exclusions = [];
   const updaters = [];
   const r = rng(12);
+  const atXZ = (x, z) => ({ x, z, y: terrainHeight(x, z) });
 
-  // Gas station
+  // Gas station on the lakebed, fenced at the back and sides
   group.add(gasStation(colliders));
+  const gasYaw = pointAt(GAS.i).yaw;
   for (const along of [-(GAS.halfLen + 3), GAS.halfLen + 3]) {
-    const w = gasToWorld(along, 33.75);
-    colliders.push({ type: 'box', x: w.x, z: w.z, yaw: pointAt(GAS.i).yaw, hx: 14.25, hz: 0.25 });
+    const w = gasToWorld(along, 34);
+    colliders.push({ type: 'box', x: w.x, z: w.z, yaw: gasYaw, hx: 14, hz: 0.25 });
   }
+  { const w = gasToWorld(0, GAS.latOut + 1); colliders.push({ type: 'box', x: w.x, z: w.z, yaw: gasYaw, hx: 0.25, hz: GAS.halfLen + 3 }); }
+  { const c = gasToWorld(0, 28); exclusions.push({ x: c.x, z: c.z, r: 46 }); }
 
-  // Fences: corridor both sides, with a loop around the gas station lot
+  // Fences: both sides of the intro highway, then broken runs around the lakebed
   const posts = [], wires = [];
-  const fenceEnd = I_ARENA - Math.round((ARENA.r + 6) / STEP);
   for (const side of [-1, 1]) {
     const pts = [];
-    for (let i = idxForZ(-220); i < fenceEnd; i += 4) {
-      const inGas = side === 1 && Math.abs(i * STEP - GAS.s) < GAS.halfLen + 3;
-      pts.push(inGas ? null : pointAt(i, side * FENCE));
-    }
+    for (let i = I_BLOCK_BACK - 30; i < I_LAKE_IN - 6; i += 4) pts.push(pointAt(i, side * FENCE));
     fenceRun(pts, posts, wires, r);
   }
   const loop = [];
   const HL = GAS.halfLen + 3;
-  const corners = [[-HL, FENCE], [-HL, GAS.latOut + 1], [HL, GAS.latOut + 1], [HL, FENCE]];
+  const corners = [[-HL, 20], [-HL, GAS.latOut + 1], [HL, GAS.latOut + 1], [HL, 20]];
   for (let k = 0; k < 3; k++) {
     const [a0, l0] = corners[k], [a1, l1] = corners[k + 1];
-    const len = Math.hypot(a1 - a0, l1 - l0), n = Math.ceil(len / 4);
+    const n = Math.ceil(Math.hypot(a1 - a0, l1 - l0) / 4);
     for (let s = 0; s <= n; s++) { const t = s / n; loop.push(gasToWorld(a0 + (a1 - a0) * t, l0 + (l1 - l0) * t)); }
   }
   fenceRun(loop, posts, wires, r);
-  const postGeo = new THREE.CylinderGeometry(0.055, 0.07, 1.3, 6);
-  const postMesh = new THREE.InstancedMesh(postGeo, std(0x6b5b4a, { roughness: 1 }), posts.length);
+  const perim = rrectPoints(LAKE.hx + 14, LAKE.hz + 14, LAKE.r + 14, 4).map(([x, z]) => ({ x: x + LAKE.cx, z: z + LAKE.cz }));
+  let run = 0, gap = 0;
+  const lakeFence = perim.map((p) => {
+    if (Math.abs(nearest(p.x, p.z).lat) < 16) return null;
+    if (gap > 0) { gap--; return null; }
+    if (++run > 6 + r() * 14) { run = 0; gap = 2 + Math.floor(r() * 9); }
+    return p;
+  });
+  fenceRun(lakeFence, posts, wires, r);
+  const postMesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.055, 0.07, 1.3, 6), std(0x6b5b4a, { roughness: 1 }), posts.length);
   const o = new THREE.Object3D();
   posts.forEach((p, k) => { o.position.set(p.x, p.y, p.z); o.rotation.set(p.rx, r() * 3, p.rz); o.scale.set(1, p.s, 1); o.updateMatrix(); postMesh.setMatrixAt(k, o.matrix); });
   postMesh.castShadow = true;
@@ -602,108 +673,109 @@ export function buildStructures() {
   wireGeo.setAttribute('position', new THREE.Float32BufferAttribute(wires, 3));
   group.add(new THREE.LineSegments(wireGeo, new THREE.LineBasicMaterial({ color: 0x3b3632 })));
 
-  // Power line on the left
-  const poles = [];
-  const pWires = [];
+  // Power line: down the left of the highway, then along the lakebed's far side
+  const line = [];
+  for (let i = idxForZ(-420); i < I_LAKE_IN - 10; i += Math.round(55 / STEP)) { const p = pointAt(i, -31); line.push([p.x, p.z]); }
+  const sideX = LAKE.cx + LAKE.hx + 30;
+  for (let z = LAKE.cz - LAKE.hz + 20; z < 900; z += 55) line.push([sideX + (z - LAKE.cz) * 0.05, z]);
   const pg = new THREE.Group();
   const poleM = std(0x6a5440, { roughness: 1 });
   const insul = std(0x6b3a22, { roughness: 0.35 });
+  const pWires = [];
   let prevArm = null;
-  for (let i = idxForZ(-250), k = 0; i < I_ARENA - Math.round((ARENA.r + 25) / STEP); i += Math.round(55 / STEP), k++) {
-    const p = pointAt(i, -27);
-    const y = terrainHeight(p.x, p.z);
+  line.forEach(([x, z], k) => {
+    const nx = line[Math.min(line.length - 1, k + 1)], pv = line[Math.max(0, k - 1)];
+    const yaw = Math.atan2(nx[0] - pv[0], nx[1] - pv[1]);
     const pole = new THREE.Group();
-    pole.position.set(p.x, y, p.z);
-    pole.rotation.set((r() - 0.5) * 0.04, p.yaw, (r() - 0.5) * 0.04);
+    pole.position.set(x, terrainHeight(x, z), z);
+    pole.rotation.set((r() - 0.5) * 0.04, yaw, (r() - 0.5) * 0.04);
     pole.add(cyl(0.12, 0.16, 9.6, 8, poleM, { pos: [0, 4.8, 0] }));
     pole.add(box(2.4, 0.12, 0.12, poleM, { pos: [0, 8.9, 0] }));
-    for (const x of [-1, 1]) pole.add(tube([x * 0.9, 8.9, 0], [0, 8.2, 0], 0.025, metal(), 4));
-    for (const x of [-1.05, -0.35, 1.05]) pole.add(cyl(0.05, 0.07, 0.18, 8, insul, { pos: [x, 9.05, 0] }));
+    for (const sx of [-1, 1]) pole.add(tube([sx * 0.9, 8.9, 0], [0, 8.2, 0], 0.025, metal(), 4));
+    for (const sx of [-1.05, -0.35, 1.05]) pole.add(cyl(0.05, 0.07, 0.18, 8, insul, { pos: [sx, 9.05, 0] }));
     if (k % 5 === 2) {
       pole.add(cyl(0.3, 0.3, 0.8, 12, metal(0x8e9396), { pos: [0, 7.4, 0.32] }));
       pole.add(cyl(0.32, 0.32, 0.05, 12, metal(0x6d7276), { pos: [0, 7.82, 0.32] }));
     }
     pg.add(pole);
     pole.updateMatrixWorld(true);
-    const arm = [-1.05, -0.35, 1.05].map((x) => new THREE.Vector3(x, 9.14, 0).applyMatrix4(pole.matrixWorld));
+    const arm = [-1.05, -0.35, 1.05].map((sx) => new THREE.Vector3(sx, 9.14, 0).applyMatrix4(pole.matrixWorld));
     if (prevArm) {
       for (let w = 0; w < 3; w++) {
-        const a = prevArm[w], b = arm[w];
-        let last = a;
+        let last = prevArm[w];
         for (let s = 1; s <= 10; s++) {
           const t = s / 10;
-          const q = new THREE.Vector3().lerpVectors(a, b, t);
-          q.y -= 1.0 * 4 * t * (1 - t);
+          const q = new THREE.Vector3().lerpVectors(prevArm[w], arm[w], t);
+          q.y -= 4 * t * (1 - t);
           pWires.push(last.x, last.y, last.z, q.x, q.y, q.z);
           last = q;
         }
       }
     }
     prevArm = arm;
-    poles.push(p);
-  }
+    exclusions.push({ x, z, r: 1.5 });
+    if (Math.abs(nearest(x, z).lat) < 22 || terrainHeight(x, z) < 1) colliders.push({ type: 'circle', x, z, r: 0.2 });
+  });
   bakeGroup(pg);
   group.add(pg);
   const pwGeo = new THREE.BufferGeometry();
   pwGeo.setAttribute('position', new THREE.Float32BufferAttribute(pWires, 3));
   group.add(new THREE.LineSegments(pwGeo, new THREE.LineBasicMaterial({ color: 0x2a2623 })));
 
-  // Signs (numbers and symbols only)
+  // Signs along the intro (numbers and symbols only)
   const sg = new THREE.Group();
   const iz = idxForZ;
-  placeSign(sg, colliders, FACES.speed(65, 1), iz(40), 8.2, 0.9, 0.9);
-  placeSign(sg, colliders, FACES.shield(66, 2), iz(110), 8.2, 0.85, 0.85);
-  placeSign(sg, colliders, FACES.curve(1, 3), iz(190), 8.2, 0.95, 0.95);
-  for (const z of [270, 310, 350]) placeSign(sg, colliders, FACES.chevron(1, 4 + z), iz(z), -(RAIL_LAT + 0.7), 0.55, 0.75, 1.0);
-  placeSign(sg, colliders, FACES.fuel(false, 5), iz(380), 8.2, 0.95, 0.95);
-  placeSign(sg, colliders, FACES.fuel(true, 6), iz(440), 8.2, 0.8, 0.8);
-  placeSign(sg, colliders, FACES.mile(12, 7), iz(620), 8.0, 0.32, 0.75, 0.8);
-  placeSign(sg, colliders, FACES.speed(55, 8), iz(650), 8.2, 0.9, 0.9);
-  placeSign(sg, colliders, FACES.curve(-1, 9), iz(740), 8.2, 0.95, 0.95);
-  for (const z of [830, 870, 910]) placeSign(sg, colliders, FACES.chevron(-1, 10 + z), iz(z), RAIL_LAT + 0.7, 0.55, 0.75, 1.0);
-  placeSign(sg, colliders, FACES.curve(1, 11), iz(1100), 8.2, 0.95, 0.95);
-  for (const z of [1180, 1220, 1260]) placeSign(sg, colliders, FACES.chevron(1, 12 + z), iz(z), -(RAIL_LAT + 0.7), 0.55, 0.75, 1.0);
-  placeSign(sg, colliders, FACES.mile(13, 13), iz(1240), -(RAIL_LAT + 1.0), 0.32, 0.75, 0.8);
-  placeSign(sg, colliders, FACES.bang(14), iz(1350), 8.2, 0.95, 0.95);
+  placeSign(sg, colliders, FACES.speed(65, 1), iz(25), 8.2, 0.9, 0.9);
+  placeSign(sg, colliders, FACES.shield(66, 2), iz(70), 8.2, 0.85, 0.85);
+  placeSign(sg, colliders, FACES.mile(12, 7), iz(95), -8.0, 0.32, 0.75, 0.8);
+  placeSign(sg, colliders, FACES.fuel(false, 5), iz(120), 8.2, 0.95, 0.95);
+  placeSign(sg, colliders, FACES.fuel(true, 6), iz(165), 8.2, 0.8, 0.8);
+  placeSign(sg, colliders, FACES.bang(14), iz(190), -8.2, 0.95, 0.95);
+  placeSign(sg, colliders, FACES.speed(45, 8), iz(-20), 8.2, 0.9, 0.9);
   bakeGroup(sg);
   group.add(sg);
 
-  // Barricades flanking the arena entrance
-  for (const side of [-1, 1]) {
-    const i = I_ARENA - Math.round((ARENA.r + 8) / STEP);
-    const p = pointAt(i, side * 8.8);
-    const b = barricade();
-    b.position.set(p.x, terrainHeight(p.x, p.z), p.z);
-    b.rotation.y = p.yaw + side * 0.25;
-    group.add(b);
-    colliders.push({ type: 'box', x: p.x, z: p.z, yaw: p.yaw, hx: 1.25, hz: 0.5 });
+  // Debris walls: behind the start and where the highway leaves the lakebed
+  for (const [i, seed] of [[I_BLOCK_BACK, 3], [I_BLOCK_FAR + 2, 4]]) {
+    const p = pointAt(i);
+    const w = debrisWall(seed);
+    w.position.set(p.x, terrainHeight(p.x, p.z), p.z);
+    w.rotation.y = p.yaw;
+    bakeGroup(w);
+    group.add(w);
+    colliders.push({ type: 'box', x: p.x, z: p.z, yaw: p.yaw, hx: 13.5, hz: 1.6 });
+    exclusions.push({ x: p.x, z: p.z, r: 16 });
   }
 
-  // Ranch windpump + shed, water tower, billboard (all outside the fences)
-  const place = (obj, z, lat, yawOff = 0, excl = 6) => {
-    const p = pointAt(idxForZ(z), lat);
-    obj.position.set(p.x, terrainHeight(p.x, p.z) - 0.05, p.z);
-    obj.rotation.y = p.yaw + yawOff;
+  // Ranch windpump + shed, water tower, billboard: the loose ring around the arena
+  const put = (obj, x, z, yaw, excl) => {
+    obj.position.set(x, terrainHeight(x, z) - 0.05, z);
+    obj.rotation.y = yaw;
     group.add(obj);
-    exclusions.push({ x: p.x, z: p.z, r: excl });
-    return p;
+    exclusions.push({ x, z, r: excl });
   };
   const wp = windpump();
-  place(wp.g, 330, -40, 0.9, 6);
+  put(wp.g, LAKE.cx - LAKE.hx - 34, LAKE.cz + 30, 0.9, 6);
   updaters.push((dt) => { wp.rotor.rotation.z -= dt * 2.2; });
+  bakeGroup(wp.g, { skip: (obj) => obj.name === 'rotor' });
+  colliders.push({ type: 'circle', x: LAKE.cx - LAKE.hx - 34, z: LAKE.cz + 30, r: 1.8 });
   const sh = shed();
-  place(sh, 345, -50, 0.2, 6);
   bakeGroup(sh);
+  put(sh, LAKE.cx - LAKE.hx - 46, LAKE.cz + 46, 0.3, 6);
+  colliders.push({ type: 'box', x: LAKE.cx - LAKE.hx - 46, z: LAKE.cz + 46, yaw: 0.3, hx: 3.2, hz: 2.4 });
   const wt = waterTower();
   bakeGroup(wt);
-  place(wt, 1060, -46, 0, 7);
+  const wtx = LAKE.cx + LAKE.hx + 2, wtz = LAKE.cz + LAKE.hz - 18;
+  put(wt, wtx, wtz, 0.4, 8);
+  for (let k = 0; k < 4; k++) {
+    const a = (k / 4) * Math.PI * 2 + Math.PI / 4 + 0.4;
+    colliders.push({ type: 'circle', x: wtx + Math.cos(a) * 3.3, z: wtz - Math.sin(a) * 3.3, r: 0.3 });
+  }
   const bb = billboard();
   bakeGroup(bb);
-  place(bb, 690, 30, Math.PI - 0.45, 7);
-  bakeGroup(wp.g, { skip: (o) => o.name === 'rotor' });
+  const bp = pointAt(idxForZ(110), -32);
+  put(bb, bp.x, bp.z, bp.yaw + Math.PI + 0.45, 7);
 
-  // Keep scatter off the gas lot, fences and poles
-  for (const p of poles) exclusions.push({ x: p.x, z: p.z, r: 1.5 });
-
+  void atXZ;
   return { group, colliders, exclusions, update: (dt) => updaters.forEach((f) => f(dt)) };
 }
