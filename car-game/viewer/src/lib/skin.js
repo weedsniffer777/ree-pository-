@@ -245,3 +245,36 @@ export function cautionMaterial(repeatX = 6) {
   t.needsUpdate = true;
   return matte(t, { roughness: 0.8 });
 }
+
+// Hand-painted streak along Z (top textures): ragged brushed edges, chipped and faded.
+export function paintStreak(cv, z0, z1, xc, width, seed, color = [142, 32, 26]) {
+  const { g, P, ppm } = cv;
+  const r = rng(seed);
+  const step = 0.012;
+  let drift = 0;
+  for (let z = z0; z >= z1; z -= step) {
+    drift += (r() - 0.5) * 0.004;
+    drift *= 0.97;
+    const half = width / 2 + (r() - 0.5) * 0.012;
+    const a = P(z, xc + drift - half);
+    const b = P(z - step * 1.4, xc + drift + half);
+    g.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},${0.82 + r() * 0.15})`;
+    g.fillRect(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]));
+    // dry-brush bristle streaks along the stroke
+    if (r() < 0.6) {
+      const y = P(z, xc + drift + (r() - 0.5) * width)[1];
+      g.fillStyle = `rgba(${color[0] - 50},${color[1] - 15},${color[2] - 12},0.35)`;
+      g.fillRect(a[0], y, step * ppm * 3, 1);
+    }
+  }
+  // chips showing gunmetal underneath + sun fade
+  const [x0, y0] = P(z0, xc - width);
+  const [x1, y1] = P(z1, xc + width);
+  const n = Math.abs((x1 - x0) * (y1 - y0)) / 30;
+  for (let i = 0; i < n; i++) {
+    const x = Math.min(x0, x1) + r() * Math.abs(x1 - x0);
+    const y = Math.min(y0, y1) + r() * Math.abs(y1 - y0);
+    g.fillStyle = r() < 0.7 ? `rgba(59,64,70,${0.4 + r() * 0.5})` : `rgba(220,150,120,${r() * 0.15})`;
+    g.fillRect(x, y, 1 + r() * 4, 1 + r() * 2);
+  }
+}

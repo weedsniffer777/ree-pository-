@@ -5,7 +5,7 @@ import { mesh, box, cyl, tube, slabAlong, socket } from '../../lib/geo.js';
 import { loft, projectAndGroup } from '../../lib/loft.js';
 import {
   UV, Z0, ZL, YH, makeCanvas, toTexture, paintGunmetal, fillPoly, rust, along as seedsAlong,
-  edgeWear, dust, glassMaterial, darkMaterial, gunmetalMaterial,
+  edgeWear, dust, paintStreak, glassMaterial, darkMaterial, gunmetalMaterial,
 } from '../../lib/skin.js';
 import {
   AXLE_Y, AXLE_F, AXLE_R, TRACK_X, ARCH_R, BODY, bodyHalf, bodyTop, cabinRows, cabinHalf,
@@ -227,6 +227,10 @@ function paintSkins() {
 
   paintGunmetal(top, 12, { stains: false });
   fillPoly(top, [[0.86, -0.76], [0.86, 0.76], [-1.72, 0.76], [-1.72, -0.76]], '#1f2225'); // floor seen through glass
+  // twin red streaks, nose to tail (Death Race style), slightly off-centre and hand-painted
+  paintStreak(top, 2.26, -2.26, 0.2, 0.17, 41);
+  paintStreak(top, 2.26, -2.26, -0.2, 0.17, 42);
+  paintStreak(top, 2.26, -2.26, 0.06, 0.03, 43);
   edgeWear(top, [[2.2, -0.85], [2.2, 0.85]], 13, 0.03);
   for (const s of [-1, 1]) edgeWear(top, [[2.2, s * 0.86], [-2.2, s * 0.86]], 14 + s, 0.02);
   rust(top, [[2.1, 0.7], [2.1, -0.65], [0.95, 0.55], [0.95, -0.6], [-2.1, 0.7], [-2.05, -0.6], [-1.95, 0.0]], 15, { size: 0.08, drips: false });

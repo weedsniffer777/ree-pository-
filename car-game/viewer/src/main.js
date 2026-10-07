@@ -2,6 +2,10 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { MODELS } from './registry.js';
 import { buildGoonRef } from './models/ref/goon.js';
 import { countTriangles } from './lib/geo.js';
@@ -27,18 +31,38 @@ app.appendChild(labelRenderer.domElement);
 
 const scene = new THREE.Scene();
 scene.background = skyTexture();
-scene.fog = new THREE.Fog(0xf3d6c0, 30, 70);
+scene.fog = new THREE.Fog(0xead2b4, 25, 80);
 scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
 scene.environmentIntensity = 0.3;
 
+const GradeShader = {
+  uniforms: { tDiffuse: { value: null }, saturation: { value: 1.18 }, contrast: { value: 1.08 }, vignette: { value: 0.28 } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `
+    uniform sampler2D tDiffuse; uniform float saturation, contrast, vignette; varying vec2 vUv;
+    void main() {
+      vec4 c = texture2D(tDiffuse, vUv);
+      float l = dot(c.rgb, vec3(0.299, 0.587, 0.114));
+      vec3 col = mix(vec3(l), c.rgb, saturation);
+      col = (col - 0.5) * contrast + 0.5;
+      col *= mix(vec3(0.92, 0.95, 1.04), vec3(1.07, 1.0, 0.88), smoothstep(0.15, 0.7, l)); // cool shadows, warm highlights
+      float d = distance(vUv, vec2(0.5));
+      col *= 1.0 - vignette * smoothstep(0.35, 0.85, d);
+      gl_FragColor = vec4(clamp(col, 0.0, 1.0), c.a);
+    }`,
+};
 const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 200);
 const controls = new OrbitControls(camera, renderer.domElement);
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+composer.addPass(new OutputPass());
+composer.addPass(new ShaderPass(GradeShader));
 controls.enableDamping = true;
 controls.target.set(0, 0.9, 0);
 
 // Warm late-afternoon light, per the style target
-scene.add(new THREE.HemisphereLight(0x9fd8e0, 0xe8cfa0, 1.1));
-const sun = new THREE.DirectionalLight(0xffe2b8, 2.6);
+scene.add(new THREE.HemisphereLight(0xd7e4ec, 0xc08a5c, 1.2));
+const sun = new THREE.DirectionalLight(0xffcf98, 2.8);
 sun.position.set(6, 10, 4);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
@@ -46,7 +70,7 @@ Object.assign(sun.shadow.camera, { left: -8, right: 8, top: 8, bottom: -8 });
 sun.shadow.bias = -0.0005;
 scene.add(sun);
 
-const GROUNDS = { sand: 0xead7ae, asphalt: 0x5c5d63 };
+const GROUNDS = { sand: 0xd2a678, asphalt: 0x4c4a4a };
 const ground = new THREE.Mesh(
   new THREE.CircleGeometry(60, 48),
   new THREE.MeshStandardMaterial({ color: GROUNDS.sand, roughness: 1 }),
@@ -192,7 +216,7 @@ function frame() {
     }
   }
   controls.update();
-  renderer.render(scene, camera);
+  composer.render();
   labelRenderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
@@ -201,6 +225,7 @@ addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
   labelRenderer.setSize(innerWidth, innerHeight);
 });
 
@@ -215,10 +240,10 @@ function skyTexture() {
   c.height = 256;
   const g = c.getContext('2d');
   const grad = g.createLinearGradient(0, 0, 0, 256);
-  grad.addColorStop(0, '#4fb3bf');
-  grad.addColorStop(0.55, '#a9d9d6');
-  grad.addColorStop(0.8, '#f6c9b5');
-  grad.addColorStop(1, '#f3d6c0');
+  grad.addColorStop(0, '#b9c9cf');
+  grad.addColorStop(0.45, '#ecd6bd');
+  grad.addColorStop(0.8, '#f3d7b6');
+  grad.addColorStop(1, '#ead2b4');
   g.fillStyle = grad;
   g.fillRect(0, 0, 4, 256);
   const tex = new THREE.CanvasTexture(c);
