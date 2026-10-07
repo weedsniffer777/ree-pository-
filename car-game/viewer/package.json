@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "shot": "node scripts/screenshot.mjs"
+    "shot": "node scripts/screenshot.mjs",
+    "build:level": "ENTRY=level vite build",
+    "shot:level": "node scripts/shot-level.mjs"
   },
   "dependencies": {
     "three": "^0.186.1",

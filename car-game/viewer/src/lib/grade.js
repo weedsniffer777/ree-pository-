@@ -1,0 +1,17 @@
+// Shared colour grade: saturation, contrast, cool-shadow/warm-highlight split tone, vignette.
+export const GradeShader = {
+  uniforms: { tDiffuse: { value: null }, saturation: { value: 1.24 }, contrast: { value: 1.08 }, vignette: { value: 0.28 } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `
+    uniform sampler2D tDiffuse; uniform float saturation, contrast, vignette; varying vec2 vUv;
+    void main() {
+      vec4 c = texture2D(tDiffuse, vUv);
+      float l = dot(c.rgb, vec3(0.299, 0.587, 0.114));
+      vec3 col = mix(vec3(l), c.rgb, saturation);
+      col = (col - 0.5) * contrast + 0.5;
+      col *= mix(vec3(0.92, 0.95, 1.04), vec3(1.07, 1.0, 0.88), smoothstep(0.15, 0.7, l)); // cool shadows, warm highlights
+      float d = distance(vUv, vec2(0.5));
+      col *= 1.0 - vignette * smoothstep(0.35, 0.85, d);
+      gl_FragColor = vec4(clamp(col, 0.0, 1.0), c.a);
+    }`,
+};
