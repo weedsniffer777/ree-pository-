@@ -1,3 +1,5 @@
+import { MAPS, currentMap, switchMap } from './maps.js';
+
 // Dev kit: a small button top-right that opens a menu with the model viewer (the garage
 // page in an overlay), tutorial replay, stats, and a full data reset.
 
@@ -6,12 +8,15 @@ const CSS = `
 #devkit button { font: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; }
 #devkit .open { background: rgba(22,23,26,0.72); color: #f2efe6; border: 2px solid #16171a; border-radius: 6px; padding: 7px 10px 6px; }
 #devkit .open:hover, #devkit.on .open { background: #f2c21b; color: #16171a; }
-#devkit .menu { position: absolute; right: 0; top: calc(100% + 6px); display: none; min-width: 190px; background: #f2efe6; border: 2px solid #16171a; border-radius: 6px; box-shadow: 0 6px 0 rgba(0,0,0,0.3); overflow: hidden; }
+#devkit .menu { position: absolute; right: 0; top: calc(100% + 6px); display: none; min-width: 210px; max-height: calc(100vh - 70px); overflow-y: auto; background: #f2efe6; border: 2px solid #16171a; border-radius: 6px; box-shadow: 0 6px 0 rgba(0,0,0,0.3); overflow: hidden; }
 #devkit.on .menu { display: grid; }
 #devkit .menu button { text-align: left; background: none; border: 0; border-bottom: 1px solid rgba(22,23,26,0.15); padding: 11px 12px 10px; color: #16171a; }
 #devkit .menu button:last-child { border-bottom: 0; }
 #devkit .menu button:hover { background: #f2c21b; }
 #devkit .menu .danger { color: #b3170f; }
+#devkit .menu .grp { padding: 9px 12px 5px; font-size: 10px; letter-spacing: 0.2em; color: #6a6a66; background: rgba(22,23,26,0.07); }
+#devkit .menu button.cur { background: #16171a; color: #f2c21b; }
+#devkit .menu button.cur::after { content: ' ✓'; }
 @media (orientation: landscape) and (max-height: 520px) { #devkit { top: 10px; } #devkit .open { padding: 5px 8px 4px; } }
 #devkit-viewer { position: fixed; inset: 0; z-index: 30; background: #16171a; }
 #devkit-viewer iframe { width: 100%; height: 100%; border: 0; display: block; }
@@ -26,6 +31,8 @@ export function createDevKit({ viewerUrl, onStats, onOpenChange }) {
   el.id = 'devkit';
   el.innerHTML = `<button class="open">Dev kit</button>
     <div class="menu">
+      ${['Highway', 'Track'].map((g) => `<div class="grp">${g === 'Highway' ? 'Endless highway' : 'Closed tracks'}</div>${MAPS.filter((m) => m.group === g).map((m) => `<button data-map="${m.id}" class="${m.id === currentMap().id ? 'cur' : ''}">${m.name}</button>`).join('')}`).join('')}
+      <div class="grp">Tools</div>
       <button data-a="viewer">Model viewer</button>
       <button data-a="stats">Toggle stats</button>
       <button data-a="tutorial">Replay tutorial</button>
@@ -60,5 +67,5 @@ export function createDevKit({ viewerUrl, onStats, onOpenChange }) {
       location.reload();
     },
   };
-  el.querySelectorAll('.menu button').forEach((b) => b.addEventListener('click', () => actions[b.dataset.a]()));
+  el.querySelectorAll('.menu button').forEach((b) => b.addEventListener('click', () => (b.dataset.map ? switchMap(b.dataset.map) : actions[b.dataset.a]())));
 }

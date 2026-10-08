@@ -6,8 +6,10 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { GradeShader } from '../lib/grade.js';
 import { buildStarterCoupe } from '../models/cars/starterCoupe.js';
-import { S, STEP, I_START, pointAt, ensure } from './route.js';
+import { S, STEP, I_START, LOOP, pointAt, ensure } from './route.js';
 import { World } from './world.js';
+import { TrackWorld } from './trackworld.js';
+import { currentMap } from './maps.js';
 import { biomeIndexAt, BIOMES } from './biomes.js';
 import { bakeGroup } from '../level/bake.js';
 import { CarController, setTerrain } from './car.js';
@@ -23,6 +25,8 @@ import { Tracers, Guns } from '../level/combat.js';
 // ?at=<m from start>&lat=<m>&view=chase|high|side|front|aerial|overview|back&orbit=<deg>&auto=1&sim=<s>&ui=0&stats=1&tut=1
 
 const params = new URLSearchParams(location.search);
+const MAP = currentMap();
+const THEME = LOOP.def; // set on closed-loop circuits
 const num = (k, d) => (params.has(k) ? Number(params.get(k)) : d);
 const tBuild = performance.now();
 
@@ -36,10 +40,10 @@ renderer.toneMappingExposure = 1.12;
 renderer.info.autoReset = false;
 document.getElementById('app').appendChild(renderer.domElement);
 
-const HORIZON = 0xf3d5b2;
+const HORIZON = new THREE.Color(THEME ? THEME.fog[0] : '#f3d5b2');
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(HORIZON);
-scene.fog = new THREE.Fog(HORIZON, 140, 1150);
+scene.fog = THEME ? new THREE.Fog(HORIZON, THEME.fog[1], THEME.fog[2]) : new THREE.Fog(HORIZON, 140, 1150);
 scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
 scene.environmentIntensity = 0.22;
 
@@ -48,14 +52,16 @@ const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
 composer.addPass(new OutputPass());
 const grade = new ShaderPass(GradeShader);
-grade.uniforms.saturation.value = 1.58;
-grade.uniforms.contrast.value = 1.04;
-grade.uniforms.lift.value = 0.07;
-grade.uniforms.toon.value = 0.45; // punchier than the garage; the sky dome is pre-desaturated to match
+const GR = THEME ? THEME.grade : { saturation: 1.58, contrast: 1.04, lift: 0.07, toon: 0.45 };
+grade.uniforms.saturation.value = GR.saturation;
+grade.uniforms.contrast.value = GR.contrast;
+grade.uniforms.lift.value = GR.lift;
+grade.uniforms.toon.value = GR.toon; // punchier than the garage; the sky dome is pre-desaturated to match
 composer.addPass(grade);
 
-scene.add(new THREE.HemisphereLight(0xe6eef4, 0xd9a06a, 1.9));
-const sun = new THREE.DirectionalLight(0xffdcae, 3.6);
+const HEMI = THEME ? THEME.hemi : [0xe6eef4, 0xd9a06a, 1.9], SUNL = THEME ? THEME.sun : [0xffdcae, 3.6];
+scene.add(new THREE.HemisphereLight(HEMI[0], HEMI[1], HEMI[2]));
+const sun = new THREE.DirectionalLight(SUNL[0], SUNL[1]);
 const SUN_DIR = new THREE.Vector3(70, 85, 45).normalize();
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
@@ -64,14 +70,15 @@ sun.shadow.bias = -0.0004;
 sun.shadow.normalBias = 0.03;
 scene.add(sun, sun.target);
 
-const sky = buildSky();
+const sky = buildSky(THEME ? THEME.sky : ['#6aaed6', '#aed2e6', '#f3d5b2'], Math.min(1, 1.2 / GR.saturation));
 scene.add(sky);
 
 // ---- World ----
-const world = new World(scene);
+const world = THEME ? new TrackWorld(scene, THEME) : new World(scene);
 const terrainHeight = (x, z) => world.heightAt(x, z);
 setTerrain(terrainHeight, (x, z, n) => world.heightAtN(x, z, n));
-const startI = () => I_START + Math.round(num('at', 0) / STEP);
+const startAt = params.has('at') ? num('at', 0) : (MAP.at || 0);
+const startI = () => I_START + Math.round(startAt / STEP);
 ensure(startI() + 1500);
 world.update(startI(), true);
 
@@ -231,6 +238,12 @@ function updateCamera(dt) {
     camera.position.set(car.x - fx * 45, car.y + 34, car.z - fz * 45);
     camera.lookAt(car.x + fx * 45, car.y, car.z + fz * 45);
     fovT = 60;
+  } else if (view === 'top' && LOOP.on) {
+    scene.fog = null;
+    camera.position.set(world.box.cx, 1100, world.box.cz);
+    camera.up.set(0, 0, 1);
+    camera.lookAt(world.box.cx, 0, world.box.cz + 0.01);
+    fovT = 55;
   } else if (view === 'overview') {
     camera.position.set(0, 1500, 760);
     camera.up.set(1, 0, 0);
@@ -279,7 +292,7 @@ function updatePursuer(dt, dist) {
 // TODO: an enemy from behind teaches S ("get behind them") and gives the guns a target.
 const TUT_SPEED = 22; // m/s, about 80 km/h until you learn W and cruise
 const tut = { step: 0, phase: 'wait', t: 0, done: false, acc: 0, left: false, right: false };
-try { tut.done = (localStorage.getItem('endless.tutorial.v2') === 'done' || params.has('at') || auto) && params.get('tut') !== '1'; } catch { /* ignore */ }
+try { tut.done = (localStorage.getItem('endless.tutorial.v2') === 'done' || params.has('at') || startAt > 0 || LOOP.on || auto) && params.get('tut') !== '1'; } catch { /* ignore */ }
 if (!tut.done) pursuer.enabled = false;
 const K = (k) => `<kbd>${k}</kbd>`;
 const STEPS = [
@@ -335,6 +348,30 @@ function updateTutorial(dt) {
   }
 }
 
+// ---- Closed-loop lap timing: progress is unwrapped so laps count only forward ----
+let lapI = car.n.i, lapProg = 0, lapsDone = 0, lapT = 0, bestLap = 0;
+try { bestLap = Number(localStorage.getItem(`endless.lap.${MAP.id}`) || 0); } catch { /* ignore */ }
+const fmtT = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`;
+function updateLap(dt) {
+  const N = LOOP.n, i = car.n.i;
+  lapProg += ((i - lapI + N + N / 2) % N) - N / 2;
+  lapI = i;
+  lapT += dt;
+  if (Math.floor(lapProg / N) > lapsDone) {
+    lapsDone = Math.floor(lapProg / N);
+    if (!bestLap || lapT < bestLap) { bestLap = lapT; try { localStorage.setItem(`endless.lap.${MAP.id}`, String(bestLap)); } catch { /* ignore */ } }
+    hud.title(`Lap ${lapsDone}`, fmtT(lapT));
+    lapT = 0;
+  }
+  return {
+    dist: Math.max(0, lapProg) * STEP,
+    frac: ((lapProg % N) + N) % N / N,
+    sub: `Lap ${lapsDone + 1} · ${fmtT(lapT)}${bestLap ? ` · Best ${fmtT(bestLap)}` : ''}`,
+  };
+}
+
+window.__game.lap = () => ({ lapsDone, lapProg, lapT, bestLap });
+
 // ---- Loop ----
 const H = 1 / 120;
 let acc = 0, last = performance.now(), frames = 0, fpsT = 0, fps = 0, arenaShown = false;
@@ -386,11 +423,17 @@ function frame(now) {
   tracers.update(dt);
   runTime += dt;
   const dist = Math.max(0, (car.n.i - I_START) * STEP);
-  if (dist > best && !params.has('at')) { best = dist; if (Math.floor(runTime) % 5 === 0) { try { localStorage.setItem('endless.best', String(Math.round(best))); } catch { /* ignore */ } } }
-  const bi = biomeIndexAt(dist);
-  if (bi !== biomeShown) { biomeShown = bi; hud.title(BIOMES[bi].name, dist < 10 ? 'Drive · Survive · Destroy' : `${(dist / 1000).toFixed(1)} km`); }
-  hud.set({ speed: Math.abs(car.vf) * 3.6, boost: car.boost, boosting: car.boosting, cruise: cruise || hud.touch.active, dist, best });
-  updatePursuer(dt, dist);
+  if (dist > best && !params.has('at') && !startAt && !LOOP.on) { best = dist; if (Math.floor(runTime) % 5 === 0) { try { localStorage.setItem('endless.best', String(Math.round(best))); } catch { /* ignore */ } } }
+  const bi = LOOP.on ? 0 : biomeIndexAt(dist);
+  if (LOOP.on) { if (biomeShown < 0) { biomeShown = 0; hud.title(THEME.name, `${(LOOP.len / 1000).toFixed(1)} km circuit`); } } else if (bi !== biomeShown) { biomeShown = bi; hud.title(BIOMES[bi].name, dist < 10 ? 'Drive · Survive · Destroy' : `${(dist / 1000).toFixed(1)} km`); }
+  if (LOOP.on) {
+    const lap = updateLap(dt);
+    hud.set({ speed: Math.abs(car.vf) * 3.6, boost: car.boost, boosting: car.boosting, cruise: cruise || hud.touch.active, dist: lap.dist, best, sub: lap.sub });
+    hud.track({ you: lap.frac, them: null, hot: false });
+  } else {
+    hud.set({ speed: Math.abs(car.vf) * 3.6, boost: car.boost, boosting: car.boosting, cruise: cruise || hud.touch.active, dist, best });
+    updatePursuer(dt, dist);
+  }
   updateTutorial(dt);
 
   renderer.info.reset();
@@ -417,9 +460,9 @@ addEventListener('resize', () => {
   embers.resize();
 });
 
-function buildSky() {
+function buildSky(cols, sat) {
   const geo = new THREE.SphereGeometry(4500, 32, 16);
-  const top = new THREE.Color('#6aaed6'), mid = new THREE.Color('#aed2e6'), hor = new THREE.Color('#f3d5b2');
+  const top = new THREE.Color(cols[0]), mid = new THREE.Color(cols[1]), hor = new THREE.Color(cols[2]);
   const p = geo.attributes.position;
   const col = new Float32Array(p.count * 3);
   const c = new THREE.Color();
@@ -430,7 +473,7 @@ function buildSky() {
     else c.copy(mid).lerp(top, Math.min(1, (t - 0.16) / 0.5));
     // pre-compensate for the level's stronger saturation so the sky reads as in the garage
     const l = c.r * 0.299 + c.g * 0.587 + c.b * 0.114;
-    c.r = l + (c.r - l) * 0.77; c.g = l + (c.g - l) * 0.77; c.b = l + (c.b - l) * 0.77;
+    c.r = l + (c.r - l) * sat; c.g = l + (c.g - l) * sat; c.b = l + (c.b - l) * sat;
     col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
   }
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));

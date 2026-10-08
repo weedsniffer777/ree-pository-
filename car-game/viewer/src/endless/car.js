@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { S, STEP, I_START, RAIL_LAT, ROAD_HALF, ROAD_BEVEL, nearest, corridor, pointAt } from './route.js';
+import { S, STEP, I_START, LOOP, RAIL_LAT, ROAD_HALF, ROAD_BEVEL, nearest, corridor, pointAt } from './route.js';
 import { roadSurfaceY } from '../level/road.js';
 import { railSide } from './world.js';
 
@@ -233,18 +233,19 @@ export class CarController {
       const vn = this.vx * S.tx[i] + this.vz * S.tz[i];
       if ((n.i < lo && vn < 0) || (n.i > hi && vn > 0)) { this.vx -= S.tx[i] * vn * 1.2; this.vz -= S.tz[i] * vn * 1.2; this.hit(Math.abs(vn)); }
     };
-    const lo = I_START - 100, hi = S.count - 50;
-    if (n.i < lo || n.i > hi) along(lo, hi);
+    if (!LOOP.on) {
+      const lo = I_START - 100, hi = S.count - 50;
+      if (n.i < lo || n.i > hi) along(lo, hi);
+    }
     n = nearest(this.x, this.z, this.hint);
-    {
-      const side = railSide(n.i);
-      const r = { side };
-      if (!side) { this.n = nearest(this.x, this.z, this.hint); this.prevLat = this.n.lat; return; }
-      const ls = n.lat * r.side, prev = this.prevLat * r.side;
+    // Barriers: loop circuits have both sides walled; the highway only rails the outside of sharp curves.
+    const sides = LOOP.on ? [-1, 1] : railSide(n.i) ? [railSide(n.i)] : [];
+    for (const side of sides) {
+      const ls = n.lat * side, prev = this.prevLat * side;
       let tgt = null;
       if (prev <= RAIL_LAT && ls > RAIL_LAT - 1.0) tgt = RAIL_LAT - 1.0;
       else if (prev > RAIL_LAT && ls < RAIL_LAT + 1.0) tgt = RAIL_LAT + 1.0;
-      if (tgt !== null) this.pushLat(n.i, (ls - tgt) * r.side);
+      if (tgt !== null) { this.pushLat(n.i, (ls - tgt) * side); n = nearest(this.x, this.z, this.hint); }
     }
     this.n = nearest(this.x, this.z, this.hint);
     this.prevLat = this.n.lat;

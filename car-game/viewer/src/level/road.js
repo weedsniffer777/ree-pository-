@@ -143,7 +143,7 @@ function lcg(seed) {
   return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
 }
 
-export function paintRoad({ dashed = false } = {}) {
+export function paintRoad({ dashed = false, centre = dashed ? 'dashed' : 'double', sand = true } = {}) {
   const W = 1024, H = 4096;
   const c = document.createElement('canvas');
   c.width = W;
@@ -233,9 +233,10 @@ export function paintRoad({ dashed = false } = {}) {
   }
   // Paint: double yellow centre, white edge lines, then wear them down
   // dashed: a single broken centre line (3 m paint, 5 m gap) that strobes past at speed
-  const stripes = dashed
-    ? [[-0.07, 0.07, '#d4a020', 8], [-3.78, -3.63, '#e2ddd2'], [3.63, 3.78, '#e2ddd2']]
-    : [[-0.23, -0.11, '#d4a020'], [0.11, 0.23, '#d4a020'], [-3.78, -3.63, '#e2ddd2'], [3.63, 3.78, '#e2ddd2']];
+  const edges = [[-3.78, -3.63, '#e2ddd2'], [3.63, 3.78, '#e2ddd2']];
+  const stripes = centre === 'dashed' ? [[-0.07, 0.07, '#d4a020', 8], ...edges]
+    : centre === 'none' ? edges
+      : [[-0.23, -0.11, '#d4a020'], [0.11, 0.23, '#d4a020'], ...edges];
   for (const [a, b, colr, period] of stripes) {
     g.fillStyle = colr;
     if (period) for (let s = 0; s < TEX_LEN; s += period) g.fillRect(X(a), s * PY, X(b) - X(a), 3 * PY);
@@ -314,7 +315,7 @@ export function paintRoad({ dashed = false } = {}) {
   }
   // Sand blown over the shoulders: coverage rises toward the edge and is broken up by
   // noise stretched along the road, so it reads as drifts, not blobs.
-  {
+  if (sand) {
     const nA = noiseLayer(14, 120, 11); // drift streaks along the road
     const nB = noiseLayer(60, 480, 12); // finer breakup
     const img3 = g.getImageData(0, 0, W, H);

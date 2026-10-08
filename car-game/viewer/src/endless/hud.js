@@ -147,7 +147,7 @@ export function createHud({ touch = false } = {}) {
   const track = $('.track'), them = $('.track .them'), spot = $('.spot'), card = $('.card');
   return {
     touch: t,
-    set({ speed, boost, boosting, cruise, dist, best }) {
+    set({ speed, boost, boosting, cruise, dist, best, sub }) {
       $('.speed .n').textContent = String(Math.round(speed));
       $('.boost .bar i').style.width = `${Math.round(boost * 100)}%`;
       $('.boost').classList.toggle('on', boosting);
@@ -157,7 +157,7 @@ export function createHud({ touch = false } = {}) {
         cr.innerHTML = cruise ? '<kbd>E</kbd>CRUISE OFF' : '<kbd>E</kbd>CRUISE';
       }
       $('.dist .v').firstChild.textContent = (dist / 1000).toFixed(2);
-      $('.dist .b').textContent = `Best ${(best / 1000).toFixed(2)} km`;
+      $('.dist .b').textContent = sub ?? `Best ${(best / 1000).toFixed(2)} km`;
     },
     // you/them as fractions 0..1 of the current area (them null when away)
     track({ you, them: tp, hot }) {
