@@ -76,10 +76,13 @@ export class Tracers {
   }
 }
 
-// Twin forward guns on the player's car.
+// Twin forward guns on a car. Options: light (muzzle flash light, player only), color
+// (tracer), rate (rounds/s), spread (m at 60 m), hitTest(origin, dir, range, shooter) ->
+// { d, point, ... } | null for vehicles, onTargetHit(hit) when such a round arrives.
 export class Guns {
-  constructor(model, scene, { tracers, dust, sparks, height = terrainHeight }) {
+  constructor(model, scene, { tracers, dust, sparks, height = terrainHeight, light = true, color = 0xff2a1a, rate = 14, spread = 1.6, hitTest = null, onTargetHit = null }) {
     this.height = height;
+    Object.assign(this, { color, rate, spread, hitTest, onTargetHit });
     this.tracers = tracers;
     this.dust = dust;
     this.sparks = sparks;
@@ -93,8 +96,8 @@ export class Guns {
       scene.add(s);
       return { sprite: s, life: 0 };
     });
-    this.light = new THREE.PointLight(0xffb35a, 0, 9, 2);
-    scene.add(this.light);
+    this.light = light ? new THREE.PointLight(0xffb35a, 0, 9, 2) : { intensity: 0, position: new THREE.Vector3() };
+    if (light) scene.add(this.light);
     this.cool = 0;
     this.side = 0;
     this.kick = 0;
@@ -102,7 +105,7 @@ export class Guns {
     this.fwd = new THREE.Vector3();
   }
 
-  update(dt, firing, car) {
+  update(dt, firing, car, aim = null) {
     this.cool -= dt;
     for (const f of this.flashes) {
       f.life -= dt;
@@ -112,22 +115,23 @@ export class Guns {
     this.kick = Math.max(0, this.kick - dt * 6);
     if (!firing || !this.guns.length) return;
     while (this.cool <= 0) {
-      this.cool += 1 / 14; // 14 rounds/s across both guns
-      this.shoot(car);
+      this.cool += 1 / this.rate; // rounds/s across both guns
+      this.shoot(car, aim);
     }
   }
 
-  shoot(car) {
+  shoot(car, aimAt = null) {
     const k = this.side;
     this.side = (this.side + 1) % this.guns.length;
     const gun = this.guns[k];
     const muzzle = gun.localToWorld(this.tmp.copy(gun.userData.muzzle));
     this.fwd.set(Math.sin(car.yaw), 0, Math.cos(car.yaw));
     // slight spread, rounds converge ~60 m ahead
-    const aim = new THREE.Vector3(car.x, car.y + 0.9, car.z).addScaledVector(this.fwd, 60);
-    aim.x += (Math.random() - 0.5) * 1.6;
-    aim.y += (Math.random() - 0.4) * 1.0;
-    aim.z += (Math.random() - 0.5) * 1.6;
+    const aim = aimAt ? aimAt.clone() : new THREE.Vector3(car.x, car.y + 0.9, car.z).addScaledVector(this.fwd, 60);
+    const sp = this.spread * (aimAt ? Math.max(0.5, aim.distanceTo(muzzle) / 60) : 1);
+    aim.x += (Math.random() - 0.5) * sp;
+    aim.y += (Math.random() - 0.4) * sp * 0.6;
+    aim.z += (Math.random() - 0.5) * sp;
     const dir = aim.sub(muzzle).normalize();
     // march to the ground or max range
     let hit = null;
@@ -136,9 +140,13 @@ export class Guns {
       p.copy(muzzle).addScaledVector(dir, d);
       if (p.y <= this.height(p.x, p.z)) { hit = p.clone(); break; }
     }
-    const end = hit ?? muzzle.clone().addScaledVector(dir, 160);
     const start = muzzle.clone();
-    this.tracers.fire(start, end, 0xff2a1a, hit ? () => this.impact(hit) : null);
+    const veh = this.hitTest?.(start, dir, hit ? hit.distanceTo(start) : 160, car);
+    if (veh) this.tracers.fire(start, veh.point, this.color, () => { this.sparkAt(veh.point); this.onTargetHit?.(veh); });
+    else {
+      const end = hit ?? muzzle.clone().addScaledVector(dir, 160);
+      this.tracers.fire(start, end, this.color, hit ? () => this.impact(hit) : null);
+    }
 
     const f = this.flashes[k];
     f.sprite.position.copy(start).addScaledVector(dir, 0.35);
@@ -151,6 +159,11 @@ export class Guns {
     this.kick = 1;
     // smoke wisp at the muzzle
     this.dust.emit(start.x, start.y, start.z, car.vx * 0.9, 0.5, car.vz * 0.9, 0.25, 0.4, 0.75, 0.72, 0.68);
+  }
+
+  sparkAt(p) {
+    for (let k = 0; k < 6; k++) this.sparks.emit(p.x, p.y, p.z, (Math.random() - 0.5) * 9, 1 + Math.random() * 4, (Math.random() - 0.5) * 9, 0.07, 0.15 + Math.random() * 0.15, 1.0, 0.75, 0.35);
+    this.dust.emit(p.x, p.y, p.z, 0, 1, 0, 0.5, 0.6, 0.3, 0.29, 0.28);
   }
 
   impact(p) {

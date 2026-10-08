@@ -15,8 +15,16 @@ export function setTerrain(fn, fnN) { terrainHeight = fn; terrainHeightN = fnN; 
 const G = 24;
 const TOP_V = 45.8, BOOST_V = 58.3; // 165 / 210 km/h
 const WB_F = 1.3, WB_R = -1.25, TRACK = 0.77, WHEEL_R = 0.332;
-const HIT = [-1.75, -0.25, 1.25, 2.6];
-const HIT_R = 1.0;
+// Hitbox: a row of circles fitted to the model's footprint (see fitHitbox).
+export function fitHitbox(model) {
+  model.updateMatrixWorld(true);
+  const bb = new THREE.Box3().setFromObject(model);
+  const hx = Math.max(-bb.min.x, bb.max.x), z0 = bb.min.z, z1 = bb.max.z;
+  const r = hx, n = Math.max(2, Math.ceil((z1 - z0 - 2 * r) / (r * 0.9)) + 1);
+  const offs = [];
+  for (let k = 0; k < n; k++) offs.push(z0 + r + ((z1 - z0 - 2 * r) * k) / (n - 1));
+  return { r, offs, hx, hz0: z0, hz1: z1 };
+}
 const SURF = {
   road: { grip: 9, drag: 0.12, max: 1 },
   sand: { grip: 5.5, drag: 0.45, max: 0.82 },
@@ -41,6 +49,7 @@ export class CarController {
     this.body.add(model);
     this.wheels = model.userData.wheels;
     this.events = { impact: 0, land: 0 };
+    this.hitbox = fitHitbox(model);
     this.reset(I_START, 1.85);
   }
 
@@ -185,7 +194,8 @@ export class CarController {
     const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
     for (const c of this.colliders) {
       if (Math.abs(c.x - this.x) > 14 || Math.abs(c.z - this.z) > 14) continue;
-      for (const o of HIT) {
+      const HIT_R = this.hitbox.r;
+      for (const o of this.hitbox.offs) {
         const cx = this.x + fx * o, cz = this.z + fz * o;
         let nx, nz, pen;
         if (c.type === 'circle') {

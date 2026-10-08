@@ -23,6 +23,7 @@ export function buildStarterCoupe() {
   const car = new THREE.Group();
   car.name = 'starter_coupe';
   const skins = paintSkins();
+  car.userData.skins = skins;
   const skinMats = [skins.side, skins.top, skins.front, skins.back];
   const interior = darkMaterial(0x24272a);
   const well = darkMaterial(0x0e0f10);
@@ -205,6 +206,26 @@ function addInterior(car) {
   car.add(g);
 }
 
+// Roof/bonnet skin: gunmetal with twin streaks nose to tail (Death Race style), slightly
+// off-centre and hand-painted. `color` picks the streak paint (rgb 0..255).
+function paintTopCanvas(top, color) {
+  paintGunmetal(top, 12, { stains: false });
+  fillPoly(top, [[0.86, -0.76], [0.86, 0.76], [-1.72, 0.76], [-1.72, -0.76]], '#1f2225'); // floor seen through glass
+  paintStreak(top, 2.26, -2.26, 0.2, 0.17, 41, color);
+  paintStreak(top, 2.26, -2.26, -0.2, 0.17, 42, color);
+  paintStreak(top, 2.26, -2.26, 0.06, 0.03, 43, color);
+  edgeWear(top, [[2.2, -0.85], [2.2, 0.85]], 13, 0.03);
+  for (const s of [-1, 1]) edgeWear(top, [[2.2, s * 0.86], [-2.2, s * 0.86]], 14 + s, 0.02);
+  rust(top, [[2.1, 0.7], [2.1, -0.65], [0.95, 0.55], [0.95, -0.6], [-2.1, 0.7], [-2.05, -0.6], [-1.95, 0.0]], 15, { size: 0.08, drips: false });
+}
+
+// A top skin in another streak colour, for rival cars sharing the model (half resolution).
+export function paintTopSkin(color) {
+  const top = makeCanvas(1024, 410, (z) => (z - Z0) / ZL, (x) => (x + 1) / 2);
+  paintTopCanvas(top, color);
+  return new THREE.MeshStandardMaterial({ map: toTexture(top.c), roughness: 0.88, metalness: 0.25 });
+}
+
 // ---- Painted skins: matte gunmetal, wear on edges, corrosion where water sits ----
 function paintSkins() {
   const side = makeCanvas(2048, 574, (z) => (z - Z0) / ZL, (y) => y / YH);
@@ -225,15 +246,7 @@ function paintSkins() {
   }
   rust(side, [[0.82, 0.8], [-0.4, 0.78], [-2.05, 0.4], [2.02, 0.38], [-1.75, 0.62]], 9, { size: 0.06, density: 0.6 });
 
-  paintGunmetal(top, 12, { stains: false });
-  fillPoly(top, [[0.86, -0.76], [0.86, 0.76], [-1.72, 0.76], [-1.72, -0.76]], '#1f2225'); // floor seen through glass
-  // twin red streaks, nose to tail (Death Race style), slightly off-centre and hand-painted
-  paintStreak(top, 2.26, -2.26, 0.2, 0.17, 41);
-  paintStreak(top, 2.26, -2.26, -0.2, 0.17, 42);
-  paintStreak(top, 2.26, -2.26, 0.06, 0.03, 43);
-  edgeWear(top, [[2.2, -0.85], [2.2, 0.85]], 13, 0.03);
-  for (const s of [-1, 1]) edgeWear(top, [[2.2, s * 0.86], [-2.2, s * 0.86]], 14 + s, 0.02);
-  rust(top, [[2.1, 0.7], [2.1, -0.65], [0.95, 0.55], [0.95, -0.6], [-2.1, 0.7], [-2.05, -0.6], [-1.95, 0.0]], 15, { size: 0.08, drips: false });
+  paintTopCanvas(top);
 
   paintGunmetal(front, 16);
   dust(front, 0.28, 0.5, 0.5);

@@ -68,6 +68,28 @@ const CSS = `
 #hud .boost.on .bar i { background: repeating-linear-gradient(-55deg, #ffd27a 0 7px, #ff7a14 7px 14px); }
 #hud kbd { display: inline-block; min-width: 1.4em; padding: 2px 5px 1px; background: var(--white); color: var(--black); border-radius: 2px; font: 800 10px/1 var(--sign); text-align: center; letter-spacing: 0.04em; }
 
+/* armor: top-down car, four zones + core, green -> grey -> black */
+#hud .armor { position: absolute; left: calc(var(--gx) + 186px); bottom: var(--gyb); width: 58px; height: 100px; padding: 8px 6px; }
+#hud .armor svg { width: 100%; height: 100%; display: block; }
+#hud .armor .z { transition: fill 0.2s; }
+/* countdown */
+#hud .count { position: absolute; left: 50%; top: 32%; transform: translate(-50%, -50%) skewX(-6deg); font: 900 clamp(70px, 14vw, 150px)/1 var(--display); color: var(--white); -webkit-text-stroke: 3px #0e0f11; paint-order: stroke fill; text-shadow: 0 5px 0 rgba(0,0,0,0.55); }
+#hud .count.go { color: var(--rust); }
+#hud .count.pop { animation: pop 0.45s cubic-bezier(.2,1.6,.4,1) both; }
+@keyframes pop { from { transform: translate(-50%, -50%) skewX(-6deg) scale(1.6); opacity: 0; } }
+/* results */
+#hud .results { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(8,9,10,0.66); pointer-events: auto; }
+#hud .results[hidden] { display: none; }
+#hud .results .box { width: min(420px, calc(100% - 32px)); padding: 18px 20px 20px; display: grid; gap: 10px; }
+#hud .results h2 { margin: 0; font: 900 76px/0.85 var(--display); letter-spacing: 0.04em; transform: skewX(-6deg); }
+#hud .results.win h2 { color: var(--rust); }
+#hud .results .sub { font: 800 13px/1 var(--sign); letter-spacing: 0.2em; text-transform: uppercase; color: var(--dim); }
+#hud .results .list { display: grid; gap: 2px; max-height: 44vh; overflow: hidden; }
+#hud .results .row { grid-template-columns: 22px 1fr auto; }
+#hud .results button { height: 50px; border: 0; cursor: pointer; font: 900 24px/1 var(--display); letter-spacing: 0.14em; color: var(--black); background: var(--rust); clip-path: var(--cut); margin-top: 6px; }
+#hud .results button:hover { background: #f07a3a; }
+#hud .row b { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; vertical-align: 1px; }
+
 /* pause screen */
 #hud .paused { position: absolute; inset: 0; display: grid; place-items: center; align-content: center; gap: 14px; background: rgba(8,9,10,0.62); pointer-events: auto; }
 #hud .paused[hidden] { display: none; }
@@ -115,6 +137,12 @@ const CSS = `
   #hud .row { height: 17px; font-size: 10px; }
   #hud .row i { font-size: 12px; }
   #hud .map { width: 112px; height: 112px; }
+  #hud .armor { left: calc(var(--gx) + 118px); width: 44px; height: 76px; padding: 5px 4px; }
+  #hud .results h2 { font-size: 50px; }
+  #hud .results .box { gap: 6px; padding: 12px 16px 14px; }
+  #hud .results .list { max-height: 46vh; }
+  #hud .results button { height: 40px; font-size: 20px; }
+  #hud .count { top: 30%; }
   #hud .gauge, #hud .speed { width: 146px; }
   #hud .speed { height: 130px; }
   #hud .speed .rd { top: 50px; }
@@ -136,6 +164,7 @@ const CSS = `
 @media (max-width: 720px) and (orientation: portrait) {
   #hud .tl { width: 200px; }
   #hud .map { width: 132px; height: 132px; }
+  #hud .armor { left: calc(var(--gx) + 140px); }
   #hud .gauge, #hud .speed { width: 170px; }
   #hud .speed { height: 150px; }
   #hud .speed .rd { top: 58px; }
@@ -175,6 +204,15 @@ export function createHud({ touch = false } = {}) {
     </div>
     <div class="tr"><button class="pause" aria-label="Pause"></button></div>
     <div class="map panel"><canvas></canvas></div>
+    <div class="armor panel"><svg viewBox="0 0 46 84">
+      <path class="z" data-z="front" d="M8 2 H38 L34 16 H12 Z"/>
+      <path class="z" data-z="back" d="M12 68 H34 L38 82 H8 Z"/>
+      <path class="z" data-z="left" d="M2 8 L10 18 V66 L2 76 Z"/>
+      <path class="z" data-z="right" d="M44 8 L36 18 V66 L44 76 Z"/>
+      <rect class="z" data-z="core" x="13" y="19" width="20" height="46" rx="3"/>
+    </svg></div>
+    <div class="count" hidden></div>
+    <div class="results" hidden><div class="box panel"><h2></h2><div class="sub"></div><div class="list"></div><div class="sub best"></div><button>PLAY AGAIN</button></div></div>
     <div class="gauge">
       <div class="speed"><canvas></canvas><div class="rd"><div class="v">0</div><div class="u lbl">KM/H</div></div><div class="g">N</div></div>
       <div class="boost"><div class="top"><span class="lbl">Boost</span><span class="bk"><kbd>Shift</kbd></span></div><div class="bar"><i></i></div></div>
@@ -281,75 +319,81 @@ export function createHud({ touch = false } = {}) {
     g.beginPath(); g.moveTo(cx + Math.cos(a) * R * 0.78, cy + Math.sin(a) * R * 0.78); g.lineTo(cx + Math.cos(a) * R * 1.0, cy + Math.sin(a) * R * 1.0); g.stroke();
   }
 
-  // ---- minimap ----
+  // ---- minimap: the whole circuit, start straight pointing up, racers as dots ----
   const mc = $('.map canvas'), mx = mc.getContext('2d');
-  let mapImg = null, mapK = 1, mapMin = [0, 0];
-  const VIEW = 420; // metres across the square
+  let mapImg = null, toMap = null, mapYaw = 0, dots = [];
   function buildMap(world, S, n, startI) {
-    const dpr = Math.min(2, devicePixelRatio || 1), px = $('.map').clientWidth * dpr || 176 * dpr;
-    mapK = px / VIEW;
-    const b = world.box, M = 260;
-    let minx = b.minx - M, minz = b.minz - M, wx = b.maxx - b.minx + 2 * M, wz = b.maxz - b.minz + 2 * M;
-    mapK = Math.min(mapK, 4096 / Math.max(wx, wz));
+    const dpr = Math.min(2, devicePixelRatio || 1), px = Math.round(($('.map').clientWidth || 176) * dpr);
+    const i0 = ((startI % n) + n) % n, y0 = Math.atan2(S.tx[i0], S.tz[i0]);
+    const f0 = [Math.sin(y0), Math.cos(y0)], r0 = [-Math.cos(y0), Math.sin(y0)];
+    let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+    for (let i = 0; i < n; i += 4) {
+      const u = S.px[i] * r0[0] + S.pz[i] * r0[1], v = -(S.px[i] * f0[0] + S.pz[i] * f0[1]);
+      u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v);
+    }
+    const sc = (px * 0.84) / Math.max(u1 - u0, v1 - v0), uc = (u0 + u1) / 2, vc = (v0 + v1) / 2;
+    const T = [sc * r0[0], -sc * f0[0], sc * r0[1], -sc * f0[1], px / 2 - sc * uc, px / 2 - sc * vc];
+    toMap = (x, z) => [T[0] * x + T[2] * z + T[4], T[1] * x + T[3] * z + T[5]];
+    mapYaw = y0;
     const c = document.createElement('canvas');
-    c.width = Math.ceil(wx * mapK); c.height = Math.ceil(wz * mapK);
+    c.width = c.height = px;
     const g = c.getContext('2d');
-    g.setTransform(mapK, 0, 0, mapK, -minx * mapK, -minz * mapK);
+    g.setTransform(...T);
     g.lineJoin = g.lineCap = 'round';
-    const map = world.map ?? { roads: [], rects: [] };
-    if (map.water !== undefined) { g.fillStyle = 'rgba(70,110,135,0.16)'; g.fillRect(map.water, minz, minx + wx - map.water, wz); }
+    const map = world.map ?? { roads: [], rects: [] }, pxm = 1 / sc;
     for (const rc of map.rects) {
       g.save();
       g.translate(rc.x, rc.z);
       g.rotate(-rc.yaw);
       g.fillStyle = 'rgba(236,230,217,0.07)';
-      g.strokeStyle = 'rgba(236,230,217,0.13)';
-      g.lineWidth = 1 / mapK;
       g.fillRect(-rc.hx, -rc.hz, rc.hx * 2, rc.hz * 2);
-      g.strokeRect(-rc.hx, -rc.hz, rc.hx * 2, rc.hz * 2);
       g.restore();
     }
-    g.strokeStyle = 'rgba(236,230,217,0.1)';
+    g.strokeStyle = 'rgba(236,230,217,0.08)';
     for (const rd of map.roads) {
-      g.lineWidth = rd.w;
+      g.lineWidth = Math.max(rd.w, 1.5 * dpr * pxm);
       g.beginPath();
       rd.pts.forEach(([x, z], k) => (k ? g.lineTo(x, z) : g.moveTo(x, z)));
       g.stroke();
     }
-    const loop = () => { g.beginPath(); for (let i = 0; i <= n; i++) { const k = i % n; i ? g.lineTo(S.px[k], S.pz[k]) : g.moveTo(S.px[k], S.pz[k]); } };
-    loop(); g.strokeStyle = 'rgba(236,230,217,0.16)'; g.lineWidth = 26; g.stroke();
-    loop(); g.strokeStyle = 'rgba(255,170,90,0.35)'; g.lineWidth = 5.5 / mapK + 3; g.stroke();
-    loop(); g.strokeStyle = '#f4efe4'; g.lineWidth = 2.6 / mapK; g.stroke();
-    // start / finish: a short bar across the line
-    const i0 = ((startI % n) + n) % n, tx = S.tx[i0], tz = S.tz[i0];
-    g.strokeStyle = '#ff7a2c'; g.lineWidth = 4 / mapK;
-    g.beginPath(); g.moveTo(S.px[i0] - tz * 16, S.pz[i0] + tx * 16); g.lineTo(S.px[i0] + tz * 16, S.pz[i0] - tx * 16); g.stroke();
-    mapImg = c; mapMin = [minx, minz];
+    const loop = () => { g.beginPath(); for (let i = 0; i <= n; i += 2) { const k = i % n; i ? g.lineTo(S.px[k], S.pz[k]) : g.moveTo(S.px[k], S.pz[k]); } g.closePath(); };
+    loop(); g.strokeStyle = 'rgba(255,150,70,0.28)'; g.lineWidth = 6 * dpr * pxm; g.stroke();
+    loop(); g.strokeStyle = '#f4efe4'; g.lineWidth = 2.2 * dpr * pxm; g.stroke();
+    const tx = S.tx[i0], tz = S.tz[i0], L = 7 * dpr * pxm;
+    g.strokeStyle = '#ff7a2c'; g.lineWidth = 3 * dpr * pxm;
+    g.beginPath(); g.moveTo(S.px[i0] - tz * L, S.pz[i0] + tx * L); g.lineTo(S.px[i0] + tz * L, S.pz[i0] - tx * L); g.stroke();
+    mapImg = c;
   }
-  function drawMap(x, z, yaw, racers) {
+  function drawMap(x, z, yaw) {
     if (!mapImg || !$('.map').clientWidth) return;
-    const dpr = Math.min(2, devicePixelRatio || 1), w = $('.map').clientWidth, px = Math.round(w * dpr);
-    if (mc.width !== px) { mc.width = mc.height = px; }
-    const s = mapK, c = px / 2;
-    const fX = Math.sin(yaw), fZ = Math.cos(yaw), rX = -Math.cos(yaw), rZ = Math.sin(yaw);
-    // world -> screen, heading up: screen x = d·right, screen y = -d·forward
-    const T = [rX * s, -fX * s, rZ * s, -fZ * s, c - s * (rX * x + rZ * z), c + s * (fX * x + fZ * z)];
+    const dpr = Math.min(2, devicePixelRatio || 1), px = mapImg.width;
+    if (mc.width !== px) mc.width = mc.height = px;
     const g = mx;
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.clearRect(0, 0, px, px);
-    g.setTransform(...T);
-    g.drawImage(mapImg, mapMin[0], mapMin[1], mapImg.width / s, mapImg.height / s);
-    for (const rc of racers) {
-      g.setTransform(1, 0, 0, 1, 0, 0);
-      const dx = rc.x - x, dz = rc.z - z, sxp = c + (dx * rX + dz * rZ) * s, syp = c - (dx * fX + dz * fZ) * s;
-      g.fillStyle = rc.color ?? '#ff3b26';
-      g.beginPath(); g.arc(sxp, syp, 3.4 * dpr, 0, Math.PI * 2); g.fill();
+    g.drawImage(mapImg, 0, 0);
+    for (const d of dots) {
+      const [sx, sy] = toMap(d.x, d.z);
+      g.fillStyle = '#0e0f11';
+      g.beginPath(); g.arc(sx, sy, 4.6 * dpr, 0, Math.PI * 2); g.fill();
+      g.fillStyle = d.color;
+      g.beginPath(); g.arc(sx, sy, 3.3 * dpr, 0, Math.PI * 2); g.fill();
     }
-    // you: an arrow at the centre pointing up
-    g.setTransform(dpr, 0, 0, dpr, c, c);
+    const [sx, sy] = toMap(x, z);
+    g.setTransform(dpr, 0, 0, dpr, sx, sy);
+    g.rotate(mapYaw - yaw);
     g.fillStyle = '#ff8a3a'; g.strokeStyle = '#0e0f11'; g.lineWidth = 1.5;
-    g.beginPath(); g.moveTo(0, -7); g.lineTo(5.5, 6); g.lineTo(0, 3); g.lineTo(-5.5, 6); g.closePath(); g.fill(); g.stroke();
+    g.beginPath(); g.moveTo(0, -7.5); g.lineTo(5.5, 6); g.lineTo(0, 3); g.lineTo(-5.5, 6); g.closePath(); g.fill(); g.stroke();
   }
+
+  // ---- armor widget: green (full) -> grey -> black (gone), white flash on a hit ----
+  const zoneCol = (v) => {
+    const a = [111, 143, 90], m = [104, 104, 98], z = [16, 16, 17];
+    const [p, q, t] = v > 0.5 ? [m, a, (v - 0.5) * 2] : [z, m, v * 2];
+    return `rgb(${p.map((c, k) => Math.round(c + (q[k] - c) * t)).join(',')})`;
+  };
+  let armorKey = '';
+  const zoneEls = [...root.querySelectorAll('.armor .z')];
 
   let titleT = 0, cardKey = null, boardKey = '';
   const spot = $('.spot'), card = $('.card');
@@ -357,7 +401,7 @@ export function createHud({ touch = false } = {}) {
     touch: t,
     set onPause(fn) { onPause = fn; },
     // speed km/h (signed), boost 0..1, lap number, current / best lap seconds
-    set({ speed, boost, boosting, throttle, lap, lapT, bestLap, dt = 1 / 60 }) {
+    set({ speed, boost, boosting, throttle, lap, laps, lapT, bestLap, dt = 1 / 60 }) {
       const kmh = Math.abs(speed);
       const ng = speed < -2 ? 'R' : kmh < 3 && !throttle ? 'N' : gearFor(kmh, gear);
       if (typeof ng === 'number' && typeof gear === 'number' && ng !== gear) shiftT = 0.18;
@@ -380,7 +424,7 @@ export function createHud({ touch = false } = {}) {
       $('.boost .bar i').style.width = `${Math.round(boost * 100)}%`;
       $('.boost').classList.toggle('on', !!boosting);
       if (lap !== undefined) {
-        $('.lap .n').textContent = `LAP ${lap}`;
+        $('.lap .n').textContent = laps ? `LAP ${lap}/${laps}` : `LAP ${lap}`;
         $('.lap .t').textContent = fmtT(lapT);
         $('.lap .b').textContent = bestLap ? `BEST ${fmtT(bestLap)}` : '';
       }
@@ -393,10 +437,40 @@ export function createHud({ touch = false } = {}) {
       const me = rows.findIndex((r) => r.you);
       $('.pos b').textContent = String(me + 1);
       $('.pos span').textContent = `/${rows.length}`;
-      $('.board').innerHTML = rows.map((r, k) => `<div class="row${r.you ? ' you' : ''}${r.out ? ' out' : ''}"><i>${k + 1}</i><span>${r.name}</span><em>${r.gap ?? ''}</em></div>`).join('');
+      $('.board').innerHTML = rows.map((r, k) => `<div class="row${r.you ? ' you' : ''}${r.out ? ' out' : ''}"><i>${k + 1}</i><span>${r.color ? `<b style="background:${r.color}"></b>` : ''}${r.name}</span><em>${r.gap ?? ''}</em></div>`).join('');
     },
     map: buildMap,
     mapUpdate: drawMap,
+    mapDots(list) { dots = list; },
+    armor(a) {
+      const key = ['front', 'back', 'left', 'right'].map((k) => `${a.z[k].toFixed(2)}${a.flash[k] > 0 ? '!' : ''}`).join() + a.core.toFixed(2);
+      if (key === armorKey) return;
+      armorKey = key;
+      for (const el of zoneEls) {
+        const k = el.dataset.z;
+        el.style.fill = k === 'core' ? zoneCol(a.core) : a.flash[k] > 0 ? '#f4efe4' : zoneCol(a.z[k]);
+      }
+    },
+    countdown(text) {
+      const el = $('.count');
+      if (text === null) { el.hidden = true; el.textContent = ''; return; }
+      if (el.textContent === text) return;
+      el.hidden = false;
+      el.textContent = text;
+      el.className = `count pop${text === 'GO' ? ' go' : ''}`;
+    },
+    // race over: { title, sub, win, rows: [{ pos, name, you, color, time }], best, onAgain } or null
+    results(r) {
+      const el = $('.results');
+      if (!r) { el.hidden = true; return; }
+      el.classList.toggle('win', !!r.win);
+      el.querySelector('h2').textContent = r.title;
+      el.querySelector('.sub').textContent = r.sub;
+      el.querySelector('.best').textContent = r.best ? `Best lap ${r.best}` : '';
+      el.querySelector('.list').innerHTML = r.rows.map((x) => `<div class="row${x.you ? ' you' : ''}"><i>${x.pos}</i><span><b style="background:${x.color}"></b>${x.name}</span><em>${x.time}</em></div>`).join('');
+      el.querySelector('button').onclick = () => { el.hidden = true; r.onAgain(); };
+      el.hidden = false;
+    },
     track() {},
     pulseTrack() {},
     // Tutorial card. html allows <kbd>; spot = HUD part to light up ('speed', 'boost', 'map')

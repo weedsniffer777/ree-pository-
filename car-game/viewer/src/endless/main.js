@@ -18,6 +18,7 @@ import { createHud } from './hud.js';
 import { Pursuer, areaOf } from './pursuer.js';
 import { Skids } from './skids.js';
 import { SpeedLines } from './speedlines.js';
+import { Race } from './race.js';
 import { createDevKit } from './devkit.js';
 import { Tracers, Guns } from '../level/combat.js';
 
@@ -100,9 +101,9 @@ const embers = new Dust(400, { additive: true, fade: 0.8 });
 scene.add(embers.points);
 const tracers = new Tracers(scene);
 const guns = new Guns(model, scene, { tracers, dust, sparks: embers, height: terrainHeight });
-// Stand-in until enemies exist: every round that lands charges boost a little.
+// Highway: every round that lands charges boost a little. Races: only hits on cars do.
 const gunImpact = guns.impact.bind(guns);
-guns.impact = (p) => { gunImpact(p); car.addBoost(0.0045); };
+if (!LOOP.on) guns.impact = (p) => { gunImpact(p); car.addBoost(0.0045); };
 let runTime = 0, biomeShown = -1, best = 0, freeCam = false;
 const pursuer = new Pursuer();
 const skids = new Skids(scene);
@@ -122,10 +123,11 @@ let devOpen = false, userPaused = false;
 const isPaused = () => devOpen || userPaused;
 createDevKit({ viewerUrl: import.meta.env.DEV ? 'index.html' : 'garage.html', onStats: () => hud.toggleDebug(), onOpenChange: (on) => { devOpen = on; keys.clear(); } });
 hud.onPause = (on) => { userPaused = on; keys.clear(); };
-if (LOOP.on) {
-  hud.map(world, S, LOOP.n, I_START);
-  hud.standings([{ name: 'You', you: true }]); // AI racers fill this in later
-}
+const race = LOOP.on && params.get('race') !== '0'
+  ? new Race({ scene, model, car, hud, fx: { tracers, dust, sparks: embers, height: terrainHeight }, gunsHitHook: (test, onHit) => { guns.hitTest = test; guns.onTargetHit = onHit; } })
+  : null;
+if (LOOP.on) hud.map(world, S, LOOP.n, I_START);
+window.__game.race = race;
 
 const keys = new Set();
 addEventListener('keydown', (e) => {
@@ -151,7 +153,7 @@ addEventListener('pointermove', (e) => {
 const auto = params.get('auto') === '1';
 function autopilot() {
   const n = car.n;
-  const look = Math.min(S.count - 1, n.i + Math.round((12 + Math.abs(car.vf) * 0.7) / STEP));
+  const ahead = n.i + Math.round((12 + Math.abs(car.vf) * 0.7) / STEP), look = LOOP.on ? ahead : Math.min(S.count - 1, ahead);
   const tp = pointAt(look, 1.85);
   let diff = Math.atan2(tp.x - car.x, tp.z - car.z) - car.yaw;
   diff = Math.atan2(Math.sin(diff), Math.cos(diff));
@@ -160,7 +162,11 @@ function autopilot() {
 }
 
 function readInput() {
-  if (auto) return autopilot();
+  if (race?.state === 'done' || (race && race.player.armor.wrecked)) {
+    if (race.player.armor.wrecked) return { throttle: 0, brake: 1, steer: 0, boost: false, fire: false };
+    return { ...autopilot(), boost: false, fire: false, cap: 20 }; // cool-down lap after the flag
+  }
+  if (auto) return { ...autopilot(), cap: race?.inputCap || 0, fire: race ? race.canFire && params.get('fire') === '1' : params.get('fire') === '1' };
   const k = (...c) => c.some((x) => keys.has(x));
   const w = k('KeyW', 'ArrowUp'), sKey = k('KeyS', 'ArrowDown');
   const t = hud.touch;
@@ -169,11 +175,11 @@ function readInput() {
   const tutDrive = !tut.done && !t.active;
   const inp = {
     throttle: w || ((t.active || tutDrive) && !sKey && !t.brake) ? 1 : 0,
-    cap: tutDrive && !w ? TUT_SPEED : 0,
+    cap: race?.inputCap || (tutDrive && !w ? TUT_SPEED : 0),
     brake: sKey || t.brake ? 1 : 0,
     steer: (k('KeyD', 'ArrowRight') ? 1 : 0) - (k('KeyA', 'ArrowLeft') ? 1 : 0) || t.steer,
     boost: k('ShiftLeft', 'ShiftRight') || t.boost,
-    fire: k('Space') || t.fire,
+    fire: (k('Space') || t.fire) && (!race || race.canFire),
   };
   freeCam = k('KeyC') || rightDrag;
   return inp;
@@ -440,11 +446,14 @@ function frame(now) {
   if (dist > best && !params.has('at') && !startAt && !LOOP.on) { best = dist; if (Math.floor(runTime) % 5 === 0) { try { localStorage.setItem('endless.best', String(Math.round(best))); } catch { /* ignore */ } } }
   const bi = LOOP.on ? 0 : biomeIndexAt(dist);
   if (LOOP.on) biomeShown = 0; else if (bi !== biomeShown) { biomeShown = bi; hud.title(BIOMES[bi].name, dist < 10 ? 'Drive · Survive · Destroy' : `${(dist / 1000).toFixed(1)} km`); }
-  if (LOOP.on) {
-    const lap = updateLap(dt);
+  if (race) {
+    race.update(dt);
+    hud.set({ speed: car.vf * 3.6, boost: car.boost, boosting: car.boosting, throttle: inp.throttle, lap: race.playerLap, laps: 3, lapT: race.state === 'count' ? 0 : race.raceT - race.lapStart, bestLap: race.bestLap, dt });
+    hud.mapUpdate(car.x, car.z, car.yaw);
+  } else if (LOOP.on) {
+    updateLap(dt);
     hud.set({ speed: car.vf * 3.6, boost: car.boost, boosting: car.boosting, throttle: inp.throttle, lap: lapsDone + 1, lapT, bestLap, dt });
-    hud.mapUpdate(car.x, car.z, car.yaw, []);
-    void lap;
+    hud.mapUpdate(car.x, car.z, car.yaw);
   } else {
     hud.set({ speed: car.vf * 3.6, boost: car.boost, boosting: car.boosting, throttle: inp.throttle, dt });
     updatePursuer(dt, dist);
