@@ -12,7 +12,8 @@ import { biomeIndexAt, BIOMES } from './biomes.js';
 import { bakeGroup } from '../level/bake.js';
 import { CarController, setTerrain } from './car.js';
 import { Dust, addFlames } from '../level/fx.js';
-import { createHud } from '../level/hud.js';
+import { createHud } from './hud.js';
+import { Predator, areaOf } from './predator.js';
 import { Tracers, Guns } from '../level/combat.js';
 
 // Endless highway. Debug/screenshot params:
@@ -86,7 +87,11 @@ const embers = new Dust(400, { additive: true, fade: 0.8 });
 scene.add(embers.points);
 const tracers = new Tracers(scene);
 const guns = new Guns(model, scene, { tracers, dust, sparks: embers, height: terrainHeight });
-let runTime = 0, biomeShown = -1, best = 0;
+// Stand-in until enemies exist: every round that lands charges boost a little.
+const gunImpact = guns.impact.bind(guns);
+guns.impact = (p) => { gunImpact(p); car.addBoost(0.0045); };
+let runTime = 0, biomeShown = -1, best = 0, cruise = false;
+const predator = new Predator();
 try { best = Number(localStorage.getItem('endless.best') || 0); } catch { /* storage unavailable */ }
 const buildMs = Math.round(performance.now() - tBuild);
 window.__scene = scene;
@@ -102,6 +107,7 @@ addEventListener('keydown', (e) => {
   keys.add(e.code);
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
   if (e.code === 'KeyR') location.reload();
+  if (e.code === 'KeyE' && !e.repeat) { cruise = !cruise; tut.used.cruise = true; }
   if (e.code === 'F3' || e.code === 'Backquote') hud.toggleDebug();
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
@@ -126,27 +132,29 @@ function autopilot() {
   let diff = Math.atan2(tp.x - car.x, tp.z - car.z) - car.yaw;
   diff = Math.atan2(Math.sin(diff), Math.cos(diff));
   const steer = THREE.MathUtils.clamp(-diff * 2.4, -1, 1);
-  return { throttle: 1, brake: 0, steer, nitro: Math.abs(steer) < 0.12 && car.nitro > 0.4, fire: params.get('fire') === '1' };
+  return { throttle: 1, push: false, brake: 0, steer, boost: Math.abs(steer) < 0.12 && car.boost > 0.4 && params.get('boost') !== '0', fire: params.get('fire') === '1' };
 }
 
 function readInput() {
   if (auto) return autopilot();
   const k = (...c) => c.some((x) => keys.has(x));
-  const inp = {
-    throttle: k('KeyW', 'ArrowUp') ? 1 : 0,
-    brake: k('KeyS', 'ArrowDown') ? 1 : 0,
-    steer: (k('KeyD', 'ArrowRight') ? 1 : 0) - (k('KeyA', 'ArrowLeft') ? 1 : 0),
-    nitro: k('ShiftLeft', 'ShiftRight'),
-    fire: k('Space'),
-  };
+  const w = k('KeyW', 'ArrowUp'), sKey = k('KeyS', 'ArrowDown');
   const t = hud.touch;
-  if (t.active) {
-    inp.throttle = t.brake ? 0 : 1; // auto-throttle on touch
-    inp.brake = t.brake ? 1 : inp.brake;
-    inp.steer = t.steer || inp.steer;
-    inp.nitro = t.nitro || inp.nitro;
-    inp.fire = t.fire || inp.fire;
-  }
+  const touchCruise = t.active; // phones: always cruising
+  const inp = {
+    // cruise drives the throttle; S held pauses it, releasing S resumes
+    throttle: w || ((cruise || touchCruise) && !sKey && !t.brake) ? 1 : 0,
+    push: w,
+    brake: sKey || t.brake ? 1 : 0,
+    steer: (k('KeyD', 'ArrowRight') ? 1 : 0) - (k('KeyA', 'ArrowLeft') ? 1 : 0) || t.steer,
+    boost: k('ShiftLeft', 'ShiftRight') || t.boost,
+    fire: k('Space') || t.fire,
+  };
+  if (w) tut.used.w = true;
+  if (inp.steer) tut.used.steer = true;
+  if (inp.fire) tut.used.fire = true;
+  if (inp.boost && car.boosting) tut.used.boost = true;
+  if (sKey && car.vf > 8) tut.used.brake = true;
   return inp;
 }
 
@@ -239,6 +247,51 @@ function screenPointer(x, y, z, label) {
   return { x: (px * 0.5 + 0.5) * innerWidth, y: (0.5 - py * 0.5) * innerHeight, angle, label: `${label} ${dist} m` };
 }
 
+// ---- War machine race ----
+const STATUS = { chase: 'War machine behind you', guns: 'In gun range', artillery: 'Shells incoming', charge: 'Ramming distance', caught: 'It is on you' };
+function updatePredator(dt, dist) {
+  const a = areaOf(dist);
+  for (const ev of predator.update(dt, dist)) {
+    if (ev === 'enter') { hud.band('War machine approaching', 'Keep your speed up', 'bad', 2800); hud.flashArea(); shake = Math.max(shake, 0.25); }
+    else if (ev === 'escape') hud.band('Area cleared', 'The war machine falls back', 'good', 2200);
+    else if (ev === 'caught') hud.band('It is on you', 'Boost out of here', 'bad', 1800);
+  }
+  const nextBiome = BIOMES[biomeIndexAt(a.start + a.len + 1)].name;
+  const gap = predator.gap(dist);
+  hud.area({
+    k: a.k, name: nextBiome, you: (dist - a.start) / a.len,
+    beast: predator.active ? (predator.pos - a.start) / a.len : null,
+    status: predator.active ? `${STATUS[predator.phase] ?? ''} · ${Math.max(0, Math.round(gap))} m` : a.k === 0 ? 'Warm-up stretch' : 'Clear road. For now.',
+    hot: predator.active && gap < 90, caught: predator.phase === 'caught',
+  });
+}
+
+// ---- First-run tutorial: one plate at a time, advanced by doing the thing ----
+const tut = { step: 0, t: 0, used: {}, done: false };
+try { tut.done = localStorage.getItem('endless.tutorial') === 'done' || params.has('at') || auto; } catch { /* ignore */ }
+const STEPS = [
+  { html: '<kbd>W</kbd>Accelerate &nbsp; <kbd>A</kbd><kbd>D</kbd>Steer', done: () => tut.used.w && tut.used.steer && car.vf > 15 },
+  { html: '<kbd>E</kbd>Cruise control: hands off the gas', done: () => tut.used.cruise },
+  { html: '<kbd>Space</kbd>Fire the guns', done: () => tut.used.fire && tut.t > 1.2 },
+  { html: '<kbd>Shift</kbd>Boost. Hits and kills refill it', done: () => tut.used.boost && tut.t > 1.5 },
+  { html: '<kbd>S</kbd>Brake. Brake into a turn to slide', done: () => tut.used.brake },
+  { html: 'Reach the flag before the war machine catches you', done: () => tut.t > 5 },
+];
+function updateTutorial(dt) {
+  if (tut.done) { hud.tip(null, null); return; }
+  const st = STEPS[tut.step];
+  tut.t += dt;
+  hud.tip(tut.step, hud.touch.active ? st.html.replace(/<kbd>[^<]*<\/kbd>/g, '') : st.html);
+  if (tut.t > 0.6 && st.done()) {
+    tut.step++;
+    tut.t = 0;
+    if (tut.step >= STEPS.length) {
+      tut.done = true;
+      try { localStorage.setItem('endless.tutorial', 'done'); } catch { /* ignore */ }
+    }
+  }
+}
+
 // ---- Loop ----
 const H = 1 / 120;
 let acc = 0, last = performance.now(), frames = 0, fpsT = 0, fps = 0, arenaShown = false;
@@ -247,6 +300,7 @@ function simulate(seconds) {
   let k = 0;
   for (let t = 0; t < seconds; t += H) {
     car.step(H, readInput());
+    predator.update(H, Math.max(0, (car.n.i - I_START) * STEP));
     if (++k % 60 === 0) world.update(car.n.i, true);
   }
   world.update(car.n.i, true);
@@ -286,9 +340,10 @@ function frame(now) {
   const dist = Math.max(0, (car.n.i - I_START) * STEP);
   if (dist > best && !params.has('at')) { best = dist; if (Math.floor(runTime) % 5 === 0) { try { localStorage.setItem('endless.best', String(Math.round(best))); } catch { /* ignore */ } } }
   const bi = biomeIndexAt(dist);
-  if (bi !== biomeShown) { biomeShown = bi; hud.toast(BIOMES[bi].name, dist < 10 ? 'Drive. Survive. Destroy.' : `${(dist / 1000).toFixed(1)} km`); }
-  hud.set({ speed: Math.abs(car.vf) * 3.6, nitro: car.nitro, boosting: car.boosting, dist, best });
-  hud.pointer(null);
+  if (bi !== biomeShown) { biomeShown = bi; hud.title(BIOMES[bi].name, dist < 10 ? 'Drive · Survive · Destroy' : `${(dist / 1000).toFixed(1)} km`); }
+  hud.set({ speed: Math.abs(car.vf) * 3.6, boost: car.boost, boosting: car.boosting, cruise: cruise || hud.touch.active, dist, best });
+  updatePredator(dt, dist);
+  updateTutorial(dt);
 
   renderer.info.reset();
   composer.render();
