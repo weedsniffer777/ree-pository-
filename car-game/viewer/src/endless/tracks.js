@@ -1,8 +1,15 @@
 // Closed-loop track definitions. pts are control points in metres (x, z; the car starts at
 // the first point heading toward the second); elev is sine harmonics of the lap; width is
-// [lap fraction, road width scale] pairs eased around the lap; zones/features are placed
-// by lap fraction. 'highway' tracks are open roads (fence, power line, signs, rails on
-// curve outsides, bridges, side roads); 'yard' tracks are walled and zoned.
+// [lap fraction, road width scale] pairs eased around the lap. features are one-off set
+// pieces and decor is the kit's data-driven fences / road marks / scatter (see kit.js);
+// everything is placed by lap fraction. 'highway' tracks are open roads; 'yard' tracks are
+// walled container terminals.
+
+const FEN = 19.5; // fence line on the highways (matches the physical corridor)
+const highwayStart = [
+  { group: 'bleacher', at: 0.012, side: 1, off: 14 }, { group: 'tent', at: 0.99, side: -1, off: 12 }, { group: 'tower', at: 0.02, side: -1, off: 12 },
+  { mark: 'wear', a: 0, b: 1, count: 170 },
+];
 
 export const TRACKS = {
   desert: {
@@ -17,7 +24,7 @@ export const TRACKS = {
     sky: ['#6aaed6', '#aed2e6', '#f3d5b2'], fog: ['#f3d5b2', 120, 950],
     sun: [0xffdcae, 3.6], hemi: [0xe6eef4, 0xd9a06a, 1.9],
     grade: { saturation: 1.58, contrast: 1.04, lift: 0.07, toon: 0.45 },
-    road: { centre: 'double', sand: true },
+    road: { centre: 'double', edge: 'solid', sand: true },
     ground: { a: '#d6965a', b: '#e4b07a', dark: '#b77a48', pale: '#ecc898', rock: '#a55636', gravel: '#c79a6c' },
     hills: 52, density: { bush: 1, grass: 1, sag: 1, rock: 1 },
     features: [
@@ -25,6 +32,16 @@ export const TRACKS = {
       { type: 'sideroad', at: 0.08, side: 1 }, { type: 'sideroad', at: 0.4, side: -1 }, { type: 'sideroad', at: 0.82, side: 1 },
       { type: 'billboard', at: 0.05, side: 1 }, { type: 'billboard', at: 0.3, side: -1 }, { type: 'billboard', at: 0.55, side: 1 }, { type: 'billboard', at: 0.9, side: -1 },
       { type: 'tower', at: 0.46, side: 1 }, { type: 'windpump', at: 0.72, side: -1 },
+    ],
+    decor: [
+      { fence: 'barbed', a: 0, b: 0.15, abs: FEN }, { fence: 'woodrail', a: 0.15, b: 0.3, abs: FEN }, { fence: 'barbed', a: 0.3, b: 0.5, abs: FEN },
+      { fence: 'ranch', a: 0.5, b: 0.62, abs: FEN }, { fence: 'cable', a: 0.62, b: 0.72, abs: FEN }, { fence: 'barbed', a: 0.72, b: 1, abs: FEN },
+      { mark: 'hatch', at: 0.115, len: 70, lat: [0.06, 0.45], sym: true }, { mark: 'hatch', at: 0.635, len: 70, lat: [0.06, 0.45], sym: true },
+      { mark: 'arrow', a: 0.2, b: 0.25, every: 50 }, { mark: 'number', at: 0.035, text: '65', lane: 0.5 }, { mark: 'number', at: 0.5, text: '55', lane: 0.5 },
+      { scatter: 'cone', a: 0.145, b: 0.18, abs: [9.4, 10], every: 5 }, { scatter: 'cone', a: 0.615, b: 0.65, abs: [9.4, 10], every: 5 },
+      { scatter: 'bale', a: 0.5, b: 0.62, side: 1, abs: [24, 40], every: 14, cluster: [2, 2] },
+      { scatter: 'barrel', a: 0.7, b: 0.74, side: -1, abs: [26, 32], every: 12, cluster: [3, 1.6] },
+      ...highwayStart,
     ],
   },
   salt: {
@@ -38,7 +55,7 @@ export const TRACKS = {
     sky: ['#7db8dc', '#c3dceb', '#f4ece0'], fog: ['#f1eadf', 160, 1100],
     sun: [0xfff0d8, 3.8], hemi: [0xeef4f8, 0xe2d4bc, 2.1],
     grade: { saturation: 1.4, contrast: 1.04, lift: 0.07, toon: 0.4 },
-    road: { centre: 'dashed', sand: true },
+    road: { centre: 'dashed', edge: 'dashed', sand: true },
     ground: { a: '#e6dccb', b: '#f1ebe0', dark: '#d2c3aa', pale: '#faf6ef', rock: '#b38a6c', gravel: '#d8ccb8' },
     hills: 30, density: { bush: 0.15, grass: 0.2, sag: 0, rock: 0.3 },
     features: [
@@ -46,6 +63,14 @@ export const TRACKS = {
       { type: 'sideroad', at: 0.12, side: -1 }, { type: 'sideroad', at: 0.55, side: 1 }, { type: 'sideroad', at: 0.88, side: -1 },
       { type: 'billboard', at: 0.2, side: 1 }, { type: 'billboard', at: 0.68, side: -1 },
       { type: 'tower', at: 0.1, side: 1 }, { type: 'windpump', at: 0.8, side: 1 },
+    ],
+    decor: [
+      { fence: 'cable', a: 0, b: 0.3, abs: FEN }, { fence: 'barbed', a: 0.3, b: 0.7, abs: FEN }, { fence: 'woodrail', a: 0.7, b: 1, abs: FEN },
+      { mark: 'hatch', at: 0.545, len: 60, lat: [0.06, 0.5], sym: true }, { mark: 'hatch', at: 0.15, len: 60, lat: [0.06, 0.5], sym: true },
+      { mark: 'arrow', a: 0.05, b: 0.15, every: 70 }, { mark: 'number', at: 0.02, text: '90', lane: 0.5 }, { mark: 'number', at: 0.7, text: '45', lane: 0.5 },
+      { scatter: 'cone', a: 0.355, b: 0.39, abs: [9.8, 10.4], every: 5 },
+      { scatter: 'barrel', a: 0.1, b: 0.12, side: 1, abs: [26, 32], every: 10, cluster: [3, 1.6] },
+      ...highwayStart,
     ],
   },
   dustbowl: {
@@ -60,7 +85,7 @@ export const TRACKS = {
     sky: ['#6aaed6', '#aed2e6', '#f0cda6'], fog: ['#efc9a0', 110, 900],
     sun: [0xffd4a4, 3.6], hemi: [0xe6eef4, 0xd08a58, 1.9],
     grade: { saturation: 1.58, contrast: 1.05, lift: 0.07, toon: 0.45 },
-    road: { centre: 'double', sand: true },
+    road: { centre: 'double', edge: 'solid', sand: true },
     ground: { a: '#c8794a', b: '#d99260', dark: '#a65c36', pale: '#e3a676', rock: '#9c4128', gravel: '#b8805a' },
     hills: 80, density: { bush: 0.6, grass: 0.5, sag: 0.45, rock: 1.8 },
     features: [
@@ -68,6 +93,14 @@ export const TRACKS = {
       { type: 'sideroad', at: 0.15, side: -1 }, { type: 'sideroad', at: 0.7, side: 1 },
       { type: 'billboard', at: 0.06, side: -1 }, { type: 'billboard', at: 0.5, side: 1 },
       { type: 'windpump', at: 0.88, side: -1 }, { type: 'tower', at: 0.58, side: -1 },
+    ],
+    decor: [
+      { fence: 'woodrail', a: 0, b: 0.3, abs: FEN }, { fence: 'barbed', a: 0.3, b: 0.6, abs: FEN }, { fence: 'cable', a: 0.6, b: 0.8, abs: FEN }, { fence: 'ranch', a: 0.8, b: 1, abs: FEN },
+      { mark: 'hatch', at: 0.135, len: 60, lat: [0.06, 0.45], sym: true }, { mark: 'hatch', at: 0.625, len: 60, lat: [0.06, 0.45], sym: true },
+      { mark: 'arrow', a: 0.4, b: 0.48, every: 55 }, { mark: 'number', at: 0.55, text: '35', lane: 0.5 }, { mark: 'number', at: 0.03, text: '55', lane: 0.5 },
+      { scatter: 'cone', a: 0.275, b: 0.325, abs: [9.4, 10], every: 5 },
+      { scatter: 'bale', a: 0.8, b: 0.95, side: -1, abs: [24, 40], every: 14, cluster: [2, 2] },
+      ...highwayStart,
     ],
   },
   yard: {
@@ -77,23 +110,55 @@ export const TRACKS = {
       [-330, 400], [-270, 340], [-180, 330], [-125, 270], [-135, 185], [-215, 145], [-305, 155],
       [-385, 105], [-395, 5], [-335, -65], [-235, -60], [-165, -105], [-90, -90], [-30, -50],
     ],
-    elev: [[1.8, 1, 1.2], [0.9, 3, 0.2]],
+    elev: [[1.2, 1, 1.2], [0.6, 3, 0.2]],
     width: [[0, 1.2], [0.1, 1.2], [0.18, 1], [0.3, 0.85], [0.38, 0.9], [0.45, 1.3], [0.58, 1.55], [0.66, 1.55], [0.74, 1], [0.85, 0.85], [0.93, 1.1]],
-    sky: ['#8a98a2', '#b4bcc0', '#d3cabb'], fog: ['#c4bbab', 90, 650],
+    sky: ['#8a98a2', '#b4bcc0', '#d3cabb'], fog: ['#c4bbab', 90, 700],
     sun: [0xffe8cc, 3.1], hemi: [0xd8dfe3, 0xa89c8a, 1.8],
     grade: { saturation: 1.0, contrast: 1.1, lift: 0.06, toon: 0.35 },
-    road: { centre: 'none', sand: false },
-    ground: { a: '#8f8472', b: '#a09584', dark: '#6f6659', pale: '#b3a999', rock: '#7b6f60', gravel: '#857b6d' },
-    hills: 10,
-    zones: [
-      { a: 0, b: 0.1, style: 'sheet' }, { a: 0.1, b: 0.3, style: 'trestle' }, { a: 0.3, b: 0.42, style: 'fence' },
-      { a: 0.42, b: 0.56, style: 'containers' }, { a: 0.56, b: 0.7, style: 'open' }, { a: 0.7, b: 0.84, style: 'trestle' },
-      { a: 0.84, b: 0.93, style: 'fence' }, { a: 0.93, b: 1, style: 'sheet' },
-    ],
+    road: { centre: 'none', edge: 'solid', sand: false },
+    ground: { a: '#7d7a74', b: '#8f8b83', dark: '#5f5c57', pale: '#a09b92', rock: '#6f6a62', gravel: '#767269' },
+    hills: 6,
     features: [
-      { type: 'crane', at: 0.14 }, { type: 'crane', at: 0.2 }, { type: 'crane', at: 0.26 }, { type: 'crane', at: 0.74, load: true },
-      { type: 'crane', at: 0.79 },
-      { type: 'sideroad', at: 0.34, side: -1 }, { type: 'sideroad', at: 0.39, side: 1 }, { type: 'sideroad', at: 0.88, side: 1 },
+      // quay cranes straddle the road where the backdrop is open fence (legs 19.5 m out)
+      { type: 'quaycrane', at: 0.14, side: 1, color: 0x8fa3b3 }, { type: 'quaycrane', at: 0.22, side: 1, color: 0xb8b2a4, load: true },
+      { type: 'quaycrane', at: 0.63, side: -1, color: 0xa14a32 }, { type: 'quaycrane', at: 0.9, side: 1, color: 0x8fa3b3, load: true },
+      { type: 'containerblock', at: 0.17, side: -1, off: 40, len: 3 }, { type: 'containerblock', at: 0.26, side: -1, off: 40, len: 2, high: 3 },
+      { type: 'containerblock', at: 0.2, side: 1, off: 70, len: 3 },
+      { type: 'tanks', at: 0.5, side: -1, off: 32 }, { type: 'tanks', at: 0.68, side: 1, off: 34, count: 2 },
+      { type: 'silos', at: 0.76, side: -1, off: 30 }, { type: 'silos', at: 0.04, side: 1, off: 34, count: 3 },
+      { type: 'containerblock', at: 0.6, side: 1, off: 40, len: 3 }, { type: 'containerblock', at: 0.92, side: -1, off: 40, len: 3 },
+      { type: 'sideroad', at: 0.12, side: -1 }, { type: 'sideroad', at: 0.27, side: 1 }, { type: 'sideroad', at: 0.58, side: -1 }, { type: 'sideroad', at: 0.88, side: -1 },
+    ],
+    decor: [
+      // 0-0.1 gate complex: panel wall, hazard cones and drums
+      { fence: 'concrete', a: 0, b: 0.1, off: 2.2 },
+      // 0.1-0.3 cranes and stacks behind chain-link
+      { fence: 'chainlink', a: 0.1, b: 0.3, off: 1.5 },
+      // 0.3-0.44 container canyon (sheet through tight corners)
+      { fence: 'containers', fallback: 'sheet', a: 0.3, b: 0.44, off: 4.2 },
+      // 0.44-0.56 pipe rack and panel wall
+      { fence: 'concrete', a: 0.44, b: 0.56, off: 2.2, side: -1 }, { fence: 'piperack', a: 0.44, b: 0.56, off: 5, side: -1 }, { fence: 'sheet', a: 0.44, b: 0.56, off: 2.4, side: 1 },
+      // 0.56-0.7 open ground behind tyres and hay
+      { fence: 'tires', a: 0.56, b: 0.7, off: 1.6 },
+      // 0.7-0.84 corrugated terminal fence and a pipe rack
+      { fence: 'sheet', a: 0.7, b: 0.84, off: 2.4 }, { fence: 'piperack', a: 0.7, b: 0.84, off: 6, side: 1 },
+      // 0.84-0.93 chain-link with the gate
+      { fence: 'chainlink', a: 0.84, b: 0.93, off: 1.5 },
+      // 0.93-1 sandbag and netting run-in to the finish
+      { fence: 'sandbags', a: 0.93, b: 1, off: 1.4 }, { fence: 'netting', a: 0.95, b: 1, off: 2.6 },
+      // markings: gores at width changes, crosswalks at junctions, numerals, stop lines, wear
+      { mark: 'hatch', at: 0.37, len: 70, lat: [0.05, 0.4], sym: true }, { mark: 'hatch', at: 0.55, len: 70, lat: [0.05, 0.45], sym: true }, { mark: 'hatch', at: 0.72, len: 60, lat: [0.05, 0.4], sym: true },
+      { mark: 'crosswalk', at: 0.12 }, { mark: 'crosswalk', at: 0.27 }, { mark: 'crosswalk', at: 0.58 }, { mark: 'stopline', at: 0.123, sym: true },
+      { mark: 'number', at: 0.07, text: '20', lane: 0.5 }, { mark: 'number', at: 0.46, text: '15', lane: -0.5 }, { mark: 'number', at: 0.8, text: '30', lane: 0.5 },
+      { mark: 'arrow', a: 0.3, b: 0.4, every: 45 }, { mark: 'wear', a: 0, b: 1, count: 260 },
+      // clutter: cones at the gate, drums and pallets by the stacks, pipe piles and cable drums
+      { scatter: 'cone', a: 0.01, b: 0.09, off: [2.8, 3.4], every: 4 },
+      { scatter: 'barrel', mix: ['barrel', 'drum', 'pallet'], a: 0.1, b: 0.3, off: [4, 9], every: 22, cluster: [4, 2.5] },
+      { scatter: 'pipepile', a: 0.45, b: 0.56, side: 1, off: [8, 14], every: 26, yaw: 'road' },
+      { scatter: 'crate', mix: ['crate', 'pallet', 'block'], a: 0.56, b: 0.7, off: [6, 14], every: 18, cluster: [4, 2.5] },
+      { scatter: 'drum', a: 0.7, b: 0.84, off: [6, 11], every: 24, cluster: [2, 1.5] },
+      { scatter: 'block', a: 0.84, b: 0.93, off: [4, 7], every: 14, yaw: 'road' },
+      { group: 'bleacher', at: 0.97, side: 1, off: 16 }, { group: 'tent', at: 0.985, side: -1, off: 8 }, { group: 'tower', at: 0.02, side: -1, off: 8 },
     ],
   },
 };

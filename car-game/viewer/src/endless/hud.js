@@ -69,9 +69,9 @@ const CSS = `
 #hud .touch .boostBtn { right: 20px; bottom: calc(190px + env(safe-area-inset-bottom, 0px)); background: var(--yellow); color: var(--black); }
 #hud .touch .fireBtn { right: 108px; bottom: calc(170px + env(safe-area-inset-bottom, 0px)); background: var(--red); }
 #hud .touch .brakeBtn { right: 20px; bottom: calc(280px + env(safe-area-inset-bottom, 0px)); width: 60px; height: 60px; background: var(--white); color: var(--black); }
-#hud .touch .steerL, #hud .touch .steerR { bottom: calc(26px + env(safe-area-inset-bottom, 0px)); width: 92px; height: 92px; border-radius: 22px; background: rgba(242,239,230,0.55); color: var(--black); font-size: 30px; }
-#hud .touch .steerL { left: calc(16px + env(safe-area-inset-left, 0px)); }
-#hud .touch .steerR { left: calc(116px + env(safe-area-inset-left, 0px)); }
+#hud .touch::before { content: ''; position: absolute; top: 0; bottom: 0; width: 50%; opacity: 0; transition: opacity 0.1s; pointer-events: none; }
+#hud .touch.sl::before { left: 0; opacity: 1; background: linear-gradient(90deg, rgba(242,239,230,0.16), transparent 70%); }
+#hud .touch.sr::before { right: 0; opacity: 1; background: linear-gradient(270deg, rgba(242,239,230,0.16), transparent 70%); }
 #hud .touch .btn.down { transform: translateY(3px); box-shadow: 0 2px 0 rgba(0,0,0,0.35); }
 /* phones held sideways: the portrait layout, compacted, buttons left of the gauge */
 @media (orientation: landscape) and (max-height: 520px) {
@@ -93,8 +93,6 @@ const CSS = `
   #hud .touch .boostBtn { right: calc(150px + env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
   #hud .touch .fireBtn { right: calc(226px + env(safe-area-inset-right, 0px)); bottom: calc(40px + env(safe-area-inset-bottom, 0px)); }
   #hud .touch .brakeBtn { right: calc(156px + env(safe-area-inset-right, 0px)); bottom: calc(92px + env(safe-area-inset-bottom, 0px)); width: 52px; height: 52px; font-size: 12px; }
-  #hud .touch .steerL, #hud .touch .steerR { width: 78px; height: 78px; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); }
-  #hud .touch .steerR { left: calc(104px + env(safe-area-inset-left, 0px)); }
 }
 @media (max-width: 720px) {
   #hud .track { top: calc(90px + env(safe-area-inset-top, 0px)); width: calc(100% - 64px); }
@@ -128,7 +126,7 @@ export function createHud({ touch = false } = {}) {
   if (touch) {
     const layer = document.createElement('div');
     layer.className = 'touch';
-    layer.innerHTML = '<div class="btn steerL">&#9664;</div><div class="btn steerR">&#9654;</div><div class="btn brakeBtn">BRAKE</div><div class="btn fireBtn">FIRE</div><div class="btn boostBtn">BOOST</div>';
+    layer.innerHTML = '<div class="btn brakeBtn">BRAKE</div><div class="btn fireBtn">FIRE</div><div class="btn boostBtn">BOOST</div>';
     root.append(layer);
     const hold = (el, key) => {
       el.addEventListener('pointerdown', (e) => { e.stopPropagation(); t[key] = true; el.classList.add('down'); el.setPointerCapture(e.pointerId); });
@@ -139,8 +137,22 @@ export function createHud({ touch = false } = {}) {
     hold(layer.querySelector('.boostBtn'), 'boost');
     hold(layer.querySelector('.fireBtn'), 'fire');
     hold(layer.querySelector('.brakeBtn'), 'brake');
-    hold(layer.querySelector('.steerL'), 'left');
-    hold(layer.querySelector('.steerR'), 'right');
+    // steering: touch anywhere on the left half of the screen to steer left, right half to steer
+    // right (slide a thumb across the middle to switch); the buttons above take their own touches
+    const steerPtr = new Map();
+    const side = (e) => (e.clientX < innerWidth / 2 ? -1 : 1);
+    const upd = () => {
+      const v = [...steerPtr.values()];
+      t.left = v.includes(-1);
+      t.right = v.includes(1);
+      layer.classList.toggle('sl', t.left && !t.right);
+      layer.classList.toggle('sr', t.right && !t.left);
+    };
+    layer.addEventListener('pointerdown', (e) => { if (e.target !== layer) return; steerPtr.set(e.pointerId, side(e)); layer.setPointerCapture(e.pointerId); upd(); });
+    layer.addEventListener('pointermove', (e) => { if (steerPtr.has(e.pointerId)) { steerPtr.set(e.pointerId, side(e)); upd(); } });
+    const end = (e) => { if (steerPtr.delete(e.pointerId)) upd(); };
+    layer.addEventListener('pointerup', end);
+    layer.addEventListener('pointercancel', end);
     $('.cruise').hidden = true;
     $('.bk').hidden = true;
   }
