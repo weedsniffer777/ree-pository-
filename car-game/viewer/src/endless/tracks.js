@@ -130,7 +130,10 @@ export const TRACKS = {
     ],
     decor: [
       // perimeter: one dominant type per stretch, broken up by others and the odd gap
-      { fence: 'mix', a: 0, b: 0.3, off: 2.4, piece: [10, 34], gaps: 0.15, palette: [['sheet', 6], ['chainlink', 3, { off: 1.7 }], ['concrete', 1.5, { off: 2.2 }], ['blocks', 1, { off: 1.4 }], ['gap', 0.6]] },
+      { fence: 'mix', a: 0, b: 0.3, side: 1, off: 2.4, piece: [10, 34], gaps: 0.15, palette: [['sheet', 6], ['chainlink', 3, { off: 1.7 }], ['concrete', 1.5, { off: 2.2 }], ['blocks', 1, { off: 1.4 }], ['gap', 0.6]] },
+      { fence: 'mix', a: 0, b: 0.19, side: -1, off: 2.4, piece: [10, 34], gaps: 0.15, palette: [['sheet', 6], ['chainlink', 3, { off: 1.7 }], ['concrete', 1.5, { off: 2.2 }], ['blocks', 1, { off: 1.4 }], ['gap', 0.6]] },
+      // first right-hander: a tall solid sheet wall on the outside closes the view ahead
+      { fence: 'sheet', a: 0.19, b: 0.3, side: -1, off: 2.4, h: 4.6 },
       { fence: 'mix', a: 0.3, b: 0.44, off: 4.2, piece: [13, 40], palette: [['containers', 6], ['sheet', 2, { off: 2.4 }], ['blocks', 1, { off: 1.4 }]] },
       { fence: 'mix', a: 0.44, b: 0.7, off: 1.8, piece: [10, 30], gaps: 0.2, palette: [['chainlink', 6], ['sheet', 2, { off: 2.4 }], ['tires', 1, { off: 1.4 }], ['blocks', 1.5, { off: 1.4 }], ['gap', 0.8]] },
       { fence: 'mix', a: 0.7, b: 1, off: 2.4, piece: [10, 34], gaps: 0.15, palette: [['sheet', 5], ['concrete', 2.5, { off: 2.2 }], ['chainlink', 2, { off: 1.7 }], ['sandbags', 0.7, { off: 1.3 }], ['gap', 0.5]] },

@@ -224,11 +224,12 @@ const FENCES = {
       geos.push(tw.ribbon(side, [[0, 0], [0, H]], pc.idx, { latFn: pc.lat, uv: (a, j) => [(a + (pc.seed ?? 0)) / 14.4, j] }));
     }
     tw.add(merged(geos, tw.sheetMat));
-    addPR(tw, postRail(tw, side, pieces.map((pc) => ({ ...pc, lat: (i) => pc.lat(i) + side * 0.12 })), { step: 4, pw: 0.16, ph: 3.5, colors: [C(0x3f4143), C(0x4a3a30)], lean: 0.01, twist: 0, rails: [{ y: 3.0, t: 0.08, h: 0.12 }, { y: 1.2, t: 0.08, h: 0.12 }] }));
+    const top = Math.max(...pieces.map((pc) => pc.h ?? 3.2));
+    addPR(tw, postRail(tw, side, pieces.map((pc) => ({ ...pc, lat: (i) => pc.lat(i) + side * 0.12 })), { step: 4, pw: 0.16, ph: top + 0.3, colors: [C(0x3f4143), C(0x4a3a30)], lean: 0.01, twist: 0, rails: [{ y: top - 0.2, t: 0.08, h: 0.12 }, { y: 1.2, t: 0.08, h: 0.12 }] }));
     const wire = [];
-    for (const { idx, lat } of pieces) for (let k = 0; k + 2 < idx.length; k += 2) {
+    for (const { idx, lat, h: ph } of pieces) for (let k = 0; k + 2 < idx.length; k += 2) {
       const pts = [0, 1, 2].map((q) => pointAt(idx[k + q], lat(idx[k + q]) + side * 0.15));
-      const y = (q) => S.y[wrap(idx[k + q])] - 0.1 + 3.4;
+      const y = (q) => S.y[wrap(idx[k + q])] - 0.1 + (ph ?? 3.2) + 0.2;
       wire.push(pts[0].x, y(0), pts[0].z, pts[1].x, y(1) + 0.38, pts[1].z, pts[1].x, y(1) + 0.38, pts[1].z, pts[2].x, y(2), pts[2].z, pts[0].x, y(0) + 0.2, pts[0].z, pts[2].x, y(2) + 0.2, pts[2].z);
     }
     const wg = new THREE.BufferGeometry();
