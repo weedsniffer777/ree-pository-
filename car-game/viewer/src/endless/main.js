@@ -19,6 +19,8 @@ import { Pursuer, areaOf } from './pursuer.js';
 import { Skids } from './skids.js';
 import { SpeedLines } from './speedlines.js';
 import { Race } from './race.js';
+import { Booms, Bits } from './boom.js';
+import { nearest, wAt, RAIL_LAT } from './route.js';
 import { createDevKit } from './devkit.js';
 import { Tracers, Guns } from '../level/combat.js';
 
@@ -123,9 +125,36 @@ let devOpen = false, userPaused = false;
 const isPaused = () => devOpen || userPaused;
 createDevKit({ viewerUrl: import.meta.env.DEV ? 'index.html' : 'garage.html', onStats: () => hud.toggleDebug(), onOpenChange: (on) => { devOpen = on; keys.clear(); } });
 hud.onPause = (on) => { userPaused = on; keys.clear(); };
+// explosions, wreck debris, and the brass + belt links thrown out of the guns
+const booms = new Booms(scene, { dust, sparks: embers });
+const debris = new Bits(scene, new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ roughness: 0.75, metalness: 0.45 }), { max: 220, height: terrainHeight, shadow: true });
+const casings = new Bits(scene, new THREE.CylinderGeometry(0.022, 0.022, 0.11, 6), new THREE.MeshStandardMaterial({ color: 0xc8963a, roughness: 0.35, metalness: 0.9 }), { max: 140, height: terrainHeight, bounce: 0.45 });
+const links = new Bits(scene, new THREE.BoxGeometry(0.075, 0.022, 0.05), new THREE.MeshStandardMaterial({ color: 0x2a2b2c, roughness: 0.5, metalness: 0.8 }), { max: 140, height: terrainHeight, bounce: 0.3 });
+{
+  const tv = new THREE.Vector3(), tp = new THREE.Vector3();
+  guns.onShot = (start, dir, c, k) => {
+    const side = k === 0 ? 1 : -1, rx = -Math.cos(c.yaw) * side, rz = Math.sin(c.yaw) * side; // left gun throws left
+    tp.copy(start).addScaledVector(dir, -0.9);
+    tv.set(c.vx + rx * (2.5 + Math.random() * 2), 2 + Math.random() * 2.5, c.vz + rz * (2.5 + Math.random() * 2));
+    casings.spawn(tp, tv, { life: 1.4, spin: 30 });
+    tv.set(c.vx + rx * (1.2 + Math.random()), 1 + Math.random() * 1.5, c.vz + rz * (1.2 + Math.random()));
+    links.spawn(tp, tv, { life: 1.4, spin: 22 });
+  };
+}
+// the circuit's walls and fences stop rounds (both sides walled on loops)
+if (LOOP.on && LOOP.walls === 'both') {
+  let hint = 0;
+  guns.blockTest = (p) => {
+    const far = Math.hypot(p.x - S.px[hint], p.z - S.pz[hint]) > 24; // new shot elsewhere: search fresh
+    const n = nearest(p.x, p.z, far ? -1 : hint);
+    hint = n.i;
+    return Math.abs(n.lat) > RAIL_LAT * wAt(n.i) - 0.35 && p.y < S.y[n.i] + 3.4;
+  };
+}
 const race = LOOP.on && params.get('race') !== '0'
-  ? new Race({ scene, model, car, hud, fx: { tracers, dust, sparks: embers, height: terrainHeight }, gunsHitHook: (test, onHit) => { guns.hitTest = test; guns.onTargetHit = onHit; } })
+  ? new Race({ scene, model, car, hud, booms, debris, fx: { tracers, dust, sparks: embers, height: terrainHeight }, gunsHitHook: (test, onHit) => { guns.hitTest = test; guns.onTargetHit = onHit; } })
   : null;
+if (race) for (const r of race.rivals) r.guns.blockTest = guns.blockTest;
 if (LOOP.on) hud.map(world, S, LOOP.n, I_START);
 window.__game.race = race;
 
@@ -440,6 +469,13 @@ function frame(now) {
   }
 
   guns.update(dt, inp.fire, car);
+  booms.update(dt);
+  casings.update(dt);
+  links.update(dt);
+  debris.update(dt, (p, u) => {
+    dust.emit(p.x, p.y + 0.2, p.z, 0, 1.2 + Math.random(), 0, 0.6 + Math.random() * 0.5, 1 + Math.random(), 0.1, 0.09, 0.08);
+    if (u < 0.6) embers.emit(p.x, p.y + 0.15, p.z, (Math.random() - 0.5), 1 + Math.random() * 1.5, (Math.random() - 0.5), 0.3, 0.3, 1.0, 0.5, 0.1);
+  });
   tracers.update(dt);
   runTime += dt;
   const dist = Math.max(0, (car.n.i - I_START) * STEP);

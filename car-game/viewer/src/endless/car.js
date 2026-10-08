@@ -269,6 +269,19 @@ export class CarController {
       else if (prev > RL && ls < RL + 1.0) tgt = RL + 1.0;
       if (tgt !== null) { this.pushLat(n.i, (ls - tgt) * side); n = nearest(this.x, this.z, this.hint); }
     }
+    // the centre is held off the wall above; the body's corners must not poke through either
+    if (sides.length) {
+      const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw), rx = -fz, rz = fx, { hx, hz0, hz1 } = this.hitbox;
+      for (const [sx, sz] of [[hx, hz1], [-hx, hz1], [hx, hz0], [-hx, hz0]]) {
+        const cn = nearest(this.x + fx * sz + rx * sx, this.z + fz * sz + rz * sx, n.i);
+        const lim = RAIL_LAT * wAt(cn.i) - 0.2;
+        for (const side of sides) {
+          if (n.lat * side >= RAIL_LAT * wAt(n.i)) continue; // car is outside this wall
+          const over = cn.lat * side - lim;
+          if (over > 0 && over < 3) this.pushLat(cn.i, over * side);
+        }
+      }
+    }
     this.n = nearest(this.x, this.z, this.hint);
     this.prevLat = this.n.lat;
   }

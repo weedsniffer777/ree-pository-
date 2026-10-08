@@ -164,16 +164,17 @@ class Rival {
 
 // ---------------------------------------------------------------- race
 export class Race {
-  constructor({ scene, model, car, fx, hud, gunsHitHook }) {
-    Object.assign(this, { scene, car, fx, hud });
+  constructor({ scene, model, car, fx, hud, gunsHitHook, booms, debris }) {
+    Object.assign(this, { scene, car, fx, hud, booms, debris });
     profile ??= speedProfile(17, 9);
     this.player = { name: 'You', hex: ROSTER[0].hex, you: true, armor: new Armor(), mats: model.userData.skins };
     this.hb = car.hitbox;
     this.rivals = [];
     for (let s = 1; s < ROSTER.length; s++) this.rivals.push(new Rival(s, model, scene, fx));
     const hitTest = (o, d, range, shooter) => this.rayHit(o, d, range, shooter);
-    for (const r of this.rivals) { r.guns.hitTest = hitTest; r.guns.onTargetHit = (h) => this.damage(h.target, h.zone, 0.022, r); }
-    gunsHitHook(hitTest, (h) => { this.damage(h.target, h.zone, 0.034, this.player); car.addBoost(0.01); });
+    for (const r of this.rivals) { r.guns.hitTest = hitTest; r.guns.onTargetHit = (h) => this.damage(h.target, h.zone, 0.022, r, h.point); }
+    gunsHitHook(hitTest, (h) => { this.damage(h.target, h.zone, 0.05, this.player, h.point); car.addBoost(0.012); });
+    hud.armorModel(rivalTemplate(model).model, this.hb);
     this.reset();
   }
 
@@ -200,6 +201,12 @@ export class Race {
     });
     this.player.armor.reset();
     wear(this.player.mats, this.player.armor);
+    this.player.gone = false;
+    this.car.body.visible = true;
+    for (const r of this.rivals) { r.gone = false; r.rig.visible = true; }
+    this.kills = 0;
+    this.combo = { n: 0, t: -9 };
+    this.hud.clearCracks();
     Object.assign(this, { state: 'race', t: 0, raceT: 0, lapStart: 0, lapsDone: 0, bestLap: 0, lastLap: 0, pFinish: 0, shown: false });
     this.hud.results(null);
     // intro: hold on black for a beat, then the screen splits open onto the race
@@ -225,7 +232,9 @@ export class Race {
   // every car as a uniform body for collisions and hit tests
   bodies() {
     const c = this.car;
-    return [{ ref: this.player, x: c.x, y: c.y, z: c.z, yaw: c.yaw, prog: this.pProg }, ...this.rivals.map((r) => ({ ref: r, x: r.x, y: r.y, z: r.z, yaw: r.yaw, prog: r.prog }))];
+    const out = this.player.gone ? [] : [{ ref: this.player, x: c.x, y: c.y, z: c.z, yaw: c.yaw, prog: this.pProg }];
+    for (const r of this.rivals) if (!r.gone) out.push({ ref: r, x: r.x, y: r.y, z: r.z, yaw: r.yaw, prog: r.prog });
+    return out;
   }
 
   rayHit(o, d, range, shooter) {
@@ -252,15 +261,62 @@ export class Race {
     return best;
   }
 
-  damage(target, zone, dmg) {
+  // Armor soaks a hit on its side until stripped; past that the hull HP (core) takes it.
+  // Player hits drive the feedback: hitmarker, combo count, CRITICAL when a side breaks or
+  // HP crosses a third, DESTROYED with the kill tally, small blasts on crits.
+  damage(target, zone, dmg, attacker = null, point = null) {
     const a = target.armor;
-    if (a.wrecked) return;
+    if (a.wrecked || this.state === 'done' && target === this.player) return;
+    const zb = a.z[zone], hb = a.core;
     a.hit(zone, dmg);
     wear(target.mats, a);
-    if (a.wrecked) {
-      if (target === this.player) this.over('wrecked');
-      else { target.deadT = 0; target.spin = (Math.random() - 0.5) * 1.6; }
+    const broke = zb > 0 && a.z[zone] === 0, tier = (h) => (h > 0.66 ? 0 : h > 0.33 ? 1 : 2);
+    const crit = broke || tier(a.core) > tier(hb);
+    const pos = point ?? new THREE.Vector3(target.x ?? this.car.x, (target.y ?? this.car.y) + 0.8, target.z ?? this.car.z);
+    const vel = target === this.player ? new THREE.Vector3(this.car.vx, 0, this.car.vz) : new THREE.Vector3(target.vx, 0, target.vz);
+    if (crit || Math.random() < 0.04) this.booms.blast(pos, vel, false);
+    if (attacker === this.player && target !== this.player) {
+      const cb = this.combo;
+      cb.n = this.raceT - cb.t < 0.75 ? cb.n + 1 : 1;
+      cb.t = this.raceT;
+      if (a.wrecked) {
+        this.kills++;
+        this.hud.hitmarker('kill');
+        this.hud.popup(`DESTROYED<small>x${this.kills}</small>`, 'kill');
+        this.car.addBoost(0.35);
+      } else {
+        this.hud.hitmarker(crit ? 'crit' : 'hit');
+        if (crit) this.hud.popup(broke ? 'ARMOR BROKEN' : 'CRITICAL', 'crit');
+        if (cb.n >= 2) this.hud.popup(`x${cb.n} HIT`, 'combo');
+      }
     }
+    if (target === this.player) {
+      this.hud.hurt(dmg);
+      this.car.hit(crit ? 6 : 1.5);
+      for (const th of [0.5, 0.25, 0.1]) if (hb > th && a.core <= th) this.hud.crack();
+    }
+    if (a.wrecked) this.detonate(target);
+  }
+
+  // a car going up: big blast, and the car becomes a shower of parts carrying its speed
+  detonate(target) {
+    const me = target === this.player, c = this.car;
+    const p = new THREE.Vector3(me ? c.x : target.x, (me ? c.y : target.y) + 0.7, me ? c.z : target.z);
+    const v = me ? new THREE.Vector3(c.vx, 0, c.vz) : new THREE.Vector3(target.vx, 0, target.vz);
+    this.booms.blast(p, v, true);
+    const hex = (me ? ROSTER[0] : ROSTER[target.slot]).hex;
+    const tmp = new THREE.Vector3(), tv = new THREE.Vector3();
+    for (let k = 0; k < 30; k++) {
+      const wheel = k < 4, panel = k < 16;
+      tmp.set(p.x + (Math.random() - 0.5) * 1.8, p.y + Math.random() * 0.8, p.z + (Math.random() - 0.5) * 3.5);
+      tv.set(v.x * (0.7 + Math.random() * 0.3) + (Math.random() - 0.5) * 16, 4 + Math.random() * 12, v.z * (0.7 + Math.random() * 0.3) + (Math.random() - 0.5) * 16);
+      const size = wheel ? [0.32, 0.68, 0.68] : panel ? [0.5 + Math.random() * 0.9, 0.06, 0.4 + Math.random() * 0.8] : [0.15 + Math.random() * 0.35, 0.15 + Math.random() * 0.3, 0.15 + Math.random() * 0.4];
+      const color = wheel ? 0x141414 : k % 5 === 0 ? hex : [0x3a3d40, 0x2b2d2f, 0x4a4c4e, 0x1a1a1a][k % 4];
+      this.debris.spawn(tmp, tv, { size, life: 4 + Math.random() * 3, spin: 14, color, burn: k % 3 === 0 });
+    }
+    if (me) { c.body.visible = false; this.player.gone = true; c.vx *= 0.3; c.vz *= 0.3; this.over('wrecked'); }
+    else { target.gone = true; target.rig.visible = false; }
+    if (!me && this.rivals.every((r) => r.gone) && this.state === 'race') this.over('annihilation');
   }
 
   // circle-pair contact between every two cars: separate, swap normal velocity, scrape armor
@@ -295,7 +351,7 @@ export class Race {
       if (-vrel > 4) for (const body of [A, C]) {
         const f = [Math.sin(body.yaw), Math.cos(body.yaw)], dx = deep.px - body.x, dz = deep.pz - body.z;
         const lz = dx * f[0] + dz * f[1] - (hz0 + hz1) / 2, lx = dx * -f[1] + dz * f[0];
-        this.damage(body.ref, Armor.zoneOf(lx, lz, hx, (hz1 - hz0) / 2), (-vrel - 4) * 0.025);
+        this.damage(body.ref, Armor.zoneOf(lx, lz, hx, (hz1 - hz0) / 2), (-vrel - 4) * 0.025, body === A ? C.ref : A.ref);
       }
     }
   }
@@ -379,17 +435,20 @@ export class Race {
     for (const r of this.rivals) { this.updateRival(r, dt, all); r.pose(dt); }
     this.contacts();
     for (const r of this.rivals) r.pose(0);
-    // smoke from damaged cars, fire from wrecks
+    // damage tiers from hull HP: untouched = clean; hurt = light smoke; heavy = black
+    // smoke; critical = black smoke and flame licking out of the engine bay
     for (const r of [...this.rivals, this.player]) {
-      const a = r.armor, hurt = a.wrecked ? 3 : a.core < 1 ? 1.5 : a.worst <= 0 ? 0.6 : 0;
-      if (!hurt) continue;
-      r.smokeAcc = (r.smokeAcc ?? 0) + dt * hurt * 14;
-      const x = r === this.player ? c.x : r.x, y = r === this.player ? c.y : r.y, z = r === this.player ? c.z : r.z, yaw = r === this.player ? c.yaw : r.yaw;
+      const a = r.armor;
+      if (r.gone || a.core >= 0.999) continue;
+      const tier = a.core > 0.55 ? 1 : a.core > 0.25 ? 2 : 3;
+      r.smokeAcc = (r.smokeAcc ?? 0) + dt * [0, 7, 14, 22][tier];
+      const me = r === this.player, x = me ? c.x : r.x, y = me ? c.y : r.y, z = me ? c.z : r.z, yaw = me ? c.yaw : r.yaw;
+      const vx = me ? c.vx : r.vx, vz = me ? c.vz : r.vz;
       while (r.smokeAcc >= 1) {
         r.smokeAcc -= 1;
-        const ex = x + Math.sin(yaw) * 1.6, ez = z + Math.cos(yaw) * 1.6, g = a.wrecked ? 0.12 : 0.32;
-        this.fx.dust.emit(ex, y + 1.0, ez, (Math.random() - 0.5), 1.5 + Math.random(), (Math.random() - 0.5), 0.9 + Math.random() * 0.8, 1.4 + Math.random(), g, g, g);
-        if (a.wrecked) this.fx.sparks.emit(ex, y + 0.9, ez, (Math.random() - 0.5) * 2, 2 + Math.random() * 2, (Math.random() - 0.5) * 2, 0.1, 0.4, 1.0, 0.5, 0.1);
+        const ex = x + Math.sin(yaw) * 1.6, ez = z + Math.cos(yaw) * 1.6, g = [0, 0.55, 0.2, 0.08][tier];
+        this.fx.dust.emit(ex, y + 0.95, ez, vx * 0.4 + (Math.random() - 0.5), 1.5 + Math.random(), vz * 0.4 + (Math.random() - 0.5), (0.7 + Math.random() * 0.7) * (tier === 3 ? 1.5 : 1), 1.2 + Math.random(), g, g * 0.97, g * 0.95);
+        if (tier === 3) for (let q = 0; q < 2; q++) this.fx.sparks.emit(ex + (Math.random() - 0.5) * 0.6, y + 0.85, ez + (Math.random() - 0.5) * 0.6, vx * 0.85 + (Math.random() - 0.5) * 1.5, 1.5 + Math.random() * 2.5, vz * 0.85 + (Math.random() - 0.5) * 1.5, 0.35 + Math.random() * 0.25, 0.25 + Math.random() * 0.2, 1.0, 0.45 + Math.random() * 0.25, 0.08);
       }
     }
     for (const k of ZONES) this.player.armor.flash[k] = Math.max(0, this.player.armor.flash[k] - dt);
@@ -399,8 +458,8 @@ export class Race {
     rows.sort((p, q) => (p.armor.wrecked - q.armor.wrecked) || ((q.finished ? 1 : 0) - (p.finished ? 1 : 0)) || (p.finished && q.finished ? p.finishT - q.finishT : q.prog - p.prog));
     this.order = rows;
     this.hud.standings(rows.map((r) => ({ name: r.name, you: !!r.you, color: r.hex, out: r.armor.wrecked, gap: r.you ? '' : r.armor.wrecked ? 'OUT' : r.finished ? 'FIN' : `${r.prog > this.pProg ? '+' : '-'}${Math.round(Math.abs(r.prog - this.pProg) * STEP)}m` })));
-    this.hud.armor(this.player.armor);
-    this.hud.mapDots(this.rivals.filter((r) => !r.armor.wrecked).map((r) => ({ x: r.x, z: r.z, color: r.hex })));
+    this.hud.armor(this.player.armor, this.t, dt);
+    this.hud.mapDots(this.rivals.filter((r) => !r.gone).map((r) => ({ x: r.x, z: r.z, color: r.hex })));
     if (this.state === 'done' && !this.shown && this.t - this.doneT > 1.6) this.showResults();
   }
 
@@ -416,9 +475,9 @@ export class Race {
     const me = this.order.findIndex((r) => r.you) + 1;
     const ord = (n) => `${n}${n === 1 ? 'ST' : n === 2 ? 'ND' : n === 3 ? 'RD' : 'TH'}`;
     this.hud.results({
-      title: this.why === 'wrecked' ? 'WRECKED' : ord(me),
-      sub: this.why === 'wrecked' ? 'Your car is scrap' : me === 1 ? 'Winner' : me <= 3 ? 'Podium finish' : 'Finished',
-      win: this.why !== 'wrecked' && me === 1,
+      title: this.why === 'wrecked' ? 'WRECKED' : this.why === 'annihilation' ? '1ST' : ord(me),
+      sub: this.why === 'wrecked' ? 'Your car is scrap' : this.why === 'annihilation' ? `Last car running · ${this.kills} destroyed` : me === 1 ? 'Winner' : me <= 3 ? 'Podium finish' : 'Finished',
+      win: this.why === 'annihilation' || (this.why !== 'wrecked' && me === 1),
       rows: this.order.map((r, k) => ({ pos: k + 1, name: r.name, you: !!r.you, color: r.hex, time: r.armor.wrecked ? 'WRECKED' : r.finished ? fmt(r.finishT) : '—' })),
       best: this.bestLap ? fmt(this.bestLap) : '',
       onAgain: () => this.again(),

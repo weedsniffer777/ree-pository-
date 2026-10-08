@@ -4,6 +4,8 @@
 // as dots). Bottom right: tacho with simulated gears, speed and the boost bar. Centred
 // yellow tutorial cards still spotlight the HUD part they are about.
 
+import { XRay } from './xray.js';
+
 const NOISE = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.62  0 0 0 0 0.33  0 0 0 0 0.16  0 0 0 0.55 -0.12'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>")`;
 
 const CSS = `
@@ -69,9 +71,29 @@ const CSS = `
 #hud kbd { display: inline-block; min-width: 1.4em; padding: 2px 5px 1px; background: var(--white); color: var(--black); border-radius: 2px; font: 800 10px/1 var(--sign); text-align: center; letter-spacing: 0.04em; }
 
 /* armor: top-down car, four zones + core, green -> grey -> black */
-#hud .armor { position: absolute; left: calc(var(--gx) + 186px); bottom: var(--gyb); width: 58px; height: 100px; padding: 8px 6px; }
-#hud .armor svg { width: 100%; height: 100%; display: block; }
-#hud .armor .z { transition: fill 0.2s; }
+#hud .armor { position: absolute; left: calc(var(--gx) + 184px); bottom: calc(var(--gyb) - 6px); width: 96px; height: 150px; filter: drop-shadow(0 0 6px rgba(0,0,0,0.6)); }
+#hud .armor canvas { width: 100%; height: 100%; display: block; }
+/* hits: centre hitmarker, combo / critical / destroyed popups, damage vignette, cracked glass */
+#hud .hm { position: absolute; left: 50%; top: 44%; width: 44px; height: 44px; margin: -22px 0 0 -22px; opacity: 0; }
+#hud .hm i { position: absolute; left: 50%; top: 50%; width: 15px; height: 4px; margin: -2px 0 0 -7.5px; background: #fff; box-shadow: 0 0 0 1.5px rgba(0,0,0,0.6); }
+#hud .hm i:nth-child(1) { transform: rotate(45deg) translateX(-13px); } #hud .hm i:nth-child(2) { transform: rotate(135deg) translateX(-13px); }
+#hud .hm i:nth-child(3) { transform: rotate(225deg) translateX(-13px); } #hud .hm i:nth-child(4) { transform: rotate(315deg) translateX(-13px); }
+#hud .hm.crit i { background: var(--rust); width: 20px; } #hud .hm.kill i { background: var(--red); width: 26px; height: 6px; }
+#hud .hm.go { animation: hm 0.28s ease-out both; } #hud .hm.go.crit { animation-duration: 0.45s; } #hud .hm.go.kill { animation: hmk 0.8s ease-out both; }
+@keyframes hm { from { opacity: 1; transform: scale(1.35); } 60% { opacity: 1; } to { opacity: 0; transform: scale(1); } }
+@keyframes hmk { from { opacity: 1; transform: scale(2.2) rotate(20deg); } 50% { opacity: 1; transform: scale(1.3); } to { opacity: 0; transform: scale(1.2); } }
+#hud .pops { position: absolute; left: calc(50% + 70px); top: 36%; display: grid; gap: 2px; justify-items: start; }
+#hud .pop { font: 900 30px/1 var(--display); letter-spacing: 0.06em; color: var(--white); -webkit-text-stroke: 2px #0e0f11; paint-order: stroke fill; transform: skewX(-8deg); animation: popIn 0.25s cubic-bezier(.2,1.8,.4,1) both, popOut 0.4s 1.1s ease-in forwards; text-shadow: 0 3px 0 rgba(0,0,0,0.5); }
+#hud .pop.combo { font-size: 38px; color: #ffd27a; }
+#hud .pop.crit { font-size: 34px; color: var(--rust); }
+#hud .pop.kill { font-size: 52px; color: #ff3b26; animation: popIn 0.35s cubic-bezier(.2,1.8,.4,1) both, popOut 0.5s 1.8s ease-in forwards; }
+#hud .pop small { font-size: 0.55em; margin-left: 8px; color: var(--white); }
+@keyframes popIn { from { transform: skewX(-8deg) scale(1.9); opacity: 0; } }
+@keyframes popOut { to { transform: skewX(-8deg) translateY(-14px); opacity: 0; } }
+#hud .vig { position: absolute; inset: 0; background: radial-gradient(ellipse at center, transparent 45%, rgba(150,10,6,0.55) 80%, rgba(60,0,0,0.9) 100%); opacity: 0; }
+#hud .glass { position: absolute; inset: 0; overflow: hidden; }
+#hud .glass canvas { position: absolute; width: 520px; height: 520px; opacity: 0.7; mix-blend-mode: screen; animation: crack 0.18s ease-out both; }
+@keyframes crack { from { transform: scale(0.6); opacity: 0; } }
 /* intro: black halves split open from a seam across the middle */
 #hud .intro { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
 #hud .intro i { position: absolute; left: 0; right: 0; height: 50.5%; background: #070708; transition: transform 0.85s cubic-bezier(.7,0,.2,1); }
@@ -149,7 +171,9 @@ const CSS = `
   #hud .row { height: 17px; font-size: 10px; }
   #hud .row i { font-size: 12px; }
   #hud .map { width: 112px; height: 112px; }
-  #hud .armor { left: calc(var(--gx) + 118px); width: 44px; height: 76px; padding: 5px 4px; }
+  #hud .armor { left: calc(var(--gx) + 116px); width: 70px; height: 110px; }
+  #hud .pop { font-size: 22px; } #hud .pop.combo { font-size: 28px; } #hud .pop.kill { font-size: 38px; }
+  #hud .glass canvas { width: 340px; height: 340px; }
   #hud .results h2 { font-size: 50px; }
   #hud .results .box { gap: 6px; padding: 12px 16px 14px; }
   #hud .results .list { max-height: 46vh; }
@@ -216,13 +240,11 @@ export function createHud({ touch = false } = {}) {
     </div>
     <div class="tr"><button class="pause" aria-label="Pause"></button></div>
     <div class="map panel"><canvas></canvas></div>
-    <div class="armor panel"><svg viewBox="0 0 46 84">
-      <path class="z" data-z="front" d="M8 2 H38 L34 16 H12 Z"/>
-      <path class="z" data-z="back" d="M12 68 H34 L38 82 H8 Z"/>
-      <path class="z" data-z="left" d="M2 8 L10 18 V66 L2 76 Z"/>
-      <path class="z" data-z="right" d="M44 8 L36 18 V66 L44 76 Z"/>
-      <rect class="z" data-z="core" x="13" y="19" width="20" height="46" rx="3"/>
-    </svg></div>
+    <div class="armor"><canvas></canvas></div>
+    <div class="glass"></div>
+    <div class="vig"></div>
+    <div class="hm"><i></i><i></i><i></i><i></i></div>
+    <div class="pops"></div>
     <div class="count" hidden></div>
     <div class="intro shut instant"><i class="t"></i><i class="b"></i></div>
     <div class="results" hidden><div class="box panel"><h2></h2><div class="sub"></div><div class="list"></div><div class="sub best"></div><button>PLAY AGAIN</button></div></div>
@@ -399,14 +421,40 @@ export function createHud({ touch = false } = {}) {
     g.beginPath(); g.moveTo(0, -7.5); g.lineTo(5.5, 6); g.lineTo(0, 3); g.lineTo(-5.5, 6); g.closePath(); g.fill(); g.stroke();
   }
 
-  // ---- armor widget: green (full) -> grey -> black (gone), white flash on a hit ----
-  const zoneCol = (v) => {
-    const a = [111, 143, 90], m = [104, 104, 98], z = [16, 16, 17];
-    const [p, q, t] = v > 0.5 ? [m, a, (v - 0.5) * 2] : [z, m, v * 2];
-    return `rgb(${p.map((c, k) => Math.round(c + (q[k] - c) * t)).join(',')})`;
+  // ---- damage feedback ----
+  let xray = null, vigT = 0, vigBase = 0;
+  const vig = $('.vig'), hm = $('.hm'), pops = $('.pops'), glass = $('.glass');
+  const crackCanvas = (seed) => {
+    const c = document.createElement('canvas');
+    c.width = c.height = 512;
+    const g = c.getContext('2d');
+    let r = seed;
+    const rnd = () => ((r = (r * 16807) % 2147483647) / 2147483647);
+    g.translate(256, 256);
+    g.lineCap = 'round';
+    const rays = 11 + Math.floor(rnd() * 6), ends = [];
+    for (let k = 0; k < rays; k++) {
+      let a = (k / rays) * Math.PI * 2 + rnd() * 0.4, x = 0, y = 0;
+      const pts = [[0, 0]];
+      const len = 120 + rnd() * 130;
+      for (let d = 0; d < len; d += 14 + rnd() * 18) { a += (rnd() - 0.5) * 0.5; x += Math.cos(a) * 18; y += Math.sin(a) * 18; pts.push([x, y]); }
+      ends.push(pts);
+      for (const [w, col] of [[3.2, 'rgba(0,0,0,0.35)'], [1.3, 'rgba(255,255,255,0.9)']]) {
+        g.lineWidth = w; g.strokeStyle = col; g.beginPath();
+        pts.forEach(([px, py], j) => (j ? g.lineTo(px, py) : g.moveTo(px, py)));
+        g.stroke();
+      }
+    }
+    for (const ring of [34, 70, 115]) { // concentric breaks between neighbouring rays
+      g.lineWidth = 1; g.strokeStyle = 'rgba(255,255,255,0.7)'; g.beginPath();
+      ends.forEach((pts, k) => { const p = pts[Math.min(pts.length - 1, Math.round(ring / 18))]; if (rnd() < 0.75) (k ? g.lineTo(...p) : g.moveTo(...p)); });
+      g.stroke();
+    }
+    const gr = g.createRadialGradient(0, 0, 0, 0, 0, 40);
+    gr.addColorStop(0, 'rgba(255,255,255,0.55)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr; g.beginPath(); g.arc(0, 0, 40, 0, Math.PI * 2); g.fill();
+    return c;
   };
-  let armorKey = '';
-  const zoneEls = [...root.querySelectorAll('.armor .z')];
 
   let titleT = 0, cardKey = null, boardKey = '';
   const spot = $('.spot'), card = $('.card');
@@ -455,14 +503,41 @@ export function createHud({ touch = false } = {}) {
     map: buildMap,
     mapUpdate: drawMap,
     mapDots(list) { dots = list; },
-    armor(a) {
-      const key = ['front', 'back', 'left', 'right'].map((k) => `${a.z[k].toFixed(2)}${a.flash[k] > 0 ? '!' : ''}`).join() + a.core.toFixed(2);
-      if (key === armorKey) return;
-      armorKey = key;
-      for (const el of zoneEls) {
-        const k = el.dataset.z;
-        el.style.fill = k === 'core' ? zoneCol(a.core) : a.flash[k] > 0 ? '#f4efe4' : zoneCol(a.z[k]);
+    armorModel(model, hitbox) { if (root.style.display !== 'none') xray = new XRay($('.armor canvas'), model, hitbox); },
+    armor(a, t = performance.now() / 1000, dt = 1 / 60) {
+      xray?.update(a, t);
+      // red vignette: flashes on damage, settles to a glow that grows as HP drops
+      vigBase = a.wrecked ? 0.9 : Math.max(0, (0.55 - a.core) * 1.2);
+      vigT = Math.max(0, vigT - dt * 2.2);
+      vig.style.opacity = Math.min(1, vigBase + vigT).toFixed(3);
+    },
+    hurt(amount) { vigT = Math.min(0.9, vigT + 0.18 + amount * 4); },
+    // cracked glass when HP crosses a threshold; cleared on a new race
+    crack() {
+      const c = crackCanvas(1 + Math.floor(Math.random() * 1e6));
+      const x = Math.random() < 0.5 ? -8 - Math.random() * 12 : 52 + Math.random() * 14, y = -6 + Math.random() * 50;
+      c.style.left = `${x}%`; c.style.top = `${y}%`;
+      c.style.transform = `rotate(${Math.random() * 360}deg)`;
+      glass.append(c);
+    },
+    clearCracks() { glass.innerHTML = ''; vigT = 0; },
+    hitmarker(kind = 'hit') {
+      hm.className = 'hm';
+      void hm.offsetWidth;
+      hm.className = `hm go ${kind}`;
+    },
+    // kind: 'combo' (replaces the running combo line), 'crit', 'kill'
+    popup(html, kind = '') {
+      if (kind === 'combo') {
+        const old = pops.querySelector('.combo');
+        if (old) old.remove();
       }
+      const el = document.createElement('div');
+      el.className = `pop ${kind}`;
+      el.innerHTML = html;
+      pops.prepend(el);
+      while (pops.children.length > 4) pops.lastChild.remove();
+      setTimeout(() => el.remove(), kind === 'kill' ? 2400 : 1600);
     },
     // open = true splits the black open; false closes it (instantly when snap)
     intro(open, snap = false) {

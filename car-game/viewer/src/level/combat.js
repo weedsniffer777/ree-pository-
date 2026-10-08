@@ -80,9 +80,9 @@ export class Tracers {
 // (tracer), rate (rounds/s), spread (m at 60 m), hitTest(origin, dir, range, shooter) ->
 // { d, point, ... } | null for vehicles, onTargetHit(hit) when such a round arrives.
 export class Guns {
-  constructor(model, scene, { tracers, dust, sparks, height = terrainHeight, light = true, color = 0xff2a1a, rate = 14, spread = 1.6, hitTest = null, onTargetHit = null }) {
+  constructor(model, scene, { tracers, dust, sparks, height = terrainHeight, light = true, color = 0xff2a1a, rate = 14, spread = 1.6, hitTest = null, onTargetHit = null, blockTest = null, onShot = null }) {
     this.height = height;
-    Object.assign(this, { color, rate, spread, hitTest, onTargetHit });
+    Object.assign(this, { color, rate, spread, hitTest, onTargetHit, blockTest, onShot });
     this.tracers = tracers;
     this.dust = dust;
     this.sparks = sparks;
@@ -138,7 +138,7 @@ export class Guns {
     const p = new THREE.Vector3();
     for (let d = 2; d <= 160; d += 1.5) {
       p.copy(muzzle).addScaledVector(dir, d);
-      if (p.y <= this.height(p.x, p.z)) { hit = p.clone(); break; }
+      if (p.y <= this.height(p.x, p.z) || this.blockTest?.(p)) { hit = p.clone(); break; }
     }
     const start = muzzle.clone();
     const veh = this.hitTest?.(start, dir, hit ? hit.distanceTo(start) : 160, car);
@@ -157,13 +157,15 @@ export class Guns {
     this.light.position.copy(start);
     this.light.intensity = 9;
     this.kick = 1;
+    this.onShot?.(start, dir, car, k);
     // smoke wisp at the muzzle
     this.dust.emit(start.x, start.y, start.z, car.vx * 0.9, 0.5, car.vz * 0.9, 0.25, 0.4, 0.75, 0.72, 0.68);
   }
 
   sparkAt(p) {
-    for (let k = 0; k < 6; k++) this.sparks.emit(p.x, p.y, p.z, (Math.random() - 0.5) * 9, 1 + Math.random() * 4, (Math.random() - 0.5) * 9, 0.07, 0.15 + Math.random() * 0.15, 1.0, 0.75, 0.35);
-    this.dust.emit(p.x, p.y, p.z, 0, 1, 0, 0.5, 0.6, 0.3, 0.29, 0.28);
+    for (let k = 0; k < 14; k++) this.sparks.emit(p.x, p.y, p.z, (Math.random() - 0.5) * 14, 1 + Math.random() * 7, (Math.random() - 0.5) * 14, 0.11 + Math.random() * 0.06, 0.2 + Math.random() * 0.3, 1.0, 0.8 + Math.random() * 0.2, 0.35);
+    this.sparks.emit(p.x, p.y, p.z, 0, 0, 0, 0.9, 0.07, 1.0, 0.9, 0.6); // white-hot flash at the strike
+    this.dust.emit(p.x, p.y, p.z, 0, 1, 0, 0.6, 0.7, 0.3, 0.29, 0.28);
   }
 
   impact(p) {
