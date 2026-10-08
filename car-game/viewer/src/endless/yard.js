@@ -450,6 +450,175 @@ export function highMast() {
   return g;
 }
 
+// ---------------------------------------------------------------- big buildings
+//
+// Shared material sets so dozens of buildings merge into a handful of draw calls.
+
+function officeTexture(seed, brick) {
+  const [c, g] = canvas(128, 128);
+  const r = rng(seed);
+  g.fillStyle = brick; g.fillRect(0, 0, 128, 128);
+  for (let y = 0; y < 128; y += 6) {
+    g.fillStyle = 'rgba(0,0,0,0.18)'; g.fillRect(0, y, 128, 1);
+    for (let x = (y / 6) % 2 ? 0 : 8; x < 128; x += 16) g.fillRect(x, y, 1, 6);
+  }
+  for (let k = 0; k < 1200; k++) { g.fillStyle = `rgba(${r() < 0.5 ? '20,16,12' : '230,220,200'},${r() * 0.12})`; g.fillRect(r() * 128, r() * 128, 2, 2); }
+  g.fillStyle = '#b8b1a2'; g.fillRect(18, 86, 92, 4);
+  g.fillStyle = '#1f2a2f'; g.fillRect(20, 30, 88, 56);
+  if (r() < 0.3) { g.fillStyle = 'rgba(210,190,120,0.3)'; g.fillRect(20, 30, 88, 56); }
+  g.fillStyle = 'rgba(160,175,170,0.2)'; g.fillRect(20, 30, 88, 14);
+  g.fillStyle = '#4e4e4b'; for (const x of [20, 49, 78, 106]) g.fillRect(x - 1, 30, 3, 56);
+  g.fillRect(20, 57, 88, 3);
+  return tex(c);
+}
+
+const WM = {};
+function wmats() {
+  if (WM.ready) return WM;
+  const mk = (map, o = {}) => new THREE.MeshStandardMaterial({ map, roughness: 0.8, metalness: 0.3, side: THREE.DoubleSide, ...o });
+  WM.walls = [[150, 118, 96], [128, 134, 138], [158, 152, 140], [112, 124, 132], [140, 96, 74], [176, 170, 156]].map((b, k) => mk(corrugated(500 + k * 7, b, 0.5 + (k % 3) * 0.35)));
+  WM.roofs = [[130, 104, 86], [118, 120, 122], [146, 134, 118]].map((b, k) => mk(corrugated(600 + k * 7, b, 0.9)));
+  WM.doors = [[110, 120, 130], [140, 110, 80], [96, 104, 100]].map((b, k) => mk(corrugated(700 + k * 3, b, 0.7, { horizontal: true }), { side: THREE.FrontSide }));
+  WM.office = ['#8c5c4a', '#8d8b84', '#9a7a5e'].map((b, k) => new THREE.MeshStandardMaterial({ map: officeTexture(800 + k, b), roughness: 0.9 }));
+  WM.sky = std(0xc9c6b8, { roughness: 0.4 });
+  WM.goods = [0x8a6e4b, 0x9c9488, 0x6b5b4a, 0x5d6b4f, 0x7a4a3c].map((h) => std(h, { roughness: 0.9 }));
+  WM.ready = true;
+  return WM;
+}
+
+// Gable profile across n spans, for end walls and roof planes.
+function spanRoofs(g, W, L, E, n, pitch, roofM, m) {
+  const sw = W / n;
+  for (let k = 0; k < n; k++) {
+    const x0 = -W / 2 + k * sw, xc = x0 + sw / 2, half = sw / 2 + (k === 0 || k === n - 1 ? 0.5 : 0.05);
+    const ang = Math.atan(pitch), slope = half / Math.cos(ang);
+    for (const sx of [-1, 1]) {
+      const rm = new THREE.Mesh(boxUV(slope, 0.1, L + 1.0, 4), roofM);
+      rm.position.set(xc + sx * half / 2, E + (sw / 2 - half / 2) * pitch + 0.08, 0);
+      rm.rotation.z = -sx * ang;
+      g.add(rm);
+      const sk = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.06, L * 0.85), wmats().sky);
+      sk.position.set(xc + sx * half * 0.45, E + (sw / 2 - half * 0.45) * pitch + 0.16, 0);
+      sk.rotation.z = -sx * ang;
+      g.add(sk);
+    }
+    bx(g, 0.6, 0.3, L + 1.0, m.dark, xc, E + (sw / 2) * pitch + 0.12, 0);
+    for (let z = -L / 2 + 6; z < L / 2 - 4; z += 10) cy(g, 0.32, 0.38, 0.8, 10, m.steel, xc, E + (sw / 2) * pitch + 0.5, z);
+    if (k > 0) bx(g, 0.5, 0.3, L + 1.0, m.dark, x0, E - 0.05, 0); // valley gutter
+  }
+  for (const sz of [-1, 1]) {
+    const pts = [new THREE.Vector2(-W / 2, 0.6), new THREE.Vector2(W / 2, 0.6), new THREE.Vector2(W / 2, E)];
+    for (let k = n - 1; k >= 0; k--) { const x0 = -W / 2 + k * sw; pts.push(new THREE.Vector2(x0 + sw / 2, E + (sw / 2) * pitch), new THREE.Vector2(x0, E)); }
+    const geo = new THREE.ShapeGeometry(new THREE.Shape(pts));
+    const pos = geo.attributes.position, uv = geo.attributes.uv;
+    for (let i = 0; i < pos.count; i++) uv.setXY(i, pos.getX(i) / 4, pos.getY(i) / 4);
+    const gm = new THREE.Mesh(geo, g.userData.wallM);
+    gm.position.z = sz * L / 2;
+    g.add(gm);
+  }
+}
+
+// Multi-span warehouse: ribbed walls, n gabled spans with skylights and vents, a raised
+// loading dock with roller doors, bumpers and a canopy on the -X side, gutters, downpipes,
+// and a two-storey brick office at the +Z end.
+export function bigWarehouse({ W = 40, L = 80, E = 10, spans = 2, pitch = 0.18, v = 0 } = {}) {
+  const m = mats(), w = wmats(), g = new THREE.Group();
+  const wallM = w.walls[v % w.walls.length], roofM = w.roofs[v % w.roofs.length], doorM = w.doors[v % w.doors.length];
+  g.userData.wallM = wallM;
+  bx(g, W + 0.4, 0.6, L + 0.4, m.concrete, 0, 0.3, 0);
+  for (const sx of [-1, 1]) panel(g, 0.16, E - 0.6, L, wallM, sx * W / 2, 0.6 + (E - 0.6) / 2, 0);
+  spanRoofs(g, W, L, E, spans, pitch, roofM, m);
+  for (const sx of [-1, 1]) {
+    bx(g, 0.28, 0.28, L + 1.2, m.dark, sx * (W / 2 + 0.55), E - 0.05, 0);
+    for (const sz of [-1, 1]) cy(g, 0.08, 0.08, E - 0.6, 6, m.dark, sx * (W / 2 + 0.5), 0.6 + (E - 0.6) / 2, sz * (L / 2 - 0.4));
+  }
+  // dock: raised platform, roller doors every 9 m, bumpers, canopy on brackets
+  const dl = L * 0.82;
+  bx(g, 3.2, 1.25, dl, m.concrete, -W / 2 - 1.6, 0.62, -L * 0.05);
+  bx(g, 3.3, 0.12, dl, m.yellow, -W / 2 - 1.6, 1.28, -L * 0.05);
+  for (let z = -L * 0.05 - dl / 2 + 5; z < -L * 0.05 + dl / 2 - 3; z += 9) {
+    panel(g, 0.12, 4.6, 3.6, doorM, -W / 2 - 0.1, 1.25 + 2.3, z, 4.6);
+    for (const s of [-1, 1]) bx(g, 0.3, 0.5, 0.25, m.rubber, -W / 2 - 3.25, 0.9, z + s * 1.2);
+    bx(g, 0.3, 0.2, 0.6, m.glow, -W / 2 - 0.3, 6.6, z);
+  }
+  bx(g, 4.6, 0.18, dl + 1, roofM, -W / 2 - 2.2, Math.min(E - 0.6, 7.2), -L * 0.05);
+  for (let z = -L * 0.05 - dl / 2; z <= -L * 0.05 + dl / 2; z += 9) bar(g, [-W / 2, Math.min(E - 0.6, 7.2) - 2.2, z], [-W / 2 - 4.2, Math.min(E - 0.6, 7.2) - 0.1, z], 0.14, 0.14, m.steel);
+  for (let z = -L / 2 + 6; z < L / 2 - 4; z += 14) panel(g, 0.12, 4.6, 4.2, doorM, W / 2 + 0.1, 0.6 + 2.3, z, 4.6); // back doors
+  // office block at the +Z end
+  const ow = Math.min(W * 0.55, 20), oz = L / 2 + 5.2;
+  const off = w.office[v % w.office.length];
+  panel(g, ow, 7.2, 10, off, -W / 2 + ow / 2, 3.6, oz, 3.6);
+  bx(g, ow + 0.4, 0.6, 10.4, m.concrete, -W / 2 + ow / 2, 7.4, oz);
+  bx(g, 2.2, 2.6, 0.2, m.dark, -W / 2 + 3, 1.3, oz + 5.05);
+  bx(g, 3.6, 0.15, 1.6, m.dark, -W / 2 + 3, 2.8, oz + 5.8);
+  for (let x = -W / 2 + 2; x < -W / 2 + ow - 1; x += 3) cy(g, 0.25, 0.25, 0.5, 8, m.steel, x, 7.95, oz + (x % 2 ? 2 : -2)); // roof units
+  return g;
+}
+
+// Open-sided transit shed: steel portal frames every 7.5 m, a cladding band under the eaves,
+// gabled roof, and pallets and crates stacked on the slab inside.
+export function openShed({ W = 32, L = 75, E = 9, v = 0, seed = 1 } = {}) {
+  const m = mats(), w = wmats(), g = new THREE.Group(), r = rng(seed);
+  const wallM = w.walls[(v + 2) % w.walls.length], roofM = w.roofs[v % w.roofs.length];
+  g.userData.wallM = wallM;
+  const pitch = 0.16, ridge = E + (W / 2) * pitch;
+  bx(g, W + 2, 0.3, L + 2, m.concrete, 0, 0.15, 0);
+  const steel = paint([0x5a6b78, 0x8a5a3a, 0x6b6e70][v % 3]);
+  for (let z = -L / 2; z <= L / 2 + 0.1; z += 7.5) {
+    for (const sx of [-1, 1]) {
+      bx(g, 0.5, E, 0.5, steel, sx * W / 2, E / 2, z);
+      bar(g, [sx * W / 2, E, z], [0, ridge, z], 0.35, 0.6, steel);
+      bar(g, [sx * W / 2, E - 2.2, z], [sx * (W / 2 - 2.4), E + 0.35, z], 0.2, 0.2, steel);
+    }
+  }
+  const ang = Math.atan(pitch), half = W / 2 + 0.7, slope = half / Math.cos(ang);
+  for (const sx of [-1, 1]) {
+    const rm = new THREE.Mesh(boxUV(slope, 0.1, L + 1.4, 4), roofM);
+    rm.position.set(sx * half / 2, E + (W / 2 - half / 2) * pitch + 0.35, 0);
+    rm.rotation.z = -sx * ang;
+    g.add(rm);
+    panel(g, 0.12, 2.4, L, wallM, sx * (W / 2 + 0.3), E - 1.0, 0);
+  }
+  for (const sz of [-1, 1]) {
+    const geo = new THREE.ShapeGeometry(new THREE.Shape([new THREE.Vector2(-W / 2, E - 2.2), new THREE.Vector2(W / 2, E - 2.2), new THREE.Vector2(W / 2, E), new THREE.Vector2(0, ridge), new THREE.Vector2(-W / 2, E)]));
+    const pos = geo.attributes.position, uv = geo.attributes.uv;
+    for (let i = 0; i < pos.count; i++) uv.setXY(i, pos.getX(i) / 4, pos.getY(i) / 4);
+    const gm = new THREE.Mesh(geo, wallM);
+    gm.position.z = sz * (L / 2 + 0.3);
+    g.add(gm);
+  }
+  for (let row = 0; row < 3; row++) for (let z = -L / 2 + 4; z < L / 2 - 4; z += 3.4) { // goods
+    if (r() < 0.25) continue;
+    const h = 1 + Math.floor(r() * 3), x = (row - 1) * (W / 3.4);
+    for (let k = 0; k < h; k++) bx(g, 2.2 + r() * 0.6, 1.1, 2.4, w.goods[Math.floor(r() * w.goods.length)], x + (r() - 0.5) * 0.6, 0.85 + k * 1.15, z, (r() - 0.5) * 0.1);
+  }
+  return g;
+}
+
+// Brick sawtooth-roof works with north-light glazing and a chimney.
+export function sawtooth({ W = 44, L = 64, E = 7, teeth = 5, v = 0 } = {}) {
+  const m = mats(), w = wmats(), g = new THREE.Group();
+  const brick = w.office[v % w.office.length], roofM = w.roofs[(v + 1) % w.roofs.length];
+  bx(g, W + 0.4, 0.5, L + 0.4, m.concrete, 0, 0.25, 0);
+  for (const sx of [-1, 1]) panel(g, 0.4, E, L, brick, sx * W / 2, E / 2, 0, 3.6);
+  for (const sz of [-1, 1]) panel(g, W, E, 0.4, brick, 0, E / 2, sz * L / 2, 3.6);
+  const tw = W / teeth, th = 3.2;
+  for (let k = 0; k < teeth; k++) {
+    const x0 = -W / 2 + k * tw;
+    const sh = new THREE.Shape([new THREE.Vector2(x0, E), new THREE.Vector2(x0 + tw, E), new THREE.Vector2(x0 + tw, E + th)]);
+    const geo = new THREE.ExtrudeGeometry(sh, { depth: L, bevelEnabled: false });
+    geo.translate(0, 0, -L / 2);
+    const uv = geo.attributes.uv;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) / 4, uv.getY(i) / 4);
+    g.add(new THREE.Mesh(geo, [brick, roofM]));
+    bx(g, 0.1, th - 0.5, L - 1, m.glass, x0 + tw - 0.06, E + th / 2, 0);
+  }
+  cy(g, 1.1, 1.5, 26, 12, brick, W / 2 - 4, 13, -L / 2 + 5);
+  cy(g, 1.2, 1.2, 0.8, 12, m.dark, W / 2 - 4, 26.2, -L / 2 + 5);
+  for (let z = -L / 2 + 6; z < L / 2 - 4; z += 12) { panel(g, 0.12, 4.4, 4.2, w.doors[v % 3], -W / 2 - 0.25, 2.2, z, 4.4); bx(g, 0.3, 0.2, 0.6, m.glow, -W / 2 - 0.4, 5.0, z); }
+  return g;
+}
+
 // ---------------------------------------------------------------- terminal layout
 
 const nL = makeNoise2D(93);
@@ -510,28 +679,49 @@ function containerShip(containers, tints, r, x0, z0) {
   return g;
 }
 
-// The terminal around the circuit: a grid of access streets (cut where they meet the track,
-// closed there by gates in the fence line), lots between them, a perimeter fence with
-// gatehouses where the streets leave and run on into the distance, and on the east side a
-// quay with water, crane rails, bollards and a moored ship under the quay-crane booms.
+// Oriented rectangle overlap (separating axis), rects { x, z, hx, hz, yaw }.
+function obbHit(a, b) {
+  const axes = [a.yaw, a.yaw + Math.PI / 2, b.yaw, b.yaw + Math.PI / 2];
+  for (const t of axes) {
+    const ax = Math.sin(t), az = Math.cos(t);
+    const proj = (o) => {
+      const c = o.x * ax + o.z * az;
+      const ex = Math.abs(Math.cos(o.yaw - t)) * o.hz + Math.abs(Math.sin(o.yaw - t)) * o.hx;
+      return [c - ex, c + ex];
+    };
+    const [a0, a1] = proj(a), [b0, b1] = proj(b);
+    if (a1 < b0 || b1 < a0) return false;
+  }
+  return true;
+}
+
+// The terminal around the circuit. The quay straight is the apron: cranes straddle it on
+// rails, booms out over the water and a moored ship, and that side stays open. Everywhere
+// else is built up from the track outward: a service road runs parallel behind the fences,
+// gated spurs connect it to the track, and the ground beyond is packed with warehouses,
+// transit sheds, sawtooth works, container blocks under RTGs, tank farms and silos, all
+// squared to the nearest stretch of track.
 export function buildTerminal(tw) {
-  const def = tw.def, T = def.terminal, b = tw.box, r = rng((def.seed ?? 1) + 5);
+  const def = tw.def, T = def.terminal, b = tw.box, r = rng((def.seed ?? 1) + 5), N = LOOP.n;
   const X0 = b.minx - T.margin, X1 = T.quayX, Z0 = b.minz - T.margin, Z1 = b.maxz + T.margin;
+  const APRON = T.apronX ?? -6; // nothing gets built east of this (the quay side)
   const big = new THREE.Group(), containers = [], lines = [], decor = [];
   const tints = [0x7a4a3c, 0x44586c, 0x55645a, 0x9a7f3c, 0xa8a193, 0x6c3d36, 0x3f5a52, 0x8a8478, 0x5c4e6a].map(C);
-  const place = (proto, x, z, yaw, y = null) => {
+  const place = (proto, x, z, yaw) => {
     const o = proto.clone();
-    o.position.set(x, y ?? tw.heightAt(x, z), z);
+    o.position.set(x, tw.heightAt(x, z), z);
     o.rotation.y = yaw;
     big.add(o);
     return o;
   };
+  const inRect = (x, z) => x > X0 && x < X1 && z > Z0 && z < Z1;
+  tw.inYard = inRect;
 
   // ---- quay cranes over the road, on rails, booms out over the water ----
   const craneI = [];
   for (const f of def.features ?? []) {
     if (f.type !== 'quaycrane') continue;
-    const i = Math.floor(f.at * LOOP.n), p = pointAt(i, 0);
+    const i = Math.floor(f.at * N), p = pointAt(i, 0);
     craneI.push(i);
     const o = stsCrane({ main: f.color ?? 0x3d6e99, upper: f.upper ?? 0xd8d4c8, load: !!f.load, tint: tints[craneI.length % tints.length] });
     o.position.set(p.x, S.y[i] - 0.1, p.z);
@@ -539,11 +729,11 @@ export function buildTerminal(tw) {
     big.add(o);
     for (const s of [-1, 1]) { const q = pointAt(i, s * 17); tw.occupy(q.x, q.z, 15); }
   }
-  if (craneI.length) { // crane rails set in the apron
+  if (craneI.length) {
     const rails = [];
     for (let i = Math.min(...craneI) - 70; i < Math.max(...craneI) + 70; i++) for (const s of [-17, 17]) {
       const p = pointAt(i, s);
-      rails.push({ x: p.x, y: S.y[((i % LOOP.n) + LOOP.n) % LOOP.n] - 0.06, z: p.z, ry: p.yaw, sx: 0.35, sy: 0.12, sz: 1.06, c: C(0x55524d) });
+      rails.push({ x: p.x, y: S.y[((i % N) + N) % N] - 0.06, z: p.z, ry: p.yaw, sx: 0.35, sy: 0.12, sz: 1.06, c: C(0x55524d) });
     }
     tw.addInst(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ roughness: 0.5, metalness: 0.6 }), rails, false);
   }
@@ -567,67 +757,55 @@ export function buildTerminal(tw) {
     if (T.ship) big.add(containerShip(containers, tints, r, qx + 21, T.ship));
   }
 
-  // ---- street grid; avoid running a street straight into a crane ----
-  const xs = [], zs = [];
-  for (let x = X0 + T.block; x < X1 - 40; x += T.block) xs.push(x);
-  for (let z = Z0 + T.block; z < Z1 - 20; z += T.block) {
-    let zz = z;
-    for (const i of craneI) if (Math.abs(S.pz[i] - zz) < 34) zz += 40;
-    zs.push(zz);
-  }
+  // ---- service road parallel to the track, gated spurs onto it ----
   tw.gateP ??= (() => { const gp = tw.gateProto(); bakeGroup(gp); return gp; })();
   const houseP = gatehouse();
-  const segs = [];
-  const street = (ax, az, bx2, bz, endA, endB) => {
-    const len = Math.hypot(bx2 - ax, bz - az), dx = (bx2 - ax) / len, dz = (bz - az) / len;
-    let start = null, prevIn = null;
-    const flush = (s1) => { if (start !== null && s1 - start > 8) segs.push({ ax: ax + dx * start, az: az + dz * start, bx: ax + dx * s1, bz: az + dz * s1 }); start = null; };
-    for (let s = 0; s <= len; s += 3) {
-      const x = ax + dx * s, z = az + dz * s, n = tw.roadNear(x, z);
-      const inside = !!n && Math.abs(n.lat) < RL(n.i) + 2.6;
-      if (!inside && start === null) start = s;
-      if (inside && start !== null) flush(s);
-      if (prevIn !== null && inside !== prevIn && n) { // meets the track's fence line: closed gate, fence gap
-        const side = Math.sign(n.lat) || 1, q = pointAt(n.i, side * (RL(n.i) + 2.0));
-        place(tw.gateP, q.x, q.z, Math.atan2(dx, dz));
-        tw.reserve(n.i - 9, n.i + 9);
-      }
-      prevIn = inside;
+  const SRV = 52; // service road centre, metres beyond the barrier line
+  const roads = []; // polylines [[x, z], ...] with width
+  const ok = (x, z) => inRect(x, z) && x < APRON && !tw.blocked(x, z, 4);
+  for (const side of [-1, 1]) {
+    let cur = [];
+    const flush = () => { if (cur.length > 6) roads.push({ pts: cur, w: 10 }); cur = []; };
+    for (let i = 0; i < N; i += 4) {
+      const lat = side * (RL(i) + SRV), p = pointAt(i, lat), n = tw.roadNear(p.x, p.z);
+      const mine = !n || Math.abs(n.lat) > RL(n.i) + SRV - 4;
+      if (ok(p.x, p.z) && mine) cur.push([p.x, p.z]); else flush();
     }
-    flush(len);
-    for (const [end, ex, ez, sgn] of [[endA, ax, az, 1], [endB, bx2, bz, -1]]) {
-      if (end !== 'gate') continue;
-      // the street's last 120 m runs outside the perimeter: gate and gatehouse on the line,
-      // then the road continues into the distance and stops at a row of blocks
-      const gx = ex + dx * sgn * 120, gz = ez + dz * sgn * 120;
-      place(tw.gateP, gx, gz, Math.atan2(dx, dz));
-      place(houseP, gx - dz * 8 + dx * sgn * 6, gz + dx * 8 + dz * sgn * 6, Math.atan2(dx, dz));
-      segs.push({ ax: ex, az: ez, bx: ex - dx * sgn * 140, bz: ez - dz * sgn * 140 });
-      const bl = [];
-      for (let k = -2; k <= 2; k++) bl.push([ex - dx * sgn * 140 - dz * k * 2.1, ez - dz * sgn * 140 + dx * k * 2.1, Math.atan2(dx, dz) + Math.PI / 2]);
-      decor.push({ scatter: 'block', points: bl });
+    flush();
+    // spurs every ~240 m where the service road exists behind
+    for (let i = Math.floor(r() * 120); i < N; i += 200 + Math.floor(r() * 80)) {
+      const far = pointAt(i, side * (RL(i) + SRV)), nf = tw.roadNear(far.x, far.z);
+      if (!ok(far.x, far.z) || (nf && Math.abs(nf.lat) < RL(nf.i) + SRV - 4)) continue;
+      let clear = true;
+      for (let l = RL(i) + 6; l < RL(i) + SRV; l += 4) { const q = pointAt(i, side * l), n = tw.roadNear(q.x, q.z); if (!ok(q.x, q.z) || (n && Math.abs(n.lat) < l - 3)) { clear = false; break; } }
+      if (!clear) continue;
+      const a = pointAt(i, side * (RL(i) + 2.6));
+      roads.push({ pts: [[a.x, a.z], [far.x, far.z]], w: 9 });
+      const g = pointAt(i, side * (RL(i) + 2.0)), dir = Math.atan2(far.x - a.x, far.z - a.z);
+      place(tw.gateP, g.x, g.z, dir);
+      const hp = pointAt(i + 9, side * (RL(i) + 10));
+      place(houseP, hp.x, hp.z, dir);
+      tw.reserve(i - 9, i + 9);
     }
-  };
-  for (const x of xs) street(x, Z0 - 120, x, Z1 + 120, 'gate', 'gate');
-  for (const z of zs) street(X0 - 120, z, X1 - 4, z, 'gate', null);
-  for (const sg of segs) {
-    const L = Math.hypot(sg.bx - sg.ax, sg.bz - sg.az);
-    for (let s = 0; s < L; s += 9) tw.occupy(sg.ax + (sg.bx - sg.ax) * (s / L), sg.az + (sg.bz - sg.az) * (s / L), 7);
   }
   {
     const pos = [], uv = [], idx = [];
-    for (const sg of segs) {
-      const len = Math.hypot(sg.bx - sg.ax, sg.bz - sg.az), dx = (sg.bx - sg.ax) / len, dz = (sg.bz - sg.az) / len, px = -dz, pz = dx;
-      const base = pos.length / 3, rows = Math.ceil(len / 4), yo = 0.05 + (Math.abs(dx) > 0.5 ? 0.02 : 0);
-      for (let a = 0; a <= rows; a++) {
-        const s = Math.min(len, a * 4);
-        for (const [j, o] of [[0, -5], [1, 0], [2, 5]]) {
-          const x = sg.ax + dx * s + px * o, z = sg.az + dz * s + pz * o;
-          pos.push(x, tw.heightAt(x, z) + yo, z);
+    for (const rd of roads) {
+      let s = 0;
+      const base0 = pos.length / 3;
+      rd.pts.forEach(([x, z], k) => {
+        const [px, pz] = rd.pts[Math.max(0, k - 1)], [nx, nz] = rd.pts[Math.min(rd.pts.length - 1, k + 1)];
+        let dx = nx - px, dz = nz - pz;
+        const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
+        if (k > 0) s += Math.hypot(x - rd.pts[k - 1][0], z - rd.pts[k - 1][1]);
+        for (const [j, o] of [[0, -rd.w / 2], [1, 0], [2, rd.w / 2]]) {
+          const qx = x - dz * o, qz = z + dx * o;
+          pos.push(qx, tw.heightAt(qx, qz) + 0.06, qz);
           uv.push(j / 2, s / 12);
         }
-      }
-      for (let a = 0; a < rows; a++) for (let j = 0; j < 2; j++) { const q = base + a * 3 + j; idx.push(q, q + 3, q + 1, q + 1, q + 3, q + 4); }
+        tw.occupy(x, z, rd.w * 0.8);
+      });
+      for (let k = 0; k < rd.pts.length - 1; k++) for (let j = 0; j < 2; j++) { const q = base0 + k * 3 + j; idx.push(q, q + 3, q + 1, q + 1, q + 3, q + 4); }
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -639,124 +817,99 @@ export function buildTerminal(tw) {
     tw.add(sm);
   }
 
-  // ---- perimeter chain-link (west, north, south) with gaps at the streets ----
-  {
-    tw.chainMat ??= new THREE.MeshStandardMaterial({ map: chainTex(), transparent: true, alphaTest: 0.4, side: THREE.DoubleSide, roughness: 0.5, metalness: 0.5 });
-    const sides = [
-      { a: [X0, Z0], b: [X1, Z0], along: 'x', cuts: xs }, { a: [X0, Z1], b: [X1, Z1], along: 'x', cuts: xs },
-      { a: [X0, Z0], b: [X0, Z1], along: 'z', cuts: zs },
-    ];
-    const pos = [], uv = [], idx = [], posts = [];
-    for (const sd of sides) {
-      const [ax, az] = sd.a, [bx2, bz] = sd.b, len = Math.hypot(bx2 - ax, bz - az), dx = (bx2 - ax) / len, dz = (bz - az) / len;
-      let run = [];
-      const flush = () => {
-        if (run.length > 1) {
-          const base = pos.length / 3;
-          for (const [x, z, s] of run) { const y = tw.heightAt(x, z); pos.push(x, y, z, x, y + 3, z); uv.push(s / 0.35, 0, s / 0.35, 3 / 0.35); }
-          for (let k = 0; k < run.length - 1; k++) { const q = base + k * 2; idx.push(q, q + 1, q + 2, q + 1, q + 3, q + 2); }
-        }
-        run = [];
-      };
-      for (let s = 0; s <= len; s += 3) {
-        const x = ax + dx * s, z = az + dz * s, c = sd.along === 'x' ? x : z;
-        if (sd.cuts.some((v) => Math.abs(v - c) < 6)) { flush(); continue; }
-        run.push([x, z, s]);
-        posts.push({ x, y: tw.heightAt(x, z) + 1.6, z, c: C(0x7d8286) });
-      }
-      flush();
+  // ---- buildings packed across the ground, squared to the nearest track ----
+  const rects = [];
+  const counts = { tanks: 0, silos: 0, rtg: 0, mast: 0, containers: 0, buildings: 0 };
+  const protos = { rtg: null, mast: null };
+  const fits = (rc) => {
+    if (rects.some((o) => obbHit({ ...rc, hx: rc.hx + 5, hz: rc.hz + 5 }, o))) return false;
+    for (let u = -1; u <= 1; u += 0.5) for (let v = -1; v <= 1; v += 0.5) {
+      const [x, z] = toWorld(rc.x, rc.z, rc.yaw, u * rc.hx, v * rc.hz);
+      if (!ok(x, z)) return false;
+      const n = tw.roadNear(x, z);
+      if (n && Math.abs(n.lat) < RL(n.i) + 9) return false;
     }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-    g.setIndex(idx);
-    tw.add(new THREE.Mesh(g, tw.chainMat));
-    tw.addInst(new THREE.CylinderGeometry(0.05, 0.06, 3.2, 6), new THREE.MeshStandardMaterial({ roughness: 0.5, metalness: 0.6 }), posts, false);
-    tw.inYard = (x, z) => x > X0 && x < X1 && z > Z0 && z < Z1;
-  }
-
-  // ---- lots: blocks between streets split into ~55 m cells, grid aligned ----
-  const counts = { warehouse: 0, tanks: 0, silos: 0, rtg: 0, mast: 0, containers: 0 };
-  const caps = { warehouse: 26, tanks: 3, silos: 2, rtg: 7, mast: 14, containers: 1500 };
-  const whBases = [[150, 118, 96], [128, 134, 138], [158, 152, 140], [112, 124, 132], [140, 96, 74]];
-  const protos = { wh: [], rtg: null, mast: null };
-  const getWh = (k) => (protos.wh[k] ??= warehouse({
-    W: [24, 28, 22, 26][k % 4], L: [38, 42, 32, 40][k % 4], E: [8, 9, 7, 10][k % 4], pitch: [0.18, 0.22, 0.25, 0.16][k % 4],
-    seed: 300 + k * 13, base: whBases[k % whBases.length], roof: whBases[(k + 2) % whBases.length].map((v) => v * 0.85), rust: 0.6 + (k % 3) * 0.3, doors: 2 + (k % 3), leanTo: k % 2 === 1,
-  }));
-  const gx = [X0, ...xs, X1], gz = [Z0, ...zs, Z1];
-  for (let bi = 0; bi < gx.length - 1; bi++) for (let bj = 0; bj < gz.length - 1; bj++) {
-    const bx0 = gx[bi] + 6, bx1 = gx[bi + 1] - 6, bz0 = gz[bj] + 6, bz1 = gz[bj + 1] - 6;
-    if (bx1 - bx0 < 30 || bz1 - bz0 < 30) continue;
-    const nx = Math.max(1, Math.round((bx1 - bx0) / 55)), nz = Math.max(1, Math.round((bz1 - bz0) / 55));
-    const cw = (bx1 - bx0) / nx, cd = (bz1 - bz0) / nz;
-    for (let ci = 0; ci < nx; ci++) for (let cj = 0; cj < nz; cj++) {
-      const cx = bx0 + (ci + 0.5) * cw, cz = bz0 + (cj + 0.5) * cd, half = Math.min(cw, cd) / 2;
-      let near = Infinity;
-      for (const [ox, oz] of [[0, 0], [-1, -1], [1, -1], [-1, 1], [1, 1], [0, -1], [0, 1], [-1, 0], [1, 0]]) near = Math.min(near, tw.roadDist(cx + ox * half, cz + oz * half));
-      if (near < 19 || tw.blocked(cx, cz, half * 0.6) || cx > X1 - 30) continue;
-      const dE = [[cx - gx[bi], [-1, 0]], [gx[bi + 1] - cx, [1, 0]], [cz - gz[bj], [0, -1]], [gz[bj + 1] - cz, [0, 1]]].sort((p, q) => p[0] - q[0])[0][1];
-      const yawFace = Math.atan2(dE[1], -dE[0]); // local -X toward the nearest street
-      const yawGrid = (ci + cj) % 2 ? 0 : Math.PI / 2;
-      const n = fbm(nL, cx / 170, cz / 170, 2), roll = r();
-      let kind;
-      if (n < -0.1) kind = roll < 0.65 ? 'stack' : roll < 0.9 ? 'storage' : 'empty';
-      else if (n > 0.2) kind = roll < 0.3 ? 'tanks' : roll < 0.5 ? 'silos' : roll < 0.9 ? 'warehouse' : 'storage';
-      else kind = roll < 0.55 ? 'warehouse' : roll < 0.8 ? 'storage' : roll < 0.95 ? 'stack' : 'empty';
-      if (counts[kind] !== undefined && counts[kind] >= caps[kind]) kind = 'storage';
-      if (kind === 'stack' && counts.containers > caps.containers) kind = 'empty';
-      const Wd = (yaw) => (lx, lz) => toWorld(cx, cz, yaw, lx, lz);
-      if (kind === 'stack') {
-        const W = Wd(yawGrid), hmax = 2 + Math.floor(r() * 3);
-        const blocks = half > 24 && r() < 0.6 ? [-11, 11] : [0];
-        for (const bxo of blocks) {
-          for (let c = 0; c < 6; c++) for (let row = 0; row < 3; row++) {
-            const hgt = Math.max(0, Math.round(hmax * (0.55 + 0.45 * Math.sin((c + 0.5) / 6 * Math.PI)) - r() * 2));
-            const [x, z] = W(bxo + (c - 2.5) * 2.9, (row - 1) * 12.9), y = tw.heightAt(x, z);
-            for (let k = 0; k < hgt; k++) containers.push({ x, y: y + 1.3 + k * 2.6, z, ry: yawGrid + (r() - 0.5) * 0.015, c: tints[Math.floor(r() * tints.length)] });
-            counts.containers += hgt;
-          }
-          for (let c = 0; c <= 6; c++) { const [x, z] = W(bxo + (c - 3) * 2.9, 0); lines.push({ x, y: tw.heightAt(x, z) + 0.03, z, ry: yawGrid, sx: 0.12, sy: 0.02, sz: 39.7, c: C(0xd8d2c0) }); }
-          for (const s2 of [-1, 1]) { const [x, z] = W(bxo + s2 * 10.4, 0); lines.push({ x, y: tw.heightAt(x, z) + 0.03, z, ry: yawGrid, sx: 0.18, sy: 0.02, sz: 42, c: C(0xd3a527) }); }
-          if (counts.rtg < caps.rtg && r() < 0.5) {
-            counts.rtg++;
-            protos.rtg ??= rtgCrane({});
-            const [x, z] = W(bxo + 1.5, (r() - 0.5) * 14);
-            place(protos.rtg, x, z, yawGrid);
-          }
-        }
-      } else if (kind === 'warehouse') {
-        counts.warehouse++;
-        place(getWh(Math.floor(r() * 8)), cx, cz, yawFace);
-        const W = Wd(yawFace), pts = [];
-        for (let q = 0; q < 6; q++) { const [x, z] = W(-17 - r() * 4, (r() - 0.5) * 30); pts.push([x, z, yawFace + (r() - 0.5) * 0.4]); }
-        decor.push({ scatter: 'pallet', points: pts.slice(0, 3) }, { scatter: 'ibc', points: pts.slice(3, 5) }, { scatter: 'skip', points: pts.slice(5) });
-      } else if (kind === 'tanks') {
-        counts.tanks++;
-        place(tankFarm({ count: half > 24 ? 2 : 1, R: 7 + r() * 2, h: 10 + r() * 5, seed: Math.floor(r() * 999), band: [0x4d6f5a, 0x3f5a78, 0x8a4a32][Math.floor(r() * 3)] }), cx, cz, yawGrid);
-      } else if (kind === 'silos') {
-        counts.silos++;
-        place(siloCluster({ n: 3, R: 3 + r() * 0.5, h: 14 + r() * 4, seed: Math.floor(r() * 999) }), cx - 8, cz, yawGrid);
-      } else if (kind === 'storage') {
-        // open storage: rows of pipe stacks, drums, pallets, totes, skips and blocks
-        const W = Wd(yawGrid), names = ['pipepile', 'drum', 'pallet', 'ibc', 'barrel', 'block', 'skip', 'crate'];
-        const rows = Math.floor(half / 4.5);
-        for (let row = 0; row < rows; row++) {
-          const name = names[Math.floor(r() * names.length)], pts = [], step = name === 'skip' || name === 'pipepile' ? 7 : 3.2;
-          for (let q = -half * 0.8; q < half * 0.8; q += step) { const [x, z] = W((row - (rows - 1) / 2) * 7.5, q + (r() - 0.5)); if (r() < 0.85) pts.push([x, z, yawGrid + (r() - 0.5) * 0.15]); }
-          decor.push({ scatter: name, points: pts });
-        }
-      } else {
-        const pts = { puddle: [], chunk: [], tire: [], scrap: [] };
-        for (let q = 0; q < 8; q++) { const key = Object.keys(pts)[Math.floor(r() * 4)]; const [x, z] = Wd(0)((r() - 0.5) * half * 1.6, (r() - 0.5) * half * 1.6); pts[key].push([x, z, r() * 6.3]); }
-        for (const [k, v] of Object.entries(pts)) if (v.length) decor.push({ scatter: k, points: v });
+    return true;
+  };
+  const cands = [];
+  for (let x = X0 + 20; x < APRON - 12; x += 16) for (let z = Z0 + 20; z < Z1 - 20; z += 16) cands.push([x + (r() - 0.5) * 8, z + (r() - 0.5) * 8]);
+  for (let k = cands.length - 1; k > 0; k--) { const j = Math.floor(r() * (k + 1)); [cands[k], cands[j]] = [cands[j], cands[k]]; }
+  // nearer the track first, so the frontage fills before the back lots
+  cands.sort((p, q) => Math.min(tw.roadDist(p[0], p[1]), 300) - Math.min(tw.roadDist(q[0], q[1]), 300) + (r() - 0.5) * 40);
+  for (const [cx, cz] of cands) {
+    const ni = gridNearest(cx, cz, 14);
+    let yaw = ni >= 0 ? Math.atan2(S.tx[ni], S.tz[ni]) : 0;
+    const snap = Math.round(yaw / (Math.PI / 2)) * (Math.PI / 2);
+    if (Math.abs(yaw - snap) < 0.3) yaw = snap;
+    // face the track: local -X toward the nearest road point
+    const tx = ni >= 0 ? S.px[ni] - cx : 0, tz = ni >= 0 ? S.pz[ni] - cz : 0;
+    if (tx * Math.cos(yaw) - tz * Math.sin(yaw) > 0) yaw += Math.PI;
+    const roll = r();
+    let kind = roll < 0.42 ? 'warehouse' : roll < 0.56 ? 'shed' : roll < 0.68 ? 'works' : roll < 0.84 ? 'stack' : roll < 0.92 ? 'tanks' : 'silos';
+    if (kind === 'tanks' && counts.tanks >= 3) kind = 'warehouse';
+    if (kind === 'silos' && counts.silos >= 3) kind = 'shed';
+    if (kind === 'stack' && counts.containers > 1300) kind = 'warehouse';
+    // try the big version first, then smaller ones, so every gap gets something
+    const R = (a, b2) => a + r() * (b2 - a);
+    const tries = {
+      warehouse: [[R(30, 48), R(60, 110)], [R(24, 30), R(40, 60)], [R(16, 22), R(28, 40)]],
+      shed: [[R(26, 36), R(50, 90)], [R(18, 24), R(30, 46)]],
+      works: [[R(36, 50), R(46, 76)], [R(24, 32), R(30, 42)]],
+      stack: [[48, 42], [24, 42]], tanks: [[48, 36], [24, 36]], silos: [[44, 18]],
+    }[kind];
+    let rc = null, sz = null;
+    for (const [W, L] of tries) {
+      const pad = kind === 'warehouse' ? [8, 22] : [2, 2];
+      const cand = { x: cx, z: cz, yaw, hx: W / 2 + pad[0] / 2, hz: L / 2 + pad[1] / 2 };
+      if (fits(cand)) { rc = cand; sz = { W, L }; break; }
+    }
+    if (!rc && kind !== 'warehouse') {
+      for (const [W, L] of [[R(18, 24), R(30, 44)], [16, 26]]) {
+        const cand = { x: cx, z: cz, yaw, hx: W / 2 + 4, hz: L / 2 + 11 };
+        if (fits(cand)) { rc = cand; sz = { W, L }; kind = 'warehouse'; break; }
       }
-      tw.occupy(cx, cz, half * 0.95);
-      if (counts.mast < caps.mast && r() < 0.3) {
-        counts.mast++;
-        protos.mast ??= highMast();
-        place(protos.mast, cx + (r() < 0.5 ? -1 : 1) * (half - 2), cz + (r() < 0.5 ? -1 : 1) * (half - 2), 0);
+    }
+    if (!rc) continue;
+    const singleBlock = kind === 'stack' && sz.W < 30;
+    rects.push(rc);
+    counts.buildings++;
+    const v = Math.floor(r() * 6);
+    if (kind === 'warehouse') {
+      const L = sz.L, W = sz.W;
+      place(bigWarehouse({ W, L, E: W < 20 ? 7 + r() * 2 : 8 + r() * 4, spans: W > 36 ? 3 : W > 28 ? 2 : 1, v }), cx, cz, yaw);
+      const pts = [];
+      for (let q = 0; q < 5; q++) { const [x, z] = toWorld(cx, cz, yaw, -W / 2 - 8 - r() * 3, (r() - 0.5) * L * 0.7); pts.push([x, z, yaw + (r() - 0.5) * 0.4]); }
+      decor.push({ scatter: 'pallet', points: pts.slice(0, 2) }, { scatter: 'skip', points: pts.slice(2, 3) }, { scatter: 'ibc', points: pts.slice(3) });
+    } else if (kind === 'shed') place(openShed({ W: sz.W, L: sz.L, E: 8 + r() * 2, v, seed: Math.floor(r() * 999) }), cx, cz, yaw);
+    else if (kind === 'works') place(sawtooth({ W: sz.W, L: sz.L, teeth: Math.max(3, Math.round(sz.W / 9)), v }), cx, cz, yaw);
+    else if (kind === 'tanks') { counts.tanks++; place(tankFarm({ count: sz.W > 30 ? 2 : 1, R: 7 + r() * 1.5, h: 10 + r() * 5, seed: Math.floor(r() * 999), band: [0x4d6f5a, 0x3f5a78, 0x8a4a32][Math.floor(r() * 3)] }), cx, cz, yaw); }
+    else if (kind === 'silos') { counts.silos++; place(siloCluster({ n: 3, R: 3 + r() * 0.5, h: 14 + r() * 4, seed: Math.floor(r() * 999) }), cx - 6, cz, yaw + Math.PI / 2); }
+    else if (kind === 'stack') {
+      const hmax = 2 + Math.floor(r() * 3);
+      for (const bxo of singleBlock ? [0] : [-11, 11]) {
+        for (let c = 0; c < 6; c++) for (let row = 0; row < 3; row++) {
+          const hgt = Math.max(0, Math.round(hmax * (0.55 + 0.45 * Math.sin((c + 0.5) / 6 * Math.PI)) - r() * 2));
+          const [x, z] = toWorld(cx, cz, yaw, bxo + (c - 2.5) * 2.9, (row - 1) * 12.9), y = tw.heightAt(x, z);
+          for (let k = 0; k < hgt; k++) containers.push({ x, y: y + 1.3 + k * 2.6, z, ry: yaw + (r() - 0.5) * 0.015, c: tints[Math.floor(r() * tints.length)] });
+          counts.containers += hgt;
+        }
+        for (let c = 0; c <= 6; c++) { const [x, z] = toWorld(cx, cz, yaw, bxo + (c - 3) * 2.9, 0); lines.push({ x, y: tw.heightAt(x, z) + 0.03, z, ry: yaw, sx: 0.12, sy: 0.02, sz: 39.7, c: C(0xd8d2c0) }); }
+        if (counts.rtg < 8 && r() < 0.5) {
+          counts.rtg++;
+          protos.rtg ??= rtgCrane({});
+          const [x, z] = toWorld(cx, cz, yaw, bxo + 1.5, (r() - 0.5) * 14);
+          place(protos.rtg, x, z, yaw);
+        }
       }
+    }
+    // footprint for scatter avoidance
+    const step = Math.min(rc.hx, rc.hz);
+    for (let v2 = -rc.hz + step; v2 <= rc.hz - step + 0.1; v2 += step) { const [x, z] = toWorld(cx, cz, yaw, 0, v2); tw.occupy(x, z, Math.max(rc.hx, step) + 2); }
+    if (counts.mast < 16 && r() < 0.25) {
+      counts.mast++;
+      protos.mast ??= highMast();
+      const [x, z] = toWorld(cx, cz, yaw, -rc.hx - 3, (r() < 0.5 ? -1 : 1) * rc.hz * 0.8);
+      place(protos.mast, x, z, 0);
     }
   }
   window.__dbg = { ...counts };
