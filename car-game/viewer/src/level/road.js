@@ -9,8 +9,8 @@ import { smoothstep } from './noise.js';
 // sand drifting onto the shoulders), W-beam guardrails and delineator posts.
 
 const TEX_LEN = 64;
-const LATS = [-ROAD_BEVEL, -ROAD_HALF, -LANE, 0, LANE, ROAD_HALF, ROAD_BEVEL];
-const DY = [-0.08, 0.05, 0.1, 0.13, 0.1, 0.05, -0.08];
+export const LATS = [-ROAD_BEVEL, -ROAD_HALF, -LANE, 0, LANE, ROAD_HALF, ROAD_BEVEL];
+export const DY = [-0.08, 0.05, 0.1, 0.13, 0.1, 0.05, -0.08];
 
 // Surface height above the centre-line elevation at |lat|.
 export function roadSurfaceY(lat) {
@@ -143,7 +143,7 @@ function lcg(seed) {
   return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
 }
 
-function paintRoad() {
+export function paintRoad() {
   const W = 1024, H = 4096;
   const c = document.createElement('canvas');
   c.width = W;

@@ -7,7 +7,8 @@
     "build": "vite build",
     "shot": "node scripts/screenshot.mjs",
     "build:level": "ENTRY=level vite build",
-    "shot:level": "node scripts/shot-level.mjs"
+    "shot:level": "node scripts/shot-level.mjs",
+    "build:endless": "ENTRY=endless vite build"
   },
   "dependencies": {
     "three": "^0.186.1",

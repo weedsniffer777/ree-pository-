@@ -10,8 +10,8 @@ import { bakeGroup } from './bake.js';
 // numbers, symbols, colour and shape.
 
 const FONT = '"DejaVu Sans", "Arial Black", Arial, sans-serif';
-const std = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.85, metalness: 0.05, ...o });
-const metal = (color = 0x8d9297, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.6, ...o });
+export const std = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.85, metalness: 0.05, ...o });
+export const metal = (color = 0x8d9297, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.6, ...o });
 
 function tex(w, h, draw, repeat = false) {
   const c = document.createElement('canvas');
@@ -85,7 +85,7 @@ const digits = (g, text, x, y, size, color = '#111') => {
   g.fillText(text, x, y);
 };
 
-const FACES = {
+export const FACES = {
   speed: (n, seed) => signFace(256, 256, 'circle', (g, w, h) => {
     g.fillStyle = '#f2efe8'; g.fillRect(0, 0, w, h);
     g.strokeStyle = '#c4161c'; g.lineWidth = 30;
@@ -201,7 +201,7 @@ function fenceRun(points, posts, wires, r) {
 }
 
 // ---------- Windpump, shed, water tower, billboard ----------
-function windpump() {
+export function windpump() {
   const g = new THREE.Group();
   const steel = metal(0x8a8781, { roughness: 0.6 });
   const top = 9;
@@ -244,7 +244,7 @@ function windpump() {
   return { g, rotor };
 }
 
-function shed() {
+export function shed() {
   const g = new THREE.Group();
   const corr = tex(256, 256, (cg, w, h) => {
     for (let x = 0; x < w; x += 16) {
@@ -265,7 +265,7 @@ function shed() {
   return g;
 }
 
-function waterTower() {
+export function waterTower() {
   const g = new THREE.Group();
   const steel = metal(0x9a968f, { roughness: 0.65 });
   const tankTex = tex(512, 256, (cg, w, h) => {
@@ -302,7 +302,7 @@ function waterTower() {
   return g;
 }
 
-function billboard(seed = 77) {
+export function billboard(seed = 77) {
   const g = new THREE.Group();
   const art = tex(1024, 448, (cg, w, h) => {
     const r = rng(seed);

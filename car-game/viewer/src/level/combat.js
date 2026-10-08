@@ -78,7 +78,8 @@ export class Tracers {
 
 // Twin forward guns on the player's car.
 export class Guns {
-  constructor(model, scene, { tracers, dust, sparks }) {
+  constructor(model, scene, { tracers, dust, sparks, height = terrainHeight }) {
+    this.height = height;
     this.tracers = tracers;
     this.dust = dust;
     this.sparks = sparks;
@@ -133,7 +134,7 @@ export class Guns {
     const p = new THREE.Vector3();
     for (let d = 2; d <= 160; d += 1.5) {
       p.copy(muzzle).addScaledVector(dir, d);
-      if (p.y <= terrainHeight(p.x, p.z)) { hit = p.clone(); break; }
+      if (p.y <= this.height(p.x, p.z)) { hit = p.clone(); break; }
     }
     const end = hit ?? muzzle.clone().addScaledVector(dir, 160);
     const start = muzzle.clone();

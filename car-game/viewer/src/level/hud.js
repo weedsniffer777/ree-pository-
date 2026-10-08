@@ -8,6 +8,13 @@ const CSS = `
 #hud .count { font: 600 28px/1 'Chakra Petch', system-ui, sans-serif; font-variant-numeric: tabular-nums; }
 #hud .count span { font-size: 16px; opacity: 0.75; margin-left: 4px; }
 #hud .klabel { font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; opacity: 0.85; }
+#hud .distance { position: absolute; top: calc(14px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); text-align: center; text-shadow: 0 2px 6px rgba(0,0,0,0.5); }
+#hud .distance b { font: 600 40px/1 'Chakra Petch', system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+#hud .distance span { font-size: 15px; margin-left: 4px; letter-spacing: 0.1em; }
+#hud .distance i { display: block; font-style: normal; font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; opacity: 0.8; margin-top: 2px; }
+#hud .toast { position: absolute; top: 24%; left: 50%; transform: translateX(-50%); text-align: center; text-shadow: 0 3px 10px rgba(0,0,0,0.55); transition: opacity 0.8s; }
+#hud .toast h3 { margin: 0; font: 600 38px/1 'Chakra Petch', system-ui, sans-serif; letter-spacing: 0.1em; text-transform: uppercase; }
+#hud .toast p { margin: 6px 0 0; font-size: 14px; letter-spacing: 0.14em; text-transform: uppercase; }
 #hud .pointer { position: absolute; left: 0; top: 0; width: 0; height: 0; }
 #hud .pointer svg { position: absolute; width: 34px; height: 34px; left: -17px; top: -17px; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.5)); }
 #hud .pointer span { position: absolute; left: -60px; top: 20px; width: 120px; white-space: nowrap; text-align: center; font-size: 12px; letter-spacing: 0.1em; text-shadow: 0 1px 3px rgba(0,0,0,0.8); }
@@ -45,6 +52,8 @@ export function createHud({ touch = false } = {}) {
   const root = document.createElement('div');
   root.id = 'hud';
   root.innerHTML = `
+    <div class="distance"><b>0.00</b><span>km</span><i>best 0.00</i></div>
+    <div class="toast" hidden><h3></h3><p></p></div>
     <div class="pointer" hidden><svg viewBox="0 0 24 24"><path d="M12 2l8 16-8-4-8 4z" fill="#e0b52a" stroke="#17181a" stroke-width="1.5"/></svg><span></span></div>
     <div class="gauge"><div class="speed">0</div><div class="unit">KM/H</div><div class="nitro"><i></i></div></div>
     <div class="hint"><div><b>WASD</b>Drive</div><div><b>Shift</b>Nitro</div><div><b>S</b>Brake (turn to drift)</div><div><b>Space</b>Fire</div><div><b>Mouse</b>Drag to look</div><div><b>R</b>Restart</div></div>
@@ -80,7 +89,10 @@ export function createHud({ touch = false } = {}) {
   let hintTimer = setTimeout(() => { $('.hint').style.opacity = '0'; }, 9000);
   return {
     touch: t,
-    set({ speed, nitro, boosting }) {
+    set({ speed, nitro, boosting, dist, best }) {
+      const dEl = $('.distance');
+      if (dist === undefined) dEl.hidden = true;
+      else { dEl.firstChild.textContent = (dist / 1000).toFixed(2); dEl.lastChild.textContent = `best ${(best / 1000).toFixed(2)}`; }
       $('.speed').textContent = String(Math.round(speed));
       const n = $('.nitro');
       n.firstChild.style.width = `${Math.round(nitro * 100)}%`;
@@ -96,6 +108,15 @@ export function createHud({ touch = false } = {}) {
       el.lastChild.textContent = p.label;
     },
     banner(show) { $('.banner').hidden = !show; },
+    toast(title, sub) {
+      const t = $('.toast');
+      t.querySelector('h3').textContent = title;
+      t.querySelector('p').textContent = sub;
+      t.hidden = false;
+      t.style.opacity = '1';
+      clearTimeout(this._toastT);
+      this._toastT = setTimeout(() => { t.style.opacity = '0'; }, 3200);
+    },
     win(seconds) {
       const b = $('.banner');
       b.querySelector('p').textContent = `Time ${seconds.toFixed(1)} s`;

@@ -7,7 +7,7 @@ import { terrainHeight } from './terrain.js';
 // Sonoran-style scatter: creosote bushes, dry grass, saguaros, ocotillo, rocks,
 // boulders ringing the arena, and far mesas on the horizon.
 
-const vcMat = (o = {}) => new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0, flatShading: true, ...o });
+export const vcMat = (o = {}) => new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0, flatShading: true, ...o });
 
 function displace(geo, amp, freq, seed) {
   const n = makeNoise2D(seed);
@@ -33,7 +33,7 @@ function colorize(geo, fn) {
   return geo;
 }
 
-function bushGeo() {
+export function bushGeo() {
   const r = rng(3);
   const parts = [];
   for (let k = 0; k < 9; k++) {
@@ -48,7 +48,7 @@ function bushGeo() {
   return colorize(g, (c, x, y) => c.copy(lo).lerp(hi, Math.min(1, y / 1.0)));
 }
 
-function grassGeo() {
+export function grassGeo() {
   const r = rng(5);
   const pos = [], col = [];
   const base = new THREE.Color('#8a6a3c'), tip = new THREE.Color('#e0bf7c');
@@ -77,7 +77,7 @@ function ribbed(geo, ribs = 14, depth = 0.08) {
   return geo;
 }
 
-function saguaroGeo(arms, seed) {
+export function saguaroGeo(arms, seed) {
   const r = rng(seed);
   const h = 5;
   const parts = [
@@ -101,7 +101,7 @@ function saguaroGeo(arms, seed) {
   return colorize(g, (c, x, y, z) => c.copy(dark).lerp(light, 0.5 + 0.5 * Math.cos(14 * Math.atan2(z, x))).multiplyScalar(0.85 + 0.15 * Math.min(1, y / 5)));
 }
 
-function ocotilloGeo() {
+export function ocotilloGeo() {
   const r = rng(8);
   const parts = [];
   for (let k = 0; k < 11; k++) {
@@ -119,7 +119,7 @@ function ocotilloGeo() {
   return colorize(g, (c, x, y) => c.copy(stem).lerp(tip, y > 2.6 ? Math.min(1, (y - 2.6) * 1.2) * 0.25 : 0));
 }
 
-function rockGeo(detail, seed, amp) {
+export function rockGeo(detail, seed, amp) {
   const g = displace(new THREE.DodecahedronGeometry(1, detail), amp, 1.3, seed);
   g.scale(1, 0.62, 1);
   g.translate(0, 0.2, 0);
@@ -132,7 +132,7 @@ function rockGeo(detail, seed, amp) {
   });
 }
 
-function mesaGeo(seed) {
+export function mesaGeo(seed) {
   const r = rng(seed);
   const parts = [
     new THREE.CylinderGeometry(0.78, 1, 1, 11, 5).translate(0, 0.5, 0),
@@ -155,7 +155,7 @@ function mesaGeo(seed) {
   });
 }
 
-function instanced(geo, mat, list, shadows = true) {
+export function instanced(geo, mat, list, shadows = true) {
   const m = new THREE.InstancedMesh(geo, mat, Math.max(1, list.length));
   const o = new THREE.Object3D();
   list.forEach((t, k) => {

@@ -19,7 +19,7 @@ page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 mkdirSync(`${root}/shots`, { recursive: true });
 for (const s of shots) {
   const [name, q = ''] = s.split('|');
-  await page.goto(`${base}/level.html?${q}`);
+  await page.goto(`${base}/${process.env.PAGE || 'level'}.html?${q}`);
   await page.waitForFunction(() => window.__ready === true, null, { timeout: 240000 });
   await page.waitForTimeout(200);
   const file = `${root}/shots/level_${name}.png`;
