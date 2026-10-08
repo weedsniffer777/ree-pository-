@@ -676,7 +676,7 @@ function gatehouse() {
 function superTexture() {
   const [c, g] = canvas(256, 128);
   const r = rng(321);
-  g.fillStyle = '#cfd2ce'; g.fillRect(0, 0, 256, 128);
+  g.fillStyle = '#dfe1dc'; g.fillRect(0, 0, 256, 128);
   for (let k = 0; k < 1600; k++) { g.fillStyle = `rgba(${r() < 0.5 ? '60,60,58' : '255,255,250'},${r() * 0.07})`; g.fillRect(r() * 256, r() * 128, 2, 2); }
   g.fillStyle = 'rgba(0,0,0,0.1)'; g.fillRect(0, 0, 256, 2); g.fillRect(0, 0, 2, 128); g.fillRect(128, 0, 1, 128);
   g.fillStyle = '#a2a7a5'; g.fillRect(104, 44, 48, 26);
@@ -761,33 +761,87 @@ function containerShip(containers, tints, r, x0, z0) {
   bar(g, [0, FC, zAt(0.93)], [0, FC + 12, zAt(0.93)], 0.5, 0.5, whiteM);
   bx(g, 0.5, 0.5, 0.5, m.red, 0, FC + 12.3, zAt(0.93));
   for (const sd of [-1, 1]) cy(g, 0.7, 0.7, 1.4, 10, m.dark, sd * 6, FC + 0.7, zAt(0.95)); // windlasses
-  // accommodation block aft: pale painted plate, small spaced windows, stepped decks
-  const sup = new THREE.MeshStandardMaterial({ map: superTexture(), roughness: 0.6, metalness: 0.35 });
-  const az = zAt(0.13), decks = 7, dh = 2.9;
+  // Accommodation aft, after a coaster's house seen from astern: a white block whose
+  // decks step back toward the stern, each step an open walkway with rails; the funnel
+  // casing rises out of the aft end with a black top; a wide bridge with wings out to the
+  // ship's side and a lattice mast on its roof; a free-fall lifeboat on a ramp over the
+  // stern under a red davit, and a rescue boat on a crane on the other side.
+  const sup = new THREE.MeshStandardMaterial({ map: superTexture(), roughness: 0.55, metalness: 0.3 });
+  const frameM = std(0x8a2a1f, { roughness: 0.6, metalness: 0.3 });
+  const orange = std(0xe0661c, { roughness: 0.55 });
+  const az = zAt(0.13), dh = 2.9, decks = 7, zf = az + 7; // house front face
+  const rail = (x0, z0, x1, z1, y) => {
+    bar(g, [x0, y + 1.0, z0], [x1, y + 1.0, z1], 0.07, 0.07, whiteM);
+    bar(g, [x0, y + 0.5, z0], [x1, y + 0.5, z1], 0.05, 0.05, whiteM);
+    const n = Math.max(1, Math.round(Math.hypot(x1 - x0, z1 - z0) / 2.5));
+    for (let q = 0; q <= n; q++) { const u = q / n, x = x0 + (x1 - x0) * u, z = z0 + (z1 - z0) * u; bar(g, [x, y, z], [x, y + 1.0, z], 0.06, 0.06, whiteM); }
+  };
+  let roofY = 0;
   for (let k = 0; k < decks; k++) {
-    const w = 24 - k * 0.6, d = 15 - k * 0.4, y = DECK + k * dh;
-    panel(g, w, dh, d, sup, 0, y + dh / 2, az, 2.9);
-    bx(g, w + 0.8, 0.12, d + 0.8, whiteM, 0, y + dh, az); // deck edge
+    const w = 26 - k * 0.9, d = 14 - k * 1.0, y = DECK + k * dh, zc = zf - d / 2;
+    panel(g, w, dh, d, sup, 0, y + dh / 2, zc, 2.9);
+    // roof plate overhangs as a walkway; the step back exposes it on the aft side
+    const ow = w / 2 + 0.9, oa = zf - d - 1.0;
+    bx(g, ow * 2, 0.18, d + 1.6, whiteM, 0, y + dh, zf - d / 2 - 0.2);
+    rail(-ow, oa, ow, oa, y + dh);
+    for (const sd of [-1, 1]) rail(sd * ow, oa, sd * ow, zf + 0.6, y + dh);
+    roofY = y + dh;
   }
-  const by = DECK + decks * dh;
-  panel(g, 2 * B + 4, 3.0, 8, sup, 0, by + 1.5, az + 2, 2.9); // bridge with wings out past the hull
-  bx(g, 2 * B + 3.0, 0.75, 8.05, std(0x2a3338, { roughness: 0.25, metalness: 0.6 }), 0, by + 2.05, az + 2); // bridge windows
-  bx(g, 2 * B + 4.6, 0.25, 8.6, whiteM, 0, by + 3.1, az + 2);
-  bar(g, [0, by + 3.2, az], [0, by + 10, az], 0.4, 0.4, whiteM); // mast
-  bx(g, 4, 0.2, 0.4, m.dark, 0, by + 8.6, az);
-  bx(g, 0.4, 0.4, 0.4, m.red, 0, by + 10.2, az);
-  // funnel behind the accommodation
-  const fz = az - 11;
-  bx(g, 7, 23, 6, std(0x23272b, { roughness: 0.6 }), 0, DECK + 11.5, fz); // stands on the deck
-  bx(g, 7.05, 2.2, 6.05, std(0xb5362a, { roughness: 0.6 }), 0, DECK + 19.5, fz);
-  bx(g, 6, 0.6, 5, m.dark, 0, DECK + 23.3, fz);
-  // lifeboats in davits either side
+  // bridge: full-width deckhouse with wings out over the ship's side, dark window band
+  const bz = zf - 3.6, bw = 22;
+  panel(g, bw, 3.0, 7.2, sup, 0, roofY + 1.5, bz, 2.9);
   for (const sd of [-1, 1]) {
-    const lb = new THREE.Mesh(new THREE.CapsuleGeometry(1.4, 5.5, 4, 8).rotateX(Math.PI / 2).scale(1, 0.75, 1), std(0xd9671f, { roughness: 0.6 }));
-    lb.position.set(sd * (12.5 - 0.2), DECK + 2 * dh + 1.2, az + 1);
-    g.add(lb);
-    for (const dz of [-3, 3]) bar(g, [sd * 10.5, DECK + 2 * dh, az + 1 + dz], [sd * 13.2, DECK + 2 * dh + 3, az + 1 + dz], 0.25, 0.25, whiteM);
+    bx(g, B + 0.8 - bw / 2, 2.6, 4.2, whiteM, sd * (bw / 2 + (B + 0.8 - bw / 2) / 2), roofY + 1.6, zf - 2.1); // wing
+    bx(g, 0.3, 2.4, 0.3, whiteM, sd * (B + 0.3), roofY - 1.0, zf - 2.1); // wing strut
+    bar(g, [sd * (B + 0.3), roofY - 2.2, zf - 2.1], [sd * (bw / 2 - 2), roofY - 2.2, zf - 2.1], 0.2, 0.2, whiteM);
   }
+  bx(g, 2 * B + 0.6, 1.05, 0.12, m.glass, 0, roofY + 2.05, zf + 0.04); // front windows across bridge and wings
+  for (const sd of [-1, 1]) bx(g, 0.12, 1.05, 3.0, m.glass, sd * (B + 0.82), roofY + 2.05, zf - 2.1);
+  bx(g, 2 * B + 1.4, 0.2, 4.8, whiteM, 0, roofY + 3.0, zf - 2.0); // visor / roof over the wings
+  bx(g, bw + 0.6, 0.2, 7.6, whiteM, 0, roofY + 3.05, bz);
+  const ry = roofY + 3.15;
+  rail(-bw / 2, bz - 3.7, bw / 2, bz - 3.7, ry);
+  // lattice mast on the bridge roof: two raked legs, crossbars, radar yard, signal pole
+  for (const sd of [-1, 1]) bar(g, [sd * 2.4, ry, bz - 1], [sd * 0.5, ry + 9, bz - 1.6], 0.28, 0.28, whiteM);
+  for (const h of [2.5, 5, 7.5]) { const xw = 2.4 - (1.9 * h) / 9; bar(g, [-xw, ry + h, bz - 1 - 0.07 * h], [xw, ry + h, bz - 1 - 0.07 * h], 0.16, 0.16, whiteM); }
+  bx(g, 6.5, 0.2, 1.6, whiteM, 0, ry + 6.2, bz - 1.4); // radar platform
+  bx(g, 5.2, 0.25, 0.5, m.dark, 0, ry + 6.7, bz - 1.4); // scanner
+  bx(g, 3.4, 0.15, 1.1, whiteM, 0, ry + 9, bz - 1.6);
+  bar(g, [0, ry + 9, bz - 1.6], [0, ry + 13.5, bz - 1.6], 0.16, 0.16, whiteM);
+  bx(g, 3, 0.12, 0.12, whiteM, 0, ry + 12, bz - 1.6);
+  bx(g, 0.4, 0.4, 0.4, m.red, 0, ry + 13.6, bz - 1.6);
+  // funnel casing out of the aft end of the house: white, louvred, black roofY, two uptakes
+  const fz = zf - 9, fh = ry + 4.5 - DECK;
+  panel(g, 7.5, fh, 5.5, whiteM, 0, DECK + fh / 2, fz);
+  bx(g, 4.5, 4.5, 0.12, std(0x9da2a2, { roughness: 0.7 }), 0, ry + 0.5, fz - 2.8); // louvre panel
+  bx(g, 7.6, 1.6, 5.6, std(0x1c1d1f, { roughness: 0.7 }), 0, DECK + fh - 0.8, fz);
+  for (const sd of [-1, 1]) cy(g, 0.55, 0.55, 2.4, 10, m.dark, sd * 1.3, DECK + fh + 1.0, fz - 0.6);
+  // free-fall lifeboat: ramp off the aft face, sloping down over the stern, red davit over it
+  const lx = 7.5, aft0 = zf - 14, ly0 = DECK + 2 * dh + 0.6, slope = 0.55, run = 9.5;
+  for (const sd of [-1, 1]) {
+    bar(g, [lx + sd * 1.2, ly0, aft0], [lx + sd * 1.2, ly0 - run * slope, aft0 - run], 0.3, 0.4, frameM);
+    bar(g, [lx + sd * 1.2, DECK, aft0 - run * 0.75], [lx + sd * 1.2, ly0 - run * 0.75 * slope, aft0 - run * 0.75], 0.25, 0.25, frameM);
+    bar(g, [lx + sd * 2.0, DECK, aft0 - 0.5], [lx + sd * 0.4, ly0 + 5.5, aft0 - run * 0.55], 0.35, 0.35, frameM); // davit legs
+  }
+  bar(g, [lx - 0.6, ly0 + 5.5, aft0 - run * 0.55], [lx + 0.6, ly0 + 5.5, aft0 - run * 0.55], 0.4, 0.4, frameM);
+  const boat = new THREE.Group();
+  boat.add(new THREE.Mesh(new THREE.CapsuleGeometry(1.35, 5.6, 4, 10).rotateX(Math.PI / 2).scale(1, 0.85, 1), orange));
+  const canopy = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.0, 4.4), orange); canopy.position.set(0, 1.0, -0.6); boat.add(canopy);
+  const fin = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.9, 1.4), whiteM); fin.position.set(0, 1.6, -1.8); boat.add(fin);
+  boat.position.set(lx, ly0 - run * 0.5 * slope + 1.7, aft0 - run * 0.5);
+  boat.rotation.x = Math.atan(slope); // bow down toward the stern
+  boat.rotation.y = Math.PI;
+  boat.rotation.order = 'YXZ';
+  g.add(boat);
+  // rescue boat on a slewing crane, port side aft
+  bar(g, [-10, DECK + dh, aft0 + 1], [-10, DECK + dh + 4.5, aft0 + 1], 0.45, 0.45, frameM);
+  bar(g, [-10, DECK + dh + 4.2, aft0 + 1], [-13.8, DECK + dh + 5.6, aft0 - 1.5], 0.3, 0.35, frameM);
+  const rb = new THREE.Mesh(new THREE.CapsuleGeometry(0.9, 3.4, 4, 8).rotateX(Math.PI / 2).scale(1, 0.6, 1), orange);
+  rb.position.set(-12.6, DECK + dh + 0.9, aft0 - 1.5);
+  g.add(rb);
+  // poop deck rails round the stern
+  for (const sd of [-1, 1]) rail(sd * (B - 0.6), zAt(0.005), sd * (B - 0.4), aft0 - 2, DECK);
+  rail(-B * 0.62, zAt(0.0) + 0.6, B * 0.62, zAt(0.0) + 0.6, DECK);
   // stern mooring deck gear
   for (const sd of [-1, 1]) cy(g, 0.7, 0.7, 1.4, 10, m.dark, sd * 6, DECK + 0.7, zAt(0.03));
   // cargo bays: hatch covers, lashing bridges, containers

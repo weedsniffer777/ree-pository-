@@ -112,7 +112,9 @@ export class CarController {
       this.drift += (driftWant - this.drift) * Math.min(1, dt * (driftWant > this.drift ? 4.5 : 2.5));
       this.driftMode = this.drift > 0.35;
       if (brake > 0) {
-        if (vf > 0.5) vf -= 20 * (1 - this.drift * 0.65) * dt * brake;
+        // in a committed drift the brake mostly unloads the rear instead of stopping the
+        // car: speed bleeds off gently, and less still with the throttle down
+        if (vf > 0.5) vf -= 20 * (1 - this.drift * (inp.throttle > 0 ? 0.94 : 0.86)) * dt * brake;
         else if (this.revOK || (this.stopT += dt) > 0.9) vf = Math.max(-11, vf - 10 * dt * brake);
         else vf = Math.max(0, vf - 20 * dt);
       }
@@ -120,7 +122,11 @@ export class CarController {
       vf -= vf * surf.drag * dt * 0.35;
       this.braking = braking;
       const grip = surf.grip + (0.6 - surf.grip) * this.drift;
+      const vl0 = vl;
       vl *= Math.exp(-grip * dt);
+      // drift-corrected speed: part of the sideways slide scrubbed off is carried forward
+      // as the car straightens, so a held drift doesn't dump momentum
+      if (this.drift > 0.2 && vf > 0) vf = Math.min(Math.max(vf, want), vf + Math.abs(vl0 - vl) * 0.45 * this.drift);
       this.wheelspin = inp.throttle > 0 ? Math.max(Math.abs(this.yawRate) > 0.9 ? 1 : 0, 1 - Math.abs(vf) / 7) : 0;
       this.skid = Math.max(Math.min(1, (Math.abs(vl) - 2) / 4), braking && this.drift < 0.3 ? 0.75 : 0, this.wheelspin > 0.5 && Math.abs(vf) < 12 ? 0.8 : 0);
       const sp = Math.abs(vf);

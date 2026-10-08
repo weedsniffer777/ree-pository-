@@ -241,6 +241,11 @@ function updateCamera(dt) {
     camera.position.set(car.x - fx * 45, car.y + 34, car.z - fz * 45);
     camera.lookAt(car.x + fx * 45, car.y, car.z + fz * 45);
     fovT = 60;
+  } else if (view === 'cam') { // dev: free camera, &c=x,y,z&t=x,y,z
+    const v3 = (k) => (new URLSearchParams(location.search).get(k) || '0,0,0').split(',').map(Number);
+    camera.position.set(...v3('c'));
+    camera.lookAt(...v3('t'));
+    fovT = 50;
   } else if (view === 'top' && LOOP.on) {
     scene.fog = null;
     camera.position.set(world.box.cx, 1100, world.box.cz);
@@ -433,7 +438,7 @@ function frame(now) {
   const dist = Math.max(0, (car.n.i - I_START) * STEP);
   if (dist > best && !params.has('at') && !startAt && !LOOP.on) { best = dist; if (Math.floor(runTime) % 5 === 0) { try { localStorage.setItem('endless.best', String(Math.round(best))); } catch { /* ignore */ } } }
   const bi = LOOP.on ? 0 : biomeIndexAt(dist);
-  if (LOOP.on) { if (biomeShown < 0) { biomeShown = 0; hud.title(THEME.name, `${(LOOP.len / 1000).toFixed(1)} km circuit`); } } else if (bi !== biomeShown) { biomeShown = bi; hud.title(BIOMES[bi].name, dist < 10 ? 'Drive · Survive · Destroy' : `${(dist / 1000).toFixed(1)} km`); }
+  if (LOOP.on) biomeShown = 0; else if (bi !== biomeShown) { biomeShown = bi; hud.title(BIOMES[bi].name, dist < 10 ? 'Drive · Survive · Destroy' : `${(dist / 1000).toFixed(1)} km`); }
   if (LOOP.on) {
     const lap = updateLap(dt);
     hud.set({ speed: Math.abs(car.vf) * 3.6, boost: car.boost, boosting: car.boosting, cruise: cruise || hud.touch.active, dist: lap.dist, best, sub: lap.sub });
