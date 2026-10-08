@@ -403,7 +403,7 @@ function simulate(seconds) {
 if (num('sim', 0) > 0) simulate(num('sim', 0));
 
 function frame(now) {
-  const rdt = isPaused() ? 0 : Math.min(0.05, (now - last) / 1000);
+  const rdt = isPaused() || race?.frozen ? 0 : Math.min(0.05, (now - last) / 1000);
   last = now;
   // slow motion for dramatic tutorial beats: eases back to full speed
   slowmo = Math.max(0, slowmo - rdt);
@@ -448,7 +448,7 @@ function frame(now) {
   if (LOOP.on) biomeShown = 0; else if (bi !== biomeShown) { biomeShown = bi; hud.title(BIOMES[bi].name, dist < 10 ? 'Drive · Survive · Destroy' : `${(dist / 1000).toFixed(1)} km`); }
   if (race) {
     race.update(dt);
-    hud.set({ speed: car.vf * 3.6, boost: car.boost, boosting: car.boosting, throttle: inp.throttle, lap: race.playerLap, laps: 3, lapT: race.state === 'count' ? 0 : race.raceT - race.lapStart, bestLap: race.bestLap, dt });
+    hud.set({ speed: car.vf * 3.6, boost: car.boost, boosting: car.boosting, throttle: inp.throttle, lap: race.playerLap, laps: 3, lapT: race.raceT - race.lapStart, bestLap: race.bestLap, dt });
     hud.mapUpdate(car.x, car.z, car.yaw);
   } else if (LOOP.on) {
     updateLap(dt);

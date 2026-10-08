@@ -12,17 +12,16 @@ import { bakeGroup } from '../level/bake.js';
 // speed profile from the curvature, lane changes around slower cars, and rubber-banding.
 
 export const LAPS = 3;
-const PACE = 24; // m/s behind the line before GO
-const COUNT = 3; // countdown seconds
+const PACE = 33; // m/s everyone carries when the intro opens
 export const ROSTER = [
   { name: 'You', color: [142, 32, 26], hex: '#e0402e' },
-  { name: 'Torch', color: [214, 96, 24], hex: '#ff8a2a' },
-  { name: 'Hex', color: [206, 170, 30], hex: '#ffd23a' },
-  { name: 'Mako', color: [52, 132, 74], hex: '#4fcf72' },
-  { name: 'Rook', color: [40, 130, 140], hex: '#3fd0d6' },
-  { name: 'Diesel', color: [44, 82, 168], hex: '#5a8cff' },
-  { name: 'Vulture', color: [118, 52, 150], hex: '#b56cff' },
-  { name: 'Ghost', color: [196, 196, 188], hex: '#f2f2ea' },
+  { name: 'Orange', color: [214, 96, 24], hex: '#ff8a2a' },
+  { name: 'Yellow', color: [206, 170, 30], hex: '#ffd23a' },
+  { name: 'Green', color: [52, 132, 74], hex: '#4fcf72' },
+  { name: 'Teal', color: [40, 130, 140], hex: '#3fd0d6' },
+  { name: 'Blue', color: [44, 82, 168], hex: '#5a8cff' },
+  { name: 'Purple', color: [118, 52, 150], hex: '#b56cff' },
+  { name: 'White', color: [196, 196, 188], hex: '#f2f2ea' },
 ];
 const PLAYER_SLOT = 4; // 5th on the grid
 
@@ -178,11 +177,13 @@ export class Race {
     this.reset();
   }
 
-  // grid: two abreast, 14 m between rows, front row 110 m behind the line; player 5th
+  // already racing: the field strung out ahead of and behind the player (5th), the leader
+  // just short of the line, cars in different lanes
   gridSlot(k) {
-    const row = Math.floor(k / 2), side = k % 2 ? 1 : -1;
-    const prog = -110 / STEP - row * 14 / STEP;
-    return { prog, lat: side * 2.6 * wAt(wrapI(prog)) };
+    const ahead = [0, 16, 34, 52, 70, 88, 108, 128][k]; // metres behind the leader
+    const prog = (-24 - ahead) / STEP;
+    const lanes = [-0.45, 0.4, -0.1, 0.55, -0.3, 0.2, -0.55, 0.35];
+    return { prog, lat: lanes[k] * latMax(wrapI(prog)) * 1.6 };
   }
   reset() {
     const order = [...this.rivals.map((r) => r.slot)];
@@ -195,18 +196,31 @@ export class Race {
         const p = pointAt(i, g.lat);
         this.car.vx = Math.sin(p.yaw) * PACE; this.car.vz = Math.cos(p.yaw) * PACE; this.car.vf = PACE;
         this.pProg = g.prog; this.pI = i;
-      } else this.rivals.find((r) => r.slot === slot).place(g.prog, g.lat, PACE);
+      } else this.rivals.find((r) => r.slot === slot).place(g.prog, g.lat, Math.min(profile[wrapI(g.prog)], PACE + 3));
     });
     this.player.armor.reset();
     wear(this.player.mats, this.player.armor);
-    Object.assign(this, { state: 'count', t: 0, raceT: 0, lapStart: 0, bestLap: 0, lastLap: 0, pFinish: 0, shown: false });
+    Object.assign(this, { state: 'race', t: 0, raceT: 0, lapStart: 0, lapsDone: 0, bestLap: 0, lastLap: 0, pFinish: 0, shown: false });
     this.hud.results(null);
+    // intro: hold on black for a beat, then the screen splits open onto the race
+    this.holdUntil = performance.now() + 450;
+    this.hud.intro(false, true);
+    setTimeout(() => this.hud.intro(true), 450);
   }
+
+  // Play again: close the split, reset behind it, open again
+  again() {
+    this.hud.intro(false);
+    this.holdUntil = Infinity;
+    setTimeout(() => this.reset(), 880);
+  }
+
+  get frozen() { return performance.now() < this.holdUntil; }
 
   get playerLap() { return Math.min(LAPS, Math.max(1, Math.floor(this.pProg / LOOP.n) + 1)); }
   get racing() { return this.state === 'race'; }
-  get inputCap() { return this.state === 'count' ? PACE : 0; }
-  get canFire() { return this.state !== 'count' && !this.player.armor.wrecked; }
+  get inputCap() { return 0; }
+  get canFire() { return !this.player.armor.wrecked && !this.frozen; }
 
   // every car as a uniform body for collisions and hit tests
   bodies() {
@@ -296,8 +310,7 @@ export class Race {
       return;
     }
     let want;
-    if (this.state === 'count') want = PACE;
-    else {
+    {
       want = Math.min(profile[i], 45.8 * r.skill);
       // rubber band against the player: ease off when well ahead, push when behind
       const gap = (r.prog - this.pProg) * STEP;
@@ -347,12 +360,7 @@ export class Race {
     const N = LOOP.n, c = this.car;
     Race.camX = c.x; Race.camZ = c.z;
     this.t += dt;
-    if (this.state === 'count') {
-      const left = COUNT - this.t;
-      this.hud.countdown(left > 0 ? String(Math.ceil(left)) : 'GO');
-      if (left <= 0) { this.state = 'race'; this.raceT = 0; this.lapStart = 0; }
-    } else if (this.t > COUNT + 0.8) this.hud.countdown(null);
-    if (this.state !== 'count') this.raceT += dt;
+    this.raceT += dt;
     // player progress, unwrapped so only forward laps count
     const i = c.n.i;
     this.pProg += ((i - this.pI + N + N / 2) % N) - N / 2;
@@ -366,7 +374,6 @@ export class Race {
       if (lap < LAPS) this.hud.title(lap === LAPS - 1 ? 'Final lap' : `Lap ${lap + 1}`, fmt(this.lastLap));
     }
     if (this.state === 'race' && this.pProg >= LAPS * N) { this.pFinish = this.raceT; this.over('finished'); }
-    if (this.state === 'count') this.lapsDone = 0;
 
     const all = this.bodies().map((b) => ({ ...b, lat: b.ref === this.player ? c.n.lat : b.ref.lat }));
     for (const r of this.rivals) { this.updateRival(r, dt, all); r.pose(dt); }
@@ -414,7 +421,7 @@ export class Race {
       win: this.why !== 'wrecked' && me === 1,
       rows: this.order.map((r, k) => ({ pos: k + 1, name: r.name, you: !!r.you, color: r.hex, time: r.armor.wrecked ? 'WRECKED' : r.finished ? fmt(r.finishT) : '—' })),
       best: this.bestLap ? fmt(this.bestLap) : '',
-      onAgain: () => this.reset(),
+      onAgain: () => this.again(),
     });
   }
 }

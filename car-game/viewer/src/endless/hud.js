@@ -72,6 +72,18 @@ const CSS = `
 #hud .armor { position: absolute; left: calc(var(--gx) + 186px); bottom: var(--gyb); width: 58px; height: 100px; padding: 8px 6px; }
 #hud .armor svg { width: 100%; height: 100%; display: block; }
 #hud .armor .z { transition: fill 0.2s; }
+/* intro: black halves split open from a seam across the middle */
+#hud .intro { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
+#hud .intro i { position: absolute; left: 0; right: 0; height: 50.5%; background: #070708; transition: transform 0.85s cubic-bezier(.7,0,.2,1); }
+#hud .intro .t { top: 0; }
+#hud .intro .b { bottom: 0; }
+#hud .intro::after { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 2px; margin-top: -1px; background: var(--rust); box-shadow: 0 0 14px 2px rgba(216,100,42,0.7); transform: scaleX(0); transition: transform 0.4s ease-out, opacity 0.3s 0.25s; }
+#hud .intro.shut::after { transform: scaleX(1); opacity: 1; }
+#hud .intro.open::after { transform: scaleX(1); opacity: 0; }
+#hud .intro.open .t { transform: translateY(-101%); }
+#hud .intro.open .b { transform: translateY(101%); }
+#hud .intro.instant i, #hud .intro.instant::after { transition: none; }
+
 /* countdown */
 #hud .count { position: absolute; left: 50%; top: 32%; transform: translate(-50%, -50%) skewX(-6deg); font: 900 clamp(70px, 14vw, 150px)/1 var(--display); color: var(--white); -webkit-text-stroke: 3px #0e0f11; paint-order: stroke fill; text-shadow: 0 5px 0 rgba(0,0,0,0.55); }
 #hud .count.go { color: var(--rust); }
@@ -212,6 +224,7 @@ export function createHud({ touch = false } = {}) {
       <rect class="z" data-z="core" x="13" y="19" width="20" height="46" rx="3"/>
     </svg></div>
     <div class="count" hidden></div>
+    <div class="intro shut instant"><i class="t"></i><i class="b"></i></div>
     <div class="results" hidden><div class="box panel"><h2></h2><div class="sub"></div><div class="list"></div><div class="sub best"></div><button>PLAY AGAIN</button></div></div>
     <div class="gauge">
       <div class="speed"><canvas></canvas><div class="rd"><div class="v">0</div><div class="u lbl">KM/H</div></div><div class="g">N</div></div>
@@ -450,6 +463,14 @@ export function createHud({ touch = false } = {}) {
         const k = el.dataset.z;
         el.style.fill = k === 'core' ? zoneCol(a.core) : a.flash[k] > 0 ? '#f4efe4' : zoneCol(a.z[k]);
       }
+    },
+    // open = true splits the black open; false closes it (instantly when snap)
+    intro(open, snap = false) {
+      const el = $('.intro');
+      el.classList.toggle('instant', snap);
+      el.classList.toggle('open', open);
+      el.classList.toggle('shut', !open);
+      if (snap) void el.offsetWidth;
     },
     countdown(text) {
       const el = $('.count');
