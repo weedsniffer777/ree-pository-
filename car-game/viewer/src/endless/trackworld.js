@@ -56,6 +56,7 @@ export class TrackWorld {
     this.scene = scene;
     this.def = def;
     this.colliders = [];
+    this.map = { roads: [], rects: [] }; // flat outlines for the HUD minimap
     this.updaters = [];
     this.hint = 0;
     this.hill = 0;
@@ -595,6 +596,7 @@ export class TrackWorld {
     i0 = wrap(i0);
     const br = this.bridges.find((b) => b.i === i0);
     const P = { x: br.x, z: br.z }, { tx, tz, cx, cz, deckH, y0 } = br, hw = ROAD_BEVEL, AB = 21.5;
+    this.map.roads.push({ pts: [[P.x - cx * 290, P.z - cz * 290], [P.x + cx * 290, P.z + cz * 290]], w: 12 });
     const lats = [];
     for (let l = -290; l <= 290; l += 4) lats.push(l);
     const m = ROAD_LATS.length, pos = new Float32Array(lats.length * m * 3), uv = new Float32Array(lats.length * m * 2);
@@ -668,6 +670,7 @@ export class TrackWorld {
 
   buildSideRoad(i0w, side, gate, yard) {
     const { i0, startLat, ang, len, P, dx, dz } = this.sideRoadPath(i0w, side, yard);
+    this.map.roads.push({ pts: [[P.x, P.z], [P.x + dx * len, P.z + dz * len]], w: 10 });
     const px = -dz, pz = dx;
     const offs = [-5.2, -4, 0, 4, 5.2];
     const pos = [], uv = [], col = [], idx = [];

@@ -894,11 +894,28 @@ export function buildTerminal(tw) {
   const APRON = T.apronX ?? -6; // nothing gets built east of this (the quay side)
   const big = new THREE.Group(), containers = [], lines = [], decor = [];
   const tints = [0x7a4a3c, 0x44586c, 0x55645a, 0x9a7f3c, 0xa8a193, 0x6c3d36, 0x3f5a52, 0x8a8478, 0x5c4e6a].map(C);
-  const place = (proto, x, z, yaw) => {
+  // Ground under a footprint (local half extents hx across, hz along). Buildings sit level
+  // at the highest point on a concrete plinth reaching down to the lowest, so nothing hangs
+  // over a dip; without a footprint (masts, cranes) the object sinks to the lowest point
+  // around it instead.
+  const plinthM = std(0x8f8b82, { roughness: 0.95 });
+  const place = (proto, x, z, yaw, fp = null) => {
+    const hx = fp?.hx ?? 2.5, hz = fp?.hz ?? 2.5;
+    let lo = Infinity, hi = -Infinity;
+    for (let a = -1; a <= 1.001; a += 0.5) for (let c = -1; c <= 1.001; c += 0.5) {
+      const [px, pz] = toWorld(x, z, yaw, a * hx, c * hz), h = tw.heightAt(px, pz);
+      lo = Math.min(lo, h); hi = Math.max(hi, h);
+    }
     const o = proto.clone();
-    o.position.set(x, tw.heightAt(x, z), z);
+    o.position.set(x, fp ? hi : lo, z);
     o.rotation.y = yaw;
     big.add(o);
+    if (fp && hi - lo > 0.08) {
+      const h = hi - lo + 0.5, pl = new THREE.Mesh(new THREE.BoxGeometry(hx * 2 + 1.2, h, hz * 2 + 1.2), plinthM);
+      pl.position.set(x, hi - h / 2 + 0.02, z);
+      pl.rotation.y = yaw;
+      big.add(pl);
+    }
     return o;
   };
   const inRect = (x, z) => x > X0 && x < X1 && z > Z0 && z < Z1;
@@ -992,6 +1009,8 @@ export function buildTerminal(tw) {
       tw.reserve(i - 9, i + 9);
     }
   }
+  tw.map.roads.push(...roads);
+  tw.map.water = T.quayX;
   {
     const pos = [], uv = [], idx = [];
     for (const rd of roads) {
@@ -1076,18 +1095,19 @@ export function buildTerminal(tw) {
     if (!rc) continue;
     const singleBlock = kind === 'stack' && sz.W < 30;
     rects.push(rc);
+    tw.map.rects.push({ x: cx, z: cz, yaw, hx: sz.W / 2, hz: sz.L / 2 });
     counts.buildings++;
     const v = Math.floor(r() * 6);
     if (kind === 'warehouse') {
       const L = sz.L, W = sz.W;
-      place(bigWarehouse({ W, L, E: W < 20 ? 7 + r() * 2 : 8 + r() * 4, spans: W > 36 ? 3 : W > 28 ? 2 : 1, v }), cx, cz, yaw);
+      place(bigWarehouse({ W, L, E: W < 20 ? 7 + r() * 2 : 8 + r() * 4, spans: W > 36 ? 3 : W > 28 ? 2 : 1, v }), cx, cz, yaw, { hx: W / 2, hz: L / 2 });
       const pts = [];
       for (let q = 0; q < 5; q++) { const [x, z] = toWorld(cx, cz, yaw, -W / 2 - 8 - r() * 3, (r() - 0.5) * L * 0.7); pts.push([x, z, yaw + (r() - 0.5) * 0.4]); }
       decor.push({ scatter: 'pallet', points: pts.slice(0, 2) }, { scatter: 'skip', points: pts.slice(2, 3) }, { scatter: 'ibc', points: pts.slice(3) });
-    } else if (kind === 'shed') place(openShed({ W: sz.W, L: sz.L, E: 8 + r() * 2, v, seed: Math.floor(r() * 999) }), cx, cz, yaw);
-    else if (kind === 'works') place(sawtooth({ W: sz.W, L: sz.L, teeth: Math.max(3, Math.round(sz.W / 9)), v }), cx, cz, yaw);
-    else if (kind === 'tanks') { counts.tanks++; place(tankFarm({ count: sz.W > 30 ? 2 : 1, R: 7 + r() * 1.5, h: 10 + r() * 5, seed: Math.floor(r() * 999), band: [0x4d6f5a, 0x3f5a78, 0x8a4a32][Math.floor(r() * 3)] }), cx, cz, yaw); }
-    else if (kind === 'silos') { counts.silos++; place(siloCluster({ n: 3, R: 3 + r() * 0.5, h: 14 + r() * 4, seed: Math.floor(r() * 999) }), cx - 6, cz, yaw + Math.PI / 2); }
+    } else if (kind === 'shed') place(openShed({ W: sz.W, L: sz.L, E: 8 + r() * 2, v, seed: Math.floor(r() * 999) }), cx, cz, yaw, { hx: sz.W / 2, hz: sz.L / 2 });
+    else if (kind === 'works') place(sawtooth({ W: sz.W, L: sz.L, teeth: Math.max(3, Math.round(sz.W / 9)), v }), cx, cz, yaw, { hx: sz.W / 2, hz: sz.L / 2 });
+    else if (kind === 'tanks') { counts.tanks++; place(tankFarm({ count: sz.W > 30 ? 2 : 1, R: 7 + r() * 1.5, h: 10 + r() * 5, seed: Math.floor(r() * 999), band: [0x4d6f5a, 0x3f5a78, 0x8a4a32][Math.floor(r() * 3)] }), cx, cz, yaw, { hx: sz.W / 2 - 2, hz: sz.L / 2 - 2 }); }
+    else if (kind === 'silos') { counts.silos++; place(siloCluster({ n: 3, R: 3 + r() * 0.5, h: 14 + r() * 4, seed: Math.floor(r() * 999) }), cx - 6, cz, yaw + Math.PI / 2, { hx: 12, hz: 6 }); }
     else if (kind === 'stack') {
       const hmax = 2 + Math.floor(r() * 3);
       for (const bxo of singleBlock ? [0] : [-11, 11]) {

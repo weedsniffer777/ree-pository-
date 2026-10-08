@@ -103,7 +103,7 @@ const guns = new Guns(model, scene, { tracers, dust, sparks: embers, height: ter
 // Stand-in until enemies exist: every round that lands charges boost a little.
 const gunImpact = guns.impact.bind(guns);
 guns.impact = (p) => { gunImpact(p); car.addBoost(0.0045); };
-let runTime = 0, biomeShown = -1, best = 0, cruise = false, freeCam = false;
+let runTime = 0, biomeShown = -1, best = 0, freeCam = false;
 const pursuer = new Pursuer();
 const skids = new Skids(scene);
 const streaks = new SpeedLines(scene);
@@ -118,15 +118,20 @@ const hud = createHud({ touch: coarse });
 if (params.get('ui') === '0') hud.hide();
 if (params.get('stats') === '1') hud.toggleDebug();
 // the garage viewer: index.html in dev, garage.html next to the page in the artifact
-let paused = false;
-createDevKit({ viewerUrl: import.meta.env.DEV ? 'index.html' : 'garage.html', onStats: () => hud.toggleDebug(), onOpenChange: (on) => { paused = on; keys.clear(); } });
+let devOpen = false, userPaused = false;
+const isPaused = () => devOpen || userPaused;
+createDevKit({ viewerUrl: import.meta.env.DEV ? 'index.html' : 'garage.html', onStats: () => hud.toggleDebug(), onOpenChange: (on) => { devOpen = on; keys.clear(); } });
+hud.onPause = (on) => { userPaused = on; keys.clear(); };
+if (LOOP.on) {
+  hud.map(world, S, LOOP.n, I_START);
+  hud.standings([{ name: 'You', you: true }]); // AI racers fill this in later
+}
 
 const keys = new Set();
 addEventListener('keydown', (e) => {
   keys.add(e.code);
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
   if (e.code === 'KeyR') location.reload();
-  if (e.code === 'KeyE' && !e.repeat) cruise = !cruise;
   if (e.code === 'F3' || e.code === 'Backquote') hud.toggleDebug();
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
@@ -151,7 +156,7 @@ function autopilot() {
   let diff = Math.atan2(tp.x - car.x, tp.z - car.z) - car.yaw;
   diff = Math.atan2(Math.sin(diff), Math.cos(diff));
   const steer = THREE.MathUtils.clamp(-diff * 2.4, -1, 1);
-  return { throttle: 1, push: false, brake: 0, steer, boost: Math.abs(steer) < 0.12 && car.boost > 0.4 && params.get('boost') !== '0', fire: params.get('fire') === '1' };
+  return { throttle: 1, brake: 0, steer, boost: Math.abs(steer) < 0.12 && car.boost > 0.4 && params.get('boost') !== '0', fire: params.get('fire') === '1' };
 }
 
 function readInput() {
@@ -159,14 +164,12 @@ function readInput() {
   const k = (...c) => c.some((x) => keys.has(x));
   const w = k('KeyW', 'ArrowUp'), sKey = k('KeyS', 'ArrowDown');
   const t = hud.touch;
-  const touchCruise = t.active; // phones: always cruising
-  // tutorial: rolls along at a fixed lower speed until you've learned cruise; W lifts the cap
-  const tutDrive = !tut.done && !cruise && !touchCruise;
+  // keyboard: W is the throttle. Phones have no pedal, so they drive on full throttle and
+  // BRAKE lifts it. The tutorial rolls along at a fixed lower speed until W is learned.
+  const tutDrive = !tut.done && !t.active;
   const inp = {
-    // cruise drives the throttle; S held pauses it, releasing S resumes
-    throttle: w || ((cruise || touchCruise || tutDrive) && !sKey && !t.brake) ? 1 : 0,
+    throttle: w || ((t.active || tutDrive) && !sKey && !t.brake) ? 1 : 0,
     cap: tutDrive && !w ? TUT_SPEED : 0,
-    push: w,
     brake: sKey || t.brake ? 1 : 0,
     steer: (k('KeyD', 'ArrowRight') ? 1 : 0) - (k('KeyA', 'ArrowLeft') ? 1 : 0) || t.steer,
     boost: k('ShiftLeft', 'ShiftRight') || t.boost,
@@ -308,9 +311,7 @@ const STEPS = [
     done: () => (keys.has('KeyW') || keys.has('ArrowUp')) && car.vf > 33 },
   { title: `${K('A')} ${K('D')} to steer`, sub: 'Swing across both lanes', touchTitle: 'Drag to steer',
     done: (dt) => { if (car.steerS < -0.4) tut.left = true; if (car.steerS > 0.4) tut.right = true; return tut.left && tut.right && tut.t > 1; } },
-  { title: `${K('E')} for cruise control`, sub: 'Holds 150 hands-off. E again turns it off', spot: 'cruise', touch: false,
-    done: () => cruise },
-  { title: `Hold ${K('S')} to brake`, sub: 'Let go and cruise picks back up', touchTitle: 'Hold BRAKE to slow down', touchSub: 'Let go to speed back up',
+  { title: `Hold ${K('S')} to brake`, sub: 'Let go of W to coast', touchTitle: 'Hold BRAKE to slow down', touchSub: 'Let go to speed back up',
     done: (dt) => (tut.acc += car.braking && !car.driftMode ? dt : 0) > 0.7 },
   { title: `Now ${K('S')} + ${K('A')}/${K('D')} to slide`, sub: 'Brake and steer together: the tail swings out', touchTitle: 'Hold BRAKE and steer to slide', touchSub: 'The tail swings out',
     done: (dt) => (tut.acc += car.driftMode ? dt : 0) > 0.8 },
@@ -396,7 +397,7 @@ function simulate(seconds) {
 if (num('sim', 0) > 0) simulate(num('sim', 0));
 
 function frame(now) {
-  const rdt = paused ? 0 : Math.min(0.05, (now - last) / 1000);
+  const rdt = isPaused() ? 0 : Math.min(0.05, (now - last) / 1000);
   last = now;
   // slow motion for dramatic tutorial beats: eases back to full speed
   slowmo = Math.max(0, slowmo - rdt);
@@ -441,10 +442,11 @@ function frame(now) {
   if (LOOP.on) biomeShown = 0; else if (bi !== biomeShown) { biomeShown = bi; hud.title(BIOMES[bi].name, dist < 10 ? 'Drive · Survive · Destroy' : `${(dist / 1000).toFixed(1)} km`); }
   if (LOOP.on) {
     const lap = updateLap(dt);
-    hud.set({ speed: Math.abs(car.vf) * 3.6, boost: car.boost, boosting: car.boosting, cruise: cruise || hud.touch.active, dist: lap.dist, best, sub: lap.sub });
-    hud.track({ you: lap.frac, them: null, hot: false });
+    hud.set({ speed: car.vf * 3.6, boost: car.boost, boosting: car.boosting, throttle: inp.throttle, lap: lapsDone + 1, lapT, bestLap, dt });
+    hud.mapUpdate(car.x, car.z, car.yaw, []);
+    void lap;
   } else {
-    hud.set({ speed: Math.abs(car.vf) * 3.6, boost: car.boost, boosting: car.boosting, cruise: cruise || hud.touch.active, dist, best });
+    hud.set({ speed: car.vf * 3.6, boost: car.boost, boosting: car.boosting, throttle: inp.throttle, dt });
     updatePursuer(dt, dist);
   }
   updateTutorial(dt);

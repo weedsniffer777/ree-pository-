@@ -1,5 +1,6 @@
 // Track screenshots. Usage: node scripts/shot-track.mjs <outdir> "name|query" ...
-// e.g. node scripts/shot-track.mjs shots "yard_a|map=yard&at=300&view=chase"
+// e.g. node scripts/shot-track.mjs shots "yard_a|map=yard&at=300&view=chase" "phone|map=yard&ui=1|844x390"
+// UI is hidden unless the query sets ui=
 import { createServer } from 'vite';
 import { chromium } from 'playwright';
 import { mkdirSync } from 'node:fs';
@@ -16,12 +17,19 @@ const errors = [];
 page.on('pageerror', (e) => errors.push(e.stack?.split('\n').slice(0, 3).join(' ') ?? e.message));
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 for (const s of shots) {
-  const [name, q = ''] = s.split('|');
-  await page.goto(`http://localhost:5197/endless.html?ui=0&${q}`);
-  await page.waitForFunction(() => window.__ready === true, null, { timeout: 240000 });
-  await page.waitForTimeout(300);
-  await page.screenshot({ path: `${out}/${name}.png` });
-  console.log(name, JSON.stringify(await page.evaluate(() => ({ ...window.__stats, dbg: window.__dbg }))));
+  const [name, q = '', size = ''] = s.split('|'); // size "WxH" = phone (touch) viewport
+  let pg = page;
+  if (size) {
+    const [width, height] = size.split('x').map(Number);
+    pg = await browser.newPage({ viewport: { width, height }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+    pg.on('pageerror', (e) => errors.push(e.stack?.split('\n').slice(0, 3).join(' ') ?? e.message));
+  }
+  await pg.goto(`http://localhost:5197/endless.html?${/(^|&)ui=/.test(q) ? '' : 'ui=0&'}${q}`);
+  try { await pg.waitForFunction(() => window.__ready === true, null, { timeout: 120000 }); } catch (e) { console.error(name, 'never ready', errors.slice(-3)); continue; }
+  await pg.waitForTimeout(300);
+  await pg.screenshot({ path: `${out}/${name}.png` });
+  console.log(name, JSON.stringify(await pg.evaluate(() => ({ ...window.__stats, dbg: window.__dbg }))));
+  if (pg !== page) await pg.close();
 }
 if (errors.length) console.error('PAGE ERRORS:\n' + [...new Set(errors)].slice(0, 6).join('\n'));
 await browser.close();

@@ -13,7 +13,7 @@ export function setTerrain(fn, fnN) { terrainHeight = fn; terrainHeightN = fnN; 
 // ballistic airtime off crests, circle/box collisions, corridor and guardrail limits.
 
 const G = 24;
-const CRUISE_V = 41.7, TOP_V = 45.8, BOOST_V = 58.3; // 150 / 165 / 210 km/h
+const TOP_V = 45.8, BOOST_V = 58.3; // 165 / 210 km/h
 const WB_F = 1.3, WB_R = -1.25, TRACK = 0.77, WHEEL_R = 0.332;
 const HIT = [-1.75, -0.25, 1.25, 2.6];
 const HIT_R = 1.0;
@@ -90,8 +90,8 @@ export class CarController {
     this.skid = 0;
     if (!this.airborne) {
       this.boosting = inp.boost && this.boost > 0.02 && inp.throttle > 0;
-      // cruise 150 km/h, top 165 with W held, boost 210
-      const want = Math.min(inp.cap || Infinity, (this.boosting ? BOOST_V : inp.push ? TOP_V : CRUISE_V) * surf.max);
+      // top 165 km/h on the throttle, boost 210
+      const want = Math.min(inp.cap || Infinity, (this.boosting ? BOOST_V : TOP_V) * surf.max);
       if (inp.throttle > 0 && vf < want) {
         const a = (this.boosting ? 20 : 11) * inp.throttle * Math.max(0.18, 1 - (Math.max(0, vf) / want) ** 2);
         vf += a * dt;
