@@ -45,7 +45,7 @@ export class CarController {
     const p = pointAt(i, lat);
     Object.assign(this, {
       x: p.x, z: p.z, yaw: p.yaw, vx: 0, vz: 0, vy: 0, vf: 0, vl: 0, steerS: 0, yawRate: 0,
-      nitro: 1, boost: 1, drift: 0, boosting: false, airborne: false, pitch: 0, roll: 0, accP: 0, lean: 0,
+      nitro: 1, boost: 1, drift: 0, driftMode: false, driftExit: 0, prevBrake: false, brakeLatch: false, stopT: 0, revOK: false, skid: 0, boosting: false, airborne: false, pitch: 0, roll: 0, accP: 0, lean: 0,
       bob: 0, bobV: 0, hint: i, prevLat: lat, onRoad: true, prevVf: 0,
     });
     this.n = nearest(this.x, this.z, i);
@@ -84,31 +84,58 @@ export class CarController {
     this.steerS += (inp.steer - this.steerS) * Math.min(1, dt * (8 - Math.min(3, Math.abs(vf) / 15)));
     this.boosting = false;
     this.wheelspin = 0;
+    this.skid = 0;
     if (!this.airborne) {
       this.boosting = inp.boost && this.boost > 0.02 && inp.throttle > 0;
       // cruise 150 km/h, top 165 with W held, boost 210
-      const want = (this.boosting ? BOOST_V : inp.push ? TOP_V : CRUISE_V) * surf.max;
+      const want = Math.min(inp.cap || Infinity, (this.boosting ? BOOST_V : inp.push ? TOP_V : CRUISE_V) * surf.max);
       if (inp.throttle > 0 && vf < want) {
         const a = (this.boosting ? 20 : 11) * inp.throttle * Math.max(0.18, 1 - (Math.max(0, vf) / want) ** 2);
         vf += a * dt;
       }
       if (vf > want) vf -= (vf - want) * (inp.throttle ? 0.6 : 0.25) * dt;
-      // Brake straight = firm stop; brake + steer = grip fades into a controllable slide
-      const braking = inp.brake > 0 && vf > 6;
-      const driftWant = braking ? Math.min(1, Math.abs(this.steerS) * 1.3) * Math.min(1, (vf - 6) / 14) : 0;
-      this.drift += (driftWant - this.drift) * Math.min(1, dt * (driftWant > this.drift ? 4.5 : 2.5));
-      if (inp.brake > 0) {
-        if (vf > 0.5) vf -= 20 * (1 - this.drift * 0.65) * dt * inp.brake;
-        else vf = Math.max(-11, vf - 10 * dt * inp.brake);
+      // S straight = firm stop. S with steer at speed = drift mode: brakes barely bite, grip
+      // drops and the tail swings out (high slip angle, guns raking sideways). The slide
+      // holds while you keep steering or are still sliding, then grips up again. S still
+      // held after a drift is ignored until pressed again, and S at a stop only reverses on
+      // a fresh press or after holding it ~0.9 s, so a slide never rolls into reverse.
+      const brakeEdge = inp.brake > 0 && !this.prevBrake;
+      this.prevBrake = inp.brake > 0;
+      if (!inp.brake) { this.brakeLatch = false; this.stopT = 0; this.revOK = false; }
+      if (brakeEdge && Math.abs(vf) < 1.5) this.revOK = true;
+      const slip = Math.atan2(vl, Math.max(1, Math.abs(vf)));
+      if (!this.driftMode && inp.brake > 0 && !this.brakeLatch && Math.abs(inp.steer) > 0.3 && vf > 12) { this.driftMode = true; this.driftExit = 0; }
+      if (this.driftMode) {
+        this.driftExit = Math.abs(inp.steer) < 0.15 && Math.abs(slip) < 0.14 ? this.driftExit + dt : 0;
+        if (this.driftExit > 0.22 || vf < 7) { this.driftMode = false; if (inp.brake) this.brakeLatch = true; }
       }
-      if (!inp.throttle && !inp.brake) vf -= vf * 0.3 * dt;
+      const brake = this.brakeLatch ? 0 : inp.brake;
+      const driftWant = this.driftMode ? Math.min(1, (vf - 5) / 12) : 0;
+      this.drift += (driftWant - this.drift) * Math.min(1, dt * (driftWant > this.drift ? 5 : 2.2));
+      if (brake > 0) {
+        if (this.driftMode) vf -= 1.5 * dt * brake;
+        else if (vf > 0.5) vf -= 20 * dt * brake;
+        else if (this.revOK || (this.stopT += dt) > 0.9) vf = Math.max(-11, vf - 10 * dt * brake);
+        else vf = Math.max(0, vf - 20 * dt);
+      }
+      if (!inp.throttle && !brake) vf -= vf * 0.3 * dt;
       vf -= vf * surf.drag * dt * 0.35;
-      this.braking = braking;
-      const grip = surf.grip + (1.5 - surf.grip) * this.drift;
-      vl *= Math.exp(-grip * dt);
+      this.braking = brake > 0 && vf > 6;
+      // lateral grip: low in a drift, but climbs hard past ~43 deg so it can't spin out
+      const over = Math.max(0, Math.abs(slip) - 0.75);
+      const grip = surf.grip + (1.1 - surf.grip) * this.drift + over * 25;
+      const lost = vl * (1 - Math.exp(-grip * dt));
+      vl -= lost;
+      vf += Math.abs(lost) * 0.82 * this.drift; // a slide bleeds speed, but not all of it
       this.wheelspin = inp.throttle > 0 ? Math.max(Math.abs(this.yawRate) > 0.9 ? 1 : 0, 1 - Math.abs(vf) / 7) : 0;
+      this.skid = Math.max(Math.min(1, (Math.abs(vl) - 2) / 4), this.braking && !this.driftMode ? 0.75 : 0, this.wheelspin > 0.5 && Math.abs(vf) < 12 ? 0.8 : 0);
       const sp = Math.abs(vf);
-      this.yawRate = -this.steerS * 2.3 * Math.min(1, sp / 4) / (1 + sp / 30) * (vf < -0.1 ? -1 : 1) * (1 + this.drift * 0.5);
+      const grip0 = -this.steerS * 2.3 * Math.min(1, sp / 4) / (1 + sp / 30) * (vf < -0.1 ? -1 : 1);
+      // in a drift, steer sets the slip angle: the nose swings up to ~37 deg off the travel
+      // direction and the low grip bends the path round after it
+      const hv = Math.atan2(this.vx, this.vz);
+      const off = Math.atan2(Math.sin(hv - this.steerS * 0.65 - this.yaw), Math.cos(hv - this.steerS * 0.65 - this.yaw));
+      this.yawRate = grip0 + (off * 5 - grip0) * this.drift;
     } else {
       this.yawRate *= Math.exp(-dt * 2);
     }

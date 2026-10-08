@@ -72,11 +72,13 @@ export class World {
     this.hint = I_START;
     this.mat = {
       terrain: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, flatShading: true }),
-      road: new THREE.MeshStandardMaterial({ map: paintRoad(), roughness: 0.93 }),
+      road: new THREE.MeshStandardMaterial({ map: paintRoad({ dashed: true }), roughness: 0.93 }),
       rail: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.45, metalness: 0.7, side: THREE.DoubleSide }),
       post: std(0x6b5b4a, { roughness: 1 }),
       pole: std(0x6a5440, { roughness: 1 }),
       railPost: new THREE.MeshStandardMaterial({ color: 0x8c9196, roughness: 0.6, metalness: 0.6 }),
+      delin: std(0xe8e4da, { roughness: 0.7 }),
+      reflector: new THREE.MeshStandardMaterial({ color: 0xffb21a, emissive: 0xff9a10, emissiveIntensity: 0.35, roughness: 0.3 }),
       veg: vcMat(),
       vegSmooth: vcMat({ flatShading: false }),
       grass: vcMat({ flatShading: false, side: THREE.DoubleSide }),
@@ -88,6 +90,7 @@ export class World {
       bush: bushGeo(), grass: grassGeo(), sag: [saguaroGeo(0, 20), saguaroGeo(1, 21), saguaroGeo(2, 22)],
       oco: ocotilloGeo(), pebble: rockGeo(0, 31, 0.25), rock: rockGeo(1, 41, 0.3), boulder: rockGeo(1, 47, 0.35),
       mesa: mesaGeo(5), post: new THREE.CylinderGeometry(0.055, 0.07, 1.3, 6), railPost: new THREE.BoxGeometry(0.1, 0.86, 0.16),
+      delin: new THREE.BoxGeometry(0.1, 1.1, 0.07), reflector: new THREE.BoxGeometry(0.11, 0.16, 0.08),
     };
     // Landmark prototypes, baked once and cloned per placement
     const bake = (o, opts) => { bakeGroup(o, opts); return o; };
@@ -307,6 +310,25 @@ export class World {
         flush();
       }
       if (posts.length) group.add(instanced(this.geo.railPost, this.mat.railPost, posts));
+    }
+
+    // ---- Delineator posts every 25 m on both shoulders: the main sense-of-speed ticks ----
+    {
+      const dp = [], rf = [];
+      for (let i = Math.ceil(i0 / 25) * 25; i < i1; i += 25) {
+        for (const side of [-1, 1]) {
+          if (railSide(i) === side) continue;
+          const lat = side * 8.1;
+          const p = pointAt(i, lat), y = ground(i, lat);
+          const ry = p.yaw + (hash(i, side + 11) - 0.5) * 0.15, rz = (hash(i, side + 13) - 0.5) * 0.08;
+          dp.push({ x: p.x, y: y + 0.5, z: p.z, ry, rz });
+          rf.push({ x: p.x, y: y + 0.88, z: p.z, ry, rz });
+        }
+      }
+      if (dp.length) {
+        group.add(instanced(this.geo.delin, this.mat.delin, dp));
+        group.add(instanced(this.geo.reflector, this.mat.reflector, rf, false));
+      }
     }
 
     // ---- Fences (posts every 4 m, three strands; deterministic per sample) ----

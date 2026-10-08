@@ -13,11 +13,13 @@ import { bakeGroup } from '../level/bake.js';
 import { CarController, setTerrain } from './car.js';
 import { Dust, addFlames } from '../level/fx.js';
 import { createHud } from './hud.js';
-import { Predator, areaOf } from './predator.js';
+import { Pursuer, areaOf } from './pursuer.js';
+import { Skids } from './skids.js';
+import { SpeedLines } from './speedlines.js';
 import { Tracers, Guns } from '../level/combat.js';
 
 // Endless highway. Debug/screenshot params:
-// ?at=<m from start>&lat=<m>&view=chase|high|side|front|aerial|overview&orbit=<deg>&auto=1&sim=<s>&ui=0&stats=1
+// ?at=<m from start>&lat=<m>&view=chase|high|side|front|aerial|overview|back&orbit=<deg>&auto=1&sim=<s>&ui=0&stats=1&tut=1
 
 const params = new URLSearchParams(location.search);
 const num = (k, d) => (params.has(k) ? Number(params.get(k)) : d);
@@ -90,11 +92,14 @@ const guns = new Guns(model, scene, { tracers, dust, sparks: embers, height: ter
 // Stand-in until enemies exist: every round that lands charges boost a little.
 const gunImpact = guns.impact.bind(guns);
 guns.impact = (p) => { gunImpact(p); car.addBoost(0.0045); };
-let runTime = 0, biomeShown = -1, best = 0, cruise = false;
-const predator = new Predator();
+let runTime = 0, biomeShown = -1, best = 0, cruise = false, lookBack = false;
+const pursuer = new Pursuer();
+const skids = new Skids(scene);
+const streaks = new SpeedLines(scene);
 try { best = Number(localStorage.getItem('endless.best') || 0); } catch { /* storage unavailable */ }
 const buildMs = Math.round(performance.now() - tBuild);
 window.__scene = scene;
+window.__game = { car, pursuer, skids };
 
 // ---- Input ----
 const coarse = matchMedia('(pointer: coarse)').matches;
@@ -107,22 +112,11 @@ addEventListener('keydown', (e) => {
   keys.add(e.code);
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
   if (e.code === 'KeyR') location.reload();
-  if (e.code === 'KeyE' && !e.repeat) { cruise = !cruise; tut.used.cruise = true; }
+  if (e.code === 'KeyE' && !e.repeat) cruise = !cruise;
   if (e.code === 'F3' || e.code === 'Backquote') hud.toggleDebug();
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
 addEventListener('blur', () => keys.clear());
-
-let orbitYaw = 0, orbitPitch = 0, dragging = false, lastDrag = 0;
-renderer.domElement.addEventListener('pointerdown', (e) => { if (e.pointerType === 'mouse') { dragging = true; renderer.domElement.setPointerCapture(e.pointerId); } });
-renderer.domElement.addEventListener('pointermove', (e) => {
-  if (!dragging) return;
-  orbitYaw -= e.movementX * 0.006;
-  orbitPitch = THREE.MathUtils.clamp(orbitPitch + e.movementY * 0.004, -0.2, 0.6);
-});
-const endDrag = () => { dragging = false; lastDrag = performance.now(); };
-renderer.domElement.addEventListener('pointerup', endDrag);
-renderer.domElement.addEventListener('pointercancel', endDrag);
 
 const auto = params.get('auto') === '1';
 function autopilot() {
@@ -141,20 +135,19 @@ function readInput() {
   const w = k('KeyW', 'ArrowUp'), sKey = k('KeyS', 'ArrowDown');
   const t = hud.touch;
   const touchCruise = t.active; // phones: always cruising
+  // tutorial: rolls along at a fixed lower speed until you've learned cruise; W lifts the cap
+  const tutDrive = !tut.done && !cruise && !touchCruise;
   const inp = {
-    // cruise drives the throttle; S held pauses it, releasing S resumes
-    throttle: w || ((cruise || touchCruise) && !sKey && !t.brake) ? 1 : 0,
+    // cruise drives the throttle; S held pauses it (except mid-slide), releasing S resumes
+    throttle: w || ((cruise || touchCruise || tutDrive) && ((!sKey && !t.brake) || car.driftMode)) ? 1 : 0,
+    cap: tutDrive && !w ? TUT_SPEED : 0,
     push: w,
     brake: sKey || t.brake ? 1 : 0,
     steer: (k('KeyD', 'ArrowRight') ? 1 : 0) - (k('KeyA', 'ArrowLeft') ? 1 : 0) || t.steer,
     boost: k('ShiftLeft', 'ShiftRight') || t.boost,
     fire: k('Space') || t.fire,
   };
-  if (w) tut.used.w = true;
-  if (inp.steer) tut.used.steer = true;
-  if (inp.fire) tut.used.fire = true;
-  if (inp.boost && car.boosting) tut.used.boost = true;
-  if (sKey && car.vf > 8) tut.used.brake = true;
+  lookBack = k('KeyC');
   return inp;
 }
 
@@ -189,23 +182,27 @@ function updateCamera(dt) {
   car.events.impact = car.events.land = 0;
   shake *= Math.exp(-dt * 7);
   const jx = (Math.random() - 0.5) * shake, jy = (Math.random() - 0.5) * shake;
-  if (!dragging && performance.now() - lastDrag > 700) {
-    orbitYaw *= Math.exp(-dt * 3);
-    orbitPitch *= Math.exp(-dt * 3);
-  }
   let target = car.yaw;
   if (car.vf > 5) target += THREE.MathUtils.clamp(Math.atan2(Math.sin(Math.atan2(car.vx, car.vz) - car.yaw), Math.cos(Math.atan2(car.vx, car.vz) - car.yaw)), -0.4, 0.4) * 0.6;
   camYaw = lerpAngle(camYaw, target, 1 - Math.exp(-dt * 6));
-  const yawC = camYaw + orbitYaw + THREE.MathUtils.degToRad(num('orbit', 0));
+  const yawC = camYaw + THREE.MathUtils.degToRad(num('orbit', 0));
   const [fx, fz] = f(yawC);
-  let fovT = 62 + Math.min(speed, 50) * 0.12 + (car.boosting ? 10 : 0);
-  if (view === 'chase' || view === 'high') {
-    const back = (view === 'high' ? 13 : 6.4) + Math.min(speed, 45) * 0.035;
-    const up = (view === 'high' ? 6.5 : 2.3) + orbitPitch * 4;
+  // FOV opens with speed (most of it above cruise) and kicks wider on boost
+  let fovT = 60 + Math.min(speed, 40) * 0.1 + Math.max(0, Math.min(speed, 60) - 38) * 0.45 + (car.boosting ? 9 : 0);
+  // fast = a constant fine buzz on top of impact shake
+  const buzz = Math.max(0, speed - 36) * 0.0016 + (car.boosting ? 0.02 : 0);
+  const bx = (Math.random() - 0.5) * buzz, by = (Math.random() - 0.5) * buzz;
+  if (view === 'chase' && lookBack) {
+    const px = car.x + fx * 6.2, pz = car.z + fz * 6.2;
+    camera.position.set(px + jx, Math.max(car.y + 2.1, terrainHeight(px, pz) + 0.8) + jy, pz);
+    camera.lookAt(car.x - fx * 6, car.y + 1.0, car.z - fz * 6);
+  } else if (view === 'chase' || view === 'high') {
+    const back = (view === 'high' ? 13 : 5.5) + Math.min(speed, 45) * 0.03;
+    const up = view === 'high' ? 6.5 : 2.0;
     const px = car.x - fx * back, pz = car.z - fz * back;
     const py = Math.max(car.y + up, terrainHeight(px, pz) + 0.8);
-    camera.position.set(px + jx, py + jy, pz);
-    camera.lookAt(car.x + fx * 3.2, car.y + 1.05, car.z + fz * 3.2);
+    camera.position.set(px + jx + bx, py + jy + by, pz);
+    camera.lookAt(car.x + fx * 3.2, car.y + 1.0, car.z + fz * 3.2);
   } else if (view === 'side') {
     camera.position.set(car.x - fz * 7, car.y + 1.4, car.z + fx * 7);
     camera.lookAt(car.x, car.y + 0.7, car.z);
@@ -226,6 +223,7 @@ function updateCamera(dt) {
   }
   fov += (fovT - fov) * (1 - Math.exp(-dt * 4));
   if (num('sim', 0) > 0 || view !== 'chase') fov = fovT;
+  grade.uniforms.blur.value += ((car.boosting ? 0.045 : Math.max(0, speed - 44) * 0.002) - grade.uniforms.blur.value) * Math.min(1, dt * 5);
   camera.fov = fov;
   camera.updateProjectionMatrix();
 }
@@ -247,47 +245,74 @@ function screenPointer(x, y, z, label) {
   return { x: (px * 0.5 + 0.5) * innerWidth, y: (0.5 - py * 0.5) * innerHeight, angle, label: `${label} ${dist} m` };
 }
 
-// ---- War machine race ----
-const STATUS = { chase: 'War machine behind you', guns: 'In gun range', artillery: 'Shells incoming', charge: 'Ramming distance', caught: 'It is on you' };
-function updatePredator(dt, dist) {
+// ---- Pursuer: the thin line at the top, no text ----
+function updatePursuer(dt, dist) {
   const a = areaOf(dist);
-  for (const ev of predator.update(dt, dist)) {
-    if (ev === 'enter') { hud.band('War machine approaching', 'Keep your speed up', 'bad', 2800); hud.flashArea(); shake = Math.max(shake, 0.25); }
-    else if (ev === 'escape') hud.band('Area cleared', 'The war machine falls back', 'good', 2200);
-    else if (ev === 'caught') hud.band('It is on you', 'Boost out of here', 'bad', 1800);
+  for (const ev of pursuer.update(dt, dist)) {
+    if (ev === 'enter') { hud.pulseTrack(); shake = Math.max(shake, 0.2); }
   }
-  const nextBiome = BIOMES[biomeIndexAt(a.start + a.len + 1)].name;
-  const gap = predator.gap(dist);
-  hud.area({
-    k: a.k, name: nextBiome, you: (dist - a.start) / a.len,
-    beast: predator.active ? (predator.pos - a.start) / a.len : null,
-    status: predator.active ? `${STATUS[predator.phase] ?? ''} · ${Math.max(0, Math.round(gap))} m` : a.k === 0 ? 'Warm-up stretch' : 'Clear road. For now.',
-    hot: predator.active && gap < 90, caught: predator.phase === 'caught',
+  hud.track({
+    you: (dist - a.start) / a.len,
+    them: pursuer.active ? (pursuer.pos - a.start) / a.len : null,
+    hot: pursuer.active && pursuer.gap(dist) < 90,
   });
 }
 
-// ---- First-run tutorial: one plate at a time, advanced by doing the thing ----
-const tut = { step: 0, t: 0, used: {}, done: false };
-try { tut.done = localStorage.getItem('endless.tutorial') === 'done' || params.has('at') || auto; } catch { /* ignore */ }
+// ---- First-run tutorial: centred cards, one action at a time, the HUD part lit up ----
+// The pursuer stays away until the last step, which brings it in on purpose.
+// TODO: an enemy from behind teaches S ("get behind them") and gives the guns a target.
+const TUT_SPEED = 22; // m/s, about 80 km/h until you learn W and cruise
+const tut = { step: 0, phase: 'wait', t: 0, done: false, acc: 0, left: false, right: false };
+try { tut.done = (localStorage.getItem('endless.tutorial') === 'done' || params.has('at') || auto) && params.get('tut') !== '1'; } catch { /* ignore */ }
+if (!tut.done) pursuer.enabled = false;
+const K = (k) => `<kbd>${k}</kbd>`;
 const STEPS = [
-  { html: '<kbd>W</kbd>Accelerate &nbsp; <kbd>A</kbd><kbd>D</kbd>Steer', done: () => tut.used.w && tut.used.steer && car.vf > 15 },
-  { html: '<kbd>E</kbd>Cruise control: hands off the gas', done: () => tut.used.cruise },
-  { html: '<kbd>Space</kbd>Fire the guns', done: () => tut.used.fire && tut.t > 1.2 },
-  { html: '<kbd>Shift</kbd>Boost. Hits and kills refill it', done: () => tut.used.boost && tut.t > 1.5 },
-  { html: '<kbd>S</kbd>Brake. Brake into a turn to slide', done: () => tut.used.brake },
-  { html: 'Reach the flag before the war machine catches you', done: () => tut.t > 5 },
+  { title: `Hold ${K('W')} to go faster`, sub: 'Let go and you ease off', spot: 'speed', touch: false,
+    done: () => (keys.has('KeyW') || keys.has('ArrowUp')) && car.vf > 33 },
+  { title: `${K('A')} ${K('D')} to steer`, sub: 'Swing across both lanes', touchTitle: 'Drag to steer',
+    done: (dt) => { if (car.steerS < -0.4) tut.left = true; if (car.steerS > 0.4) tut.right = true; return tut.left && tut.right && tut.t > 1; } },
+  { title: `${K('E')} for cruise control`, sub: 'Holds 150 hands-off. E again turns it off', spot: 'cruise', touch: false,
+    done: () => cruise },
+  { title: `${K('S')} + ${K('A')}/${K('D')} to slide`, sub: 'S on its own brakes', touchTitle: 'Hold BRAKE and steer to slide',
+    done: (dt) => (tut.acc += car.driftMode ? dt : 0) > 0.8 },
+  { title: `${K('Space')} to fire`, sub: 'Hits charge your boost', spot: 'boost', touchTitle: 'Hold FIRE',
+    done: (dt) => (tut.acc += keys.has('Space') || hud.touch.fire ? dt : 0) > 1.2 },
+  { title: 'The pursuer is closing in', sub: `Hold ${K('Shift')} to boost away`, touchSub: 'Hold BOOST to get away', spot: 'track', kind: 'warn',
+    enter: () => { pursuer.summon(Math.max(0, (car.n.i - I_START) * STEP), 150); hud.pulseTrack(); slowmo = 1.4; car.addBoost(1); },
+    done: (dt) => (tut.acc += car.boosting ? dt : 0) > 1 },
+  { title: 'Reach the end of the area', sub: 'It falls back, then comes again', spot: 'track',
+    done: () => tut.t > 3.5 },
 ];
+let slowmo = 0;
+const steps = () => STEPS.filter((st) => !(hud.touch.active && st.touch === false));
 function updateTutorial(dt) {
-  if (tut.done) { hud.tip(null, null); return; }
-  const st = STEPS[tut.step];
+  if (tut.done) return;
+  const list = steps();
+  const st = list[tut.step];
   tut.t += dt;
-  hud.tip(tut.step, hud.touch.active ? st.html.replace(/<kbd>[^<]*<\/kbd>/g, '') : st.html);
-  if (tut.t > 0.6 && st.done()) {
-    tut.step++;
-    tut.t = 0;
-    if (tut.step >= STEPS.length) {
-      tut.done = true;
-      try { localStorage.setItem('endless.tutorial', 'done'); } catch { /* ignore */ }
+  const touch = hud.touch.active;
+  const strip = (h) => (touch ? h.replace(/<kbd>[^<]*<\/kbd>\s*/g, '') : h);
+  if (tut.phase === 'wait') { // short gap between cards
+    hud.card(null);
+    if (tut.t > (tut.step === 0 ? 1.6 : 0.5)) { tut.phase = 'show'; tut.t = 0; tut.acc = 0; st.enter?.(); }
+    return;
+  }
+  const title = touch && st.touchTitle ? st.touchTitle : strip(st.title);
+  const sub = touch && st.touchSub ? st.touchSub : strip(st.sub);
+  if (tut.phase === 'show') {
+    hud.card(tut.step, { title, sub, spot: st.spot, kind: st.kind });
+    if (tut.t > 0.5 && st.done(dt)) { tut.phase = 'ok'; tut.t = 0; }
+  } else if (tut.phase === 'ok') {
+    hud.card(tut.step, { title, sub, spot: st.spot, kind: 'ok' });
+    if (tut.t > 0.7) {
+      tut.step++;
+      tut.phase = 'wait';
+      tut.t = 0;
+      if (tut.step >= list.length) {
+        tut.done = true;
+        hud.card(null);
+        try { localStorage.setItem('endless.tutorial', 'done'); } catch { /* ignore */ }
+      }
     }
   }
 }
@@ -300,7 +325,7 @@ function simulate(seconds) {
   let k = 0;
   for (let t = 0; t < seconds; t += H) {
     car.step(H, readInput());
-    predator.update(H, Math.max(0, (car.n.i - I_START) * STEP));
+    pursuer.update(H, Math.max(0, (car.n.i - I_START) * STEP));
     if (++k % 60 === 0) world.update(car.n.i, true);
   }
   world.update(car.n.i, true);
@@ -308,8 +333,11 @@ function simulate(seconds) {
 if (num('sim', 0) > 0) simulate(num('sim', 0));
 
 function frame(now) {
-  const dt = Math.min(0.05, (now - last) / 1000);
+  const rdt = Math.min(0.05, (now - last) / 1000);
   last = now;
+  // slow motion for dramatic tutorial beats: eases back to full speed
+  slowmo = Math.max(0, slowmo - rdt);
+  const dt = rdt * (slowmo > 0 ? 0.35 + 0.65 * Math.max(0, 1 - slowmo / 0.6) ** 2 : 1);
   acc += dt;
   const inp = readInput();
   while (acc >= H) {
@@ -318,6 +346,8 @@ function frame(now) {
     acc -= H;
   }
   car.sync(dt);
+  skids.update(car);
+  streaks.update(dt, car, car.boosting);
   if (flames.update(car.boosting, dt, Math.hypot(car.vx, car.vz), embers)) {
     for (const f of flames.pipes) {
       f.getWorldPosition(tmpV);
@@ -342,7 +372,7 @@ function frame(now) {
   const bi = biomeIndexAt(dist);
   if (bi !== biomeShown) { biomeShown = bi; hud.title(BIOMES[bi].name, dist < 10 ? 'Drive · Survive · Destroy' : `${(dist / 1000).toFixed(1)} km`); }
   hud.set({ speed: Math.abs(car.vf) * 3.6, boost: car.boost, boosting: car.boosting, cruise: cruise || hud.touch.active, dist, best });
-  updatePredator(dt, dist);
+  updatePursuer(dt, dist);
   updateTutorial(dt);
 
   renderer.info.reset();

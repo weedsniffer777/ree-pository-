@@ -1,11 +1,18 @@
-// Shared colour grade: saturation, contrast, cool-shadow/warm-highlight split tone, vignette.
+// Shared colour grade: saturation, contrast, cool-shadow/warm-highlight split tone, vignette,
+// plus an optional radial speed blur.
 export const GradeShader = {
-  uniforms: { tDiffuse: { value: null }, saturation: { value: 1.24 }, contrast: { value: 1.08 }, vignette: { value: 0.28 }, lift: { value: 0 }, toon: { value: 0 } },
+  uniforms: { tDiffuse: { value: null }, saturation: { value: 1.24 }, contrast: { value: 1.08 }, vignette: { value: 0.28 }, lift: { value: 0 }, toon: { value: 0 }, blur: { value: 0 } },
   vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
   fragmentShader: `
-    uniform sampler2D tDiffuse; uniform float saturation, contrast, vignette, lift, toon; varying vec2 vUv;
+    uniform sampler2D tDiffuse; uniform float saturation, contrast, vignette, lift, toon, blur; varying vec2 vUv;
     void main() {
       vec4 c = texture2D(tDiffuse, vUv);
+      if (blur > 0.0) { // radial speed blur toward the centre, edges only
+        vec2 dir = (vUv - vec2(0.5, 0.48)) * blur * smoothstep(0.12, 0.55, distance(vUv, vec2(0.5, 0.48)));
+        vec4 acc = c;
+        for (int k = 1; k < 7; k++) acc += texture2D(tDiffuse, vUv - dir * float(k) / 6.0);
+        c = acc / 7.0;
+      }
       float l = dot(c.rgb, vec3(0.299, 0.587, 0.114));
       // soft cel banding: pull luminance toward 4 smooth steps, keep hue
       float steps = 4.0;
