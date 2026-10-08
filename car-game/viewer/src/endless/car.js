@@ -111,7 +111,7 @@ export class CarController {
       }
       const brake = this.brakeLatch ? 0 : inp.brake;
       const driftWant = this.driftMode ? Math.min(1, (vf - 5) / 12) : 0;
-      this.drift += (driftWant - this.drift) * Math.min(1, dt * (driftWant > this.drift ? 5 : 2.2));
+      this.drift += (driftWant - this.drift) * Math.min(1, dt * (driftWant > this.drift ? 8 : 2.2));
       if (brake > 0) {
         if (this.driftMode) vf -= 1.5 * dt * brake;
         else if (vf > 0.5) vf -= 20 * dt * brake;
@@ -121,9 +121,9 @@ export class CarController {
       if (!inp.throttle && !brake) vf -= vf * 0.3 * dt;
       vf -= vf * surf.drag * dt * 0.35;
       this.braking = brake > 0 && vf > 6;
-      // lateral grip: low in a drift, but climbs hard past ~43 deg so it can't spin out
-      const over = Math.max(0, Math.abs(slip) - 0.75);
-      const grip = surf.grip + (1.1 - surf.grip) * this.drift + over * 25;
+      // lateral grip: low in a drift, but climbs hard past ~63 deg so it can't spin out
+      const over = Math.max(0, Math.abs(slip) - 1.1);
+      const grip = surf.grip + (1.3 - surf.grip) * this.drift + over * 25;
       const lost = vl * (1 - Math.exp(-grip * dt));
       vl -= lost;
       vf += Math.abs(lost) * 0.82 * this.drift; // a slide bleeds speed, but not all of it
@@ -131,11 +131,11 @@ export class CarController {
       this.skid = Math.max(Math.min(1, (Math.abs(vl) - 2) / 4), this.braking && !this.driftMode ? 0.75 : 0, this.wheelspin > 0.5 && Math.abs(vf) < 12 ? 0.8 : 0);
       const sp = Math.abs(vf);
       const grip0 = -this.steerS * 2.3 * Math.min(1, sp / 4) / (1 + sp / 30) * (vf < -0.1 ? -1 : 1);
-      // in a drift, steer sets the slip angle: the nose swings up to ~37 deg off the travel
+      // in a drift, steer sets the slip angle: the nose swings up to ~55 deg off the travel
       // direction and the low grip bends the path round after it
       const hv = Math.atan2(this.vx, this.vz);
-      const off = Math.atan2(Math.sin(hv - this.steerS * 0.65 - this.yaw), Math.cos(hv - this.steerS * 0.65 - this.yaw));
-      this.yawRate = grip0 + (off * 5 - grip0) * this.drift;
+      const off = Math.atan2(Math.sin(hv - this.steerS * 0.95 - this.yaw), Math.cos(hv - this.steerS * 0.95 - this.yaw));
+      this.yawRate = grip0 + (off * 6 - grip0) * this.drift;
     } else {
       this.yawRate *= Math.exp(-dt * 2);
     }

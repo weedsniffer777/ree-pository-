@@ -16,6 +16,7 @@ import { createHud } from './hud.js';
 import { Pursuer, areaOf } from './pursuer.js';
 import { Skids } from './skids.js';
 import { SpeedLines } from './speedlines.js';
+import { createDevKit } from './devkit.js';
 import { Tracers, Guns } from '../level/combat.js';
 
 // Endless highway. Debug/screenshot params:
@@ -92,7 +93,7 @@ const guns = new Guns(model, scene, { tracers, dust, sparks: embers, height: ter
 // Stand-in until enemies exist: every round that lands charges boost a little.
 const gunImpact = guns.impact.bind(guns);
 guns.impact = (p) => { gunImpact(p); car.addBoost(0.0045); };
-let runTime = 0, biomeShown = -1, best = 0, cruise = false, lookBack = false;
+let runTime = 0, biomeShown = -1, best = 0, cruise = false, freeCam = false;
 const pursuer = new Pursuer();
 const skids = new Skids(scene);
 const streaks = new SpeedLines(scene);
@@ -106,6 +107,9 @@ const coarse = matchMedia('(pointer: coarse)').matches;
 const hud = createHud({ touch: coarse });
 if (params.get('ui') === '0') hud.hide();
 if (params.get('stats') === '1') hud.toggleDebug();
+// the garage viewer: index.html in dev, garage.html next to the page in the artifact
+let paused = false;
+createDevKit({ viewerUrl: import.meta.env.DEV ? 'index.html' : 'garage.html', onStats: () => hud.toggleDebug(), onOpenChange: (on) => { paused = on; keys.clear(); } });
 
 const keys = new Set();
 addEventListener('keydown', (e) => {
@@ -117,6 +121,17 @@ addEventListener('keydown', (e) => {
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
 addEventListener('blur', () => keys.clear());
+
+// Free camera: hold C or the right mouse button and move the mouse; eases back on release.
+let orbitYaw = 0, orbitPitch = 0, rightDrag = false;
+renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
+renderer.domElement.addEventListener('pointerdown', (e) => { if (e.button === 2) { rightDrag = true; renderer.domElement.setPointerCapture(e.pointerId); } });
+addEventListener('pointerup', (e) => { if (e.button === 2) rightDrag = false; });
+addEventListener('pointermove', (e) => {
+  if (!freeCam) return;
+  orbitYaw -= e.movementX * 0.006;
+  orbitPitch = THREE.MathUtils.clamp(orbitPitch + e.movementY * 0.004, -0.25, 0.7);
+});
 
 const auto = params.get('auto') === '1';
 function autopilot() {
@@ -147,7 +162,7 @@ function readInput() {
     boost: k('ShiftLeft', 'ShiftRight') || t.boost,
     fire: k('Space') || t.fire,
   };
-  lookBack = k('KeyC');
+  freeCam = k('KeyC') || rightDrag;
   return inp;
 }
 
@@ -185,24 +200,25 @@ function updateCamera(dt) {
   let target = car.yaw;
   if (car.vf > 5) target += THREE.MathUtils.clamp(Math.atan2(Math.sin(Math.atan2(car.vx, car.vz) - car.yaw), Math.cos(Math.atan2(car.vx, car.vz) - car.yaw)), -0.4, 0.4) * 0.6;
   camYaw = lerpAngle(camYaw, target, 1 - Math.exp(-dt * 6));
-  const yawC = camYaw + THREE.MathUtils.degToRad(num('orbit', 0));
+  if (!freeCam) {
+    orbitYaw *= Math.exp(-dt * 3);
+    orbitPitch *= Math.exp(-dt * 3);
+  }
+  const yawC = camYaw + orbitYaw + THREE.MathUtils.degToRad(num('orbit', 0));
   const [fx, fz] = f(yawC);
   // FOV opens with speed (most of it above cruise) and kicks wider on boost
   let fovT = 60 + Math.min(speed, 40) * 0.1 + Math.max(0, Math.min(speed, 60) - 38) * 0.45 + (car.boosting ? 9 : 0);
   // fast = a constant fine buzz on top of impact shake
   const buzz = Math.max(0, speed - 36) * 0.0016 + (car.boosting ? 0.02 : 0);
   const bx = (Math.random() - 0.5) * buzz, by = (Math.random() - 0.5) * buzz;
-  if (view === 'chase' && lookBack) {
-    const px = car.x + fx * 6.2, pz = car.z + fz * 6.2;
-    camera.position.set(px + jx, Math.max(car.y + 2.1, terrainHeight(px, pz) + 0.8) + jy, pz);
-    camera.lookAt(car.x - fx * 6, car.y + 1.0, car.z - fz * 6);
-  } else if (view === 'chase' || view === 'high') {
+  if (view === 'chase' || view === 'high') {
     const back = (view === 'high' ? 13 : 5.5) + Math.min(speed, 45) * 0.03;
-    const up = view === 'high' ? 6.5 : 2.0;
+    const up = (view === 'high' ? 6.5 : 2.0) + orbitPitch * 4;
     const px = car.x - fx * back, pz = car.z - fz * back;
     const py = Math.max(car.y + up, terrainHeight(px, pz) + 0.8);
     camera.position.set(px + jx + bx, py + jy + by, pz);
-    camera.lookAt(car.x + fx * 3.2, car.y + 1.0, car.z + fz * 3.2);
+    const look = 3.2 * Math.cos(Math.min(Math.abs(orbitYaw), Math.PI / 2)); // orbiting: look at the car itself
+    camera.lookAt(car.x + fx * look, car.y + 1.0, car.z + fz * look);
   } else if (view === 'side') {
     camera.position.set(car.x - fz * 7, car.y + 1.4, car.z + fx * 7);
     camera.lookAt(car.x, car.y + 0.7, car.z);
@@ -273,7 +289,9 @@ const STEPS = [
     done: (dt) => { if (car.steerS < -0.4) tut.left = true; if (car.steerS > 0.4) tut.right = true; return tut.left && tut.right && tut.t > 1; } },
   { title: `${K('E')} for cruise control`, sub: 'Holds 150 hands-off. E again turns it off', spot: 'cruise', touch: false,
     done: () => cruise },
-  { title: `${K('S')} + ${K('A')}/${K('D')} to slide`, sub: 'S on its own brakes', touchTitle: 'Hold BRAKE and steer to slide',
+  { title: `Hold ${K('S')} to brake`, sub: 'Let go and cruise picks back up', touchTitle: 'Hold BRAKE to slow down', touchSub: 'Let go to speed back up',
+    done: (dt) => (tut.acc += car.braking && !car.driftMode ? dt : 0) > 0.7 },
+  { title: `Now ${K('S')} + ${K('A')}/${K('D')} to slide`, sub: 'Brake and steer together: the tail swings out', touchTitle: 'Hold BRAKE and steer to slide', touchSub: 'The tail swings out',
     done: (dt) => (tut.acc += car.driftMode ? dt : 0) > 0.8 },
   { title: `${K('Space')} to fire`, sub: 'Hits charge your boost', spot: 'boost', touchTitle: 'Hold FIRE',
     done: (dt) => (tut.acc += keys.has('Space') || hud.touch.fire ? dt : 0) > 1.2 },
@@ -333,7 +351,7 @@ function simulate(seconds) {
 if (num('sim', 0) > 0) simulate(num('sim', 0));
 
 function frame(now) {
-  const rdt = Math.min(0.05, (now - last) / 1000);
+  const rdt = paused ? 0 : Math.min(0.05, (now - last) / 1000);
   last = now;
   // slow motion for dramatic tutorial beats: eases back to full speed
   slowmo = Math.max(0, slowmo - rdt);
