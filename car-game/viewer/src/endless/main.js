@@ -263,7 +263,7 @@ function updatePursuer(dt, dist) {
 // TODO: an enemy from behind teaches S ("get behind them") and gives the guns a target.
 const TUT_SPEED = 22; // m/s, about 80 km/h until you learn W and cruise
 const tut = { step: 0, phase: 'wait', t: 0, done: false, acc: 0, left: false, right: false };
-try { tut.done = (localStorage.getItem('endless.tutorial') === 'done' || params.has('at') || auto) && params.get('tut') !== '1'; } catch { /* ignore */ }
+try { tut.done = (localStorage.getItem('endless.tutorial.v2') === 'done' || params.has('at') || auto) && params.get('tut') !== '1'; } catch { /* ignore */ }
 if (!tut.done) pursuer.enabled = false;
 const K = (k) => `<kbd>${k}</kbd>`;
 const STEPS = [
@@ -311,7 +311,7 @@ function updateTutorial(dt) {
       if (tut.step >= list.length) {
         tut.done = true;
         hud.card(null);
-        try { localStorage.setItem('endless.tutorial', 'done'); } catch { /* ignore */ }
+        try { localStorage.setItem('endless.tutorial.v2', 'done'); } catch { /* ignore */ }
       }
     }
   }
