@@ -112,52 +112,36 @@ export const TRACKS = {
     ],
     elev: [[1.2, 1, 1.2], [0.6, 3, 0.2]],
     width: [[0, 1.2], [0.1, 1.2], [0.18, 1], [0.3, 0.85], [0.38, 0.9], [0.45, 1.3], [0.58, 1.55], [0.66, 1.55], [0.74, 1], [0.85, 0.85], [0.93, 1.1]],
-    sky: ['#8a98a2', '#b4bcc0', '#d3cabb'], fog: ['#c4bbab', 90, 700],
+    sky: ['#8a98a2', '#b4bcc0', '#cfcac0'], fog: ['#c2bfb7', 90, 760],
     sun: [0xffe8cc, 3.1], hemi: [0xd8dfe3, 0xa89c8a, 1.8],
     grade: { saturation: 1.0, contrast: 1.1, lift: 0.06, toon: 0.35 },
     road: { centre: 'none', edge: 'solid', sand: false },
-    ground: { a: '#7d7a74', b: '#8f8b83', dark: '#5f5c57', pale: '#a09b92', rock: '#6f6a62', gravel: '#767269' },
-    hills: 6,
+    ground: { slabs: true, a: '#dcdcd9', b: '#ecebe8', dark: '#bebcb8', pale: '#f6f5f2', rock: '#d4d2cd', gravel: '#c8c6c1' },
+    hills: 6, bump: 0.25,
+    terminal: { quayX: 48, margin: 100, block: 110, ship: 210 },
     features: [
-      // quay cranes straddle the road where the backdrop is open fence (legs 19.5 m out)
-      { type: 'quaycrane', at: 0.14, side: 1, color: 0x8fa3b3 }, { type: 'quaycrane', at: 0.22, side: 1, color: 0xb8b2a4, load: true },
-      { type: 'quaycrane', at: 0.63, side: -1, color: 0xa14a32 }, { type: 'quaycrane', at: 0.9, side: 1, color: 0x8fa3b3, load: true },
-      { type: 'containerblock', at: 0.17, side: -1, off: 40, len: 3 }, { type: 'containerblock', at: 0.26, side: -1, off: 40, len: 2, high: 3 },
-      { type: 'containerblock', at: 0.2, side: 1, off: 70, len: 3 },
-      { type: 'tanks', at: 0.5, side: -1, off: 32 }, { type: 'tanks', at: 0.68, side: 1, off: 34, count: 2 },
-      { type: 'silos', at: 0.76, side: -1, off: 30 }, { type: 'silos', at: 0.04, side: 1, off: 34, count: 3 },
-      { type: 'containerblock', at: 0.6, side: 1, off: 40, len: 3 }, { type: 'containerblock', at: 0.92, side: -1, off: 40, len: 3 },
-      { type: 'sideroad', at: 0.12, side: -1 }, { type: 'sideroad', at: 0.27, side: 1 }, { type: 'sideroad', at: 0.58, side: -1 }, { type: 'sideroad', at: 0.88, side: -1 },
+      // ship-to-shore cranes straddle the road (legs 17 m out); the boom reaches toward `side`
+      // ship-to-shore cranes on the quay straight, straddling the road, booms out over the water
+      { type: 'quaycrane', at: 0.045, side: 1, color: 0x3d6e99 }, { type: 'quaycrane', at: 0.095, side: 1, color: 0xa83a28, load: true },
+      { type: 'quaycrane', at: 0.145, side: 1, color: 0xc8762a, upper: 0xcfc8b8 },
     ],
     decor: [
-      // 0-0.1 gate complex: panel wall, hazard cones and drums
-      { fence: 'concrete', a: 0, b: 0.1, off: 2.2 },
-      // 0.1-0.3 cranes and stacks behind chain-link
-      { fence: 'chainlink', a: 0.1, b: 0.3, off: 1.5 },
-      // 0.3-0.44 container canyon (sheet through tight corners)
-      { fence: 'containers', fallback: 'sheet', a: 0.3, b: 0.44, off: 4.2 },
-      // 0.44-0.56 pipe rack and panel wall
-      { fence: 'concrete', a: 0.44, b: 0.56, off: 2.2, side: -1 }, { fence: 'piperack', a: 0.44, b: 0.56, off: 5, side: -1 }, { fence: 'sheet', a: 0.44, b: 0.56, off: 2.4, side: 1 },
-      // 0.56-0.7 open ground behind tyres and hay
-      { fence: 'tires', a: 0.56, b: 0.7, off: 1.6 },
-      // 0.7-0.84 corrugated terminal fence and a pipe rack
-      { fence: 'sheet', a: 0.7, b: 0.84, off: 2.4 }, { fence: 'piperack', a: 0.7, b: 0.84, off: 6, side: 1 },
-      // 0.84-0.93 chain-link with the gate
-      { fence: 'chainlink', a: 0.84, b: 0.93, off: 1.5 },
-      // 0.93-1 sandbag and netting run-in to the finish
-      { fence: 'sandbags', a: 0.93, b: 1, off: 1.4 }, { fence: 'netting', a: 0.95, b: 1, off: 2.6 },
+      // perimeter: one dominant type per stretch, broken up by others and the odd gap
+      { fence: 'mix', a: 0, b: 0.3, off: 2.4, piece: [10, 34], gaps: 0.15, palette: [['sheet', 6], ['chainlink', 3, { off: 1.7 }], ['concrete', 1.5, { off: 2.2 }], ['blocks', 1, { off: 1.4 }], ['gap', 0.6]] },
+      { fence: 'mix', a: 0.3, b: 0.44, off: 4.2, piece: [13, 40], palette: [['containers', 6], ['sheet', 2, { off: 2.4 }], ['blocks', 1, { off: 1.4 }]] },
+      { fence: 'mix', a: 0.44, b: 0.7, off: 1.8, piece: [10, 30], gaps: 0.2, palette: [['chainlink', 6], ['sheet', 2, { off: 2.4 }], ['tires', 1, { off: 1.4 }], ['blocks', 1.5, { off: 1.4 }], ['gap', 0.8]] },
+      { fence: 'mix', a: 0.7, b: 1, off: 2.4, piece: [10, 34], gaps: 0.15, palette: [['sheet', 5], ['concrete', 2.5, { off: 2.2 }], ['chainlink', 2, { off: 1.7 }], ['sandbags', 0.7, { off: 1.3 }], ['gap', 0.5]] },
+      { fence: 'lamps', a: 0, b: 1, off: 0.75 },
+      { fence: 'piperack', a: 0.72, b: 0.8, side: 1, off: 7.5 },
       // markings: gores at width changes, crosswalks at junctions, numerals, stop lines, wear
       { mark: 'hatch', at: 0.37, len: 70, lat: [0.05, 0.4], sym: true }, { mark: 'hatch', at: 0.55, len: 70, lat: [0.05, 0.45], sym: true }, { mark: 'hatch', at: 0.72, len: 60, lat: [0.05, 0.4], sym: true },
       { mark: 'crosswalk', at: 0.12 }, { mark: 'crosswalk', at: 0.27 }, { mark: 'crosswalk', at: 0.58 }, { mark: 'stopline', at: 0.123, sym: true },
       { mark: 'number', at: 0.07, text: '20', lane: 0.5 }, { mark: 'number', at: 0.46, text: '15', lane: -0.5 }, { mark: 'number', at: 0.8, text: '30', lane: 0.5 },
-      { mark: 'arrow', a: 0.3, b: 0.4, every: 45 }, { mark: 'wear', a: 0, b: 1, count: 260 },
-      // clutter: cones at the gate, drums and pallets by the stacks, pipe piles and cable drums
-      { scatter: 'cone', a: 0.01, b: 0.09, off: [2.8, 3.4], every: 4 },
-      { scatter: 'barrel', mix: ['barrel', 'drum', 'pallet'], a: 0.1, b: 0.3, off: [4, 9], every: 22, cluster: [4, 2.5] },
-      { scatter: 'pipepile', a: 0.45, b: 0.56, side: 1, off: [8, 14], every: 26, yaw: 'road' },
-      { scatter: 'crate', mix: ['crate', 'pallet', 'block'], a: 0.56, b: 0.7, off: [6, 14], every: 18, cluster: [4, 2.5] },
-      { scatter: 'drum', a: 0.7, b: 0.84, off: [6, 11], every: 24, cluster: [2, 1.5] },
-      { scatter: 'block', a: 0.84, b: 0.93, off: [4, 7], every: 14, yaw: 'road' },
+      { mark: 'arrow', a: 0.3, b: 0.4, every: 45 }, { mark: 'wear', a: 0, b: 1, count: 220 },
+      // debris across the apron, clear of the fences, lots and streets
+      { scatter: 'puddle', area: true, count: 220, minLat: 19, maxLat: 220, scale: [0.6, 2.2] },
+      { scatter: 'chunk', mix: ['chunk', 'tire', 'scrap', 'pallet', 'chunk'], area: true, count: 240, minLat: 19, maxLat: 200, cluster: [2, 2.5] },
+      { scatter: 'barrel', mix: ['barrel', 'drum', 'ibc', 'skip'], area: true, count: 70, minLat: 20, maxLat: 160, cluster: [3, 3] },
       { group: 'bleacher', at: 0.97, side: 1, off: 16 }, { group: 'tent', at: 0.985, side: -1, off: 8 }, { group: 'tower', at: 0.02, side: -1, off: 8 },
     ],
   },

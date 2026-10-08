@@ -7,7 +7,8 @@ import { box, tube } from '../lib/geo.js';
 import { bakeGroup } from '../level/bake.js';
 import { S, LOOP, ROAD_HALF, ROAD_BEVEL, RAIL_LAT, FENCE, wAt, pointAt, nearest, gridNearest } from './route.js';
 import { railSide } from './world.js';
-import { hash, C, wrap, RL, EDGE, toWorld, tex, canvas, ribTexture, chainTexture, inst, UNIT, applyDecor } from './kit.js';
+import { hash, C, wrap, RL, EDGE, tex, canvas, chainTexture, inst, UNIT, applyDecor } from './kit.js';
+import { buildTerminal, slabMap } from './yard.js';
 
 // A closed-loop circuit built once at load. Shared: two-layer terrain heightfield (fine
 // near the road, coarse everywhere, the coarse one sunk under the fine so there are no
@@ -59,6 +60,9 @@ export class TrackWorld {
     this.hint = 0;
     this.hill = 0;
     this.faces = new Map();
+    this.occ = []; // footprints {x, z, r} that scatter keeps out of
+    this.reserved = []; // [i0, i1) sample ranges kept clear of fences and scatter
+    this.extraDecor = [];
     this.pal = Object.fromEntries(Object.entries(def.ground).map(([k, v]) => [k, C(v)]));
     let minx = 1e9, maxx = -1e9, minz = 1e9, maxz = -1e9;
     for (let i = 0; i < LOOP.n; i++) {
@@ -75,7 +79,7 @@ export class TrackWorld {
     this.buildStart();
     if (def.kind === 'highway') this.buildHighway();
     else this.buildYard();
-    applyDecor(this, def.decor);
+    applyDecor(this, [...(def.decor ?? []), ...this.extraDecor]);
     this.buildFeatures();
     this.disc = new THREE.Mesh(new THREE.CircleGeometry(4000, 48).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: this.pal.a, roughness: 1 }));
     this.disc.position.y = DISC_Y;
@@ -87,6 +91,17 @@ export class TrackWorld {
   follow(x, z) { this.disc.position.x = x; this.disc.position.z = z; }
   add(...objs) { for (const o of objs) if (o) this.group.add(o); }
 
+  occupy(x, z, r) { this.occ.push({ x, z, r }); }
+  blocked(x, z, pad = 0) { return this.occ.some((o) => Math.hypot(x - o.x, z - o.z) < o.r + pad); }
+  reserve(i0, i1) { this.reserved.push([wrap(i0), wrap(i0) + (i1 - i0)]); }
+  addInst(geo, mat, list, shadow = true) { this.add(inst(geo, mat, list, { shadow })); }
+  // distance from (x, z) to the road edge line's centre (Infinity beyond ~100 m)
+  roadNear(x, z) { return roadN(x, z, 3); }
+  roadDist(x, z) {
+    const n = roadN(x, z, 3);
+    return n ? Math.abs(n.lat) : Infinity;
+  }
+
   // Used by the camera and effects at arbitrary points, so look the road up from scratch.
   heightAt(x, z) { return this.terrainH(x, z, roadN(x, z, 3)); }
   heightAtN(x, z, n) { return this.terrainH(x, z, n); }
@@ -97,13 +112,14 @@ export class TrackWorld {
   terrainH(x, z, n) {
     const w = n ? S.w[wrap(n.i)] : 1;
     const d = n ? Math.max(0, Math.abs(n.lat) - ROAD_HALF * (w - 1)) : 999;
-    const gentle = fbm(nA, x / 34, z / 34, 3) * 0.8 + fbm(nB, x / 8, z / 8, 2) * 0.1;
+    const gentle = (fbm(nA, x / 34, z / 34, 3) * 0.8 + fbm(nB, x / 8, z / 8, 2) * 0.1) * (this.def.bump ?? 1);
     const hill = (fbm(nC, x / 260, z / 260, 5) * 0.55 + 0.5) * this.def.hills * smoothstep(30, 95, d);
     this.hill = hill;
     const roadY = n ? n.y : 0;
     const far = gentle + hill + roadY * (1 - smoothstep(20, 90, d));
     const t = smoothstep(ROAD_HALF + 1, ROAD_HALF + 18, d);
-    return (roadY - 0.1) * (1 - t) + far * t;
+    const h = (roadY - 0.1) * (1 - t) + far * t;
+    return this.def.terminal && x > this.def.terminal.quayX + 0.01 ? Math.min(h, -6) : h;
   }
 
   // Ground at (sample i, lateral offset) without a nearest-road search.
@@ -119,13 +135,32 @@ export class TrackWorld {
     out.lerp(p.pale, smoothstep(0.25, 0.6, fbm(nB, x / 12, z / 45, 2)) * 0.3);
     out.lerp(p.rock, smoothstep(6, 40, hill) * 0.85);
     out.lerp(p.gravel, (1 - smoothstep(8, 22, d)) * 0.55);
+    if (this.outside?.(x, z) && x < (this.def.terminal?.quayX ?? 1e9)) {
+      this.scrub ??= [C('#c2ab86'), C('#a89270'), C('#8f8a62')];
+      out.copy(this.scrub[0]).lerp(this.scrub[1], fbm(nA, x / 40, z / 40, 3) * 0.5 + 0.5).lerp(this.scrub[2], smoothstep(0.2, 0.5, fbm(nD, x / 18, z / 18, 2)) * 0.6);
+    }
     return out;
   }
 
   buildTerrain() {
-    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, flatShading: true });
+    const slab = this.def.ground.slabs;
+    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: slab ? 0.92 : 1, metalness: 0, flatShading: !slab, map: slab ? slabMap() : null });
     const tmp = new THREE.Color();
     const b = this.box;
+    // concrete slabs inside the terminal perimeter; outside it the uv freezes on one slab's
+    // interior (no joints) and the vertex colour turns it to dusty scrub
+    const T = this.def.terminal;
+    const yardRect = T ? [b.minx - T.margin, T.quayX, b.minz - T.margin, b.maxz + T.margin] : null;
+    this.outside = (x, z) => yardRect && (x < yardRect[0] || x > yardRect[1] || z < yardRect[2] || z > yardRect[3]);
+    const worldUV = (g) => {
+      if (!slab) return;
+      const p = g.attributes.position, uv = new Float32Array(p.count * 2);
+      for (let i = 0; i < p.count; i++) {
+        const out = this.outside(p.getX(i), p.getZ(i));
+        uv[i * 2] = out ? 0.125 : p.getX(i) / 24; uv[i * 2 + 1] = out ? 0.125 : p.getZ(i) / 24;
+      }
+      g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    };
     {
       const ix0 = Math.floor((b.minx - NEAR_R) / NEAR), ix1 = Math.ceil((b.maxx + NEAR_R) / NEAR);
       const iz0 = Math.floor((b.minz - NEAR_R) / NEAR), iz1 = Math.ceil((b.maxz + NEAR_R) / NEAR);
@@ -154,6 +189,7 @@ export class TrackWorld {
       g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
       g.setIndex(idx);
       g.computeVertexNormals();
+      worldUV(g);
       const m = new THREE.Mesh(g, mat);
       m.receiveShadow = true;
       this.add(m);
@@ -185,6 +221,7 @@ export class TrackWorld {
       g.setAttribute('color', new THREE.BufferAttribute(col, 3));
       g.setIndex(idx);
       g.computeVertexNormals();
+      worldUV(g);
       const m = new THREE.Mesh(g, mat);
       m.receiveShadow = true;
       this.add(m);
@@ -490,7 +527,6 @@ export class TrackWorld {
     const tower = need('tower') ? bake(waterTower()) : null;
     const shedP = need('windpump') ? bake(shed()) : null;
     const gate = need('sideroad') ? bake(this.gateProto()) : null;
-    const quay = {}, rtg = need('rtg') ? bake(this.rtgProto(0x8fa3b3)) : null;
     let bb = 0;
     for (const f of def.features ?? []) {
       const i = Math.floor(f.at * N), s = f.side ?? 1;
@@ -508,20 +544,7 @@ export class TrackWorld {
         this.updaters.push((dt) => { rotor.rotation.z -= dt * 2.2; });
       } else if (f.type === 'bridge') this.buildBridge(i);
       else if (f.type === 'sideroad') this.buildSideRoad(i, s, gate, yard);
-      else if (f.type === 'quaycrane') {
-        const key = `${f.color}${f.load}`;
-        quay[key] ??= bake(this.quayCraneProto(f.color ?? 0x8fa3b3, !!f.load));
-        this.place(quay[key], i, 0, s > 0 ? 0 : Math.PI); // the boom reaches toward `side`
-      } else if (f.type === 'containerblock') this.containerBlock(i, s, f, rtg);
-      else if (f.type === 'tanks') this.tankFarm(i, s, f);
-      else if (f.type === 'silos') this.silos(i, s, f);
-      else if (f.type === 'mast') this.highMast(i, s);
     }
-    if (yard) {
-      // high-mast lighting along the whole lap, alternating sides
-      for (let i = 30; i < N; i += 140) this.highMast(i, (i / 140) % 2 < 1 ? 1 : -1);
-    }
-    this.flushMasts();
   }
 
   // Cross road on a viaduct passing 7 m over the circuit, with ramps down to the desert.
@@ -584,13 +607,18 @@ export class TrackWorld {
   }
 
   // A road leaving the circuit and ending at a closed gate in the fence.
-  buildSideRoad(i0, side, gate, yard) {
+  sideRoadPath(i0, side, yard) {
     i0 = wrap(i0);
     const startLat = yard ? RL(i0) + 0.8 : EDGE(i0) - 0.4, ang = 0.55 + (hash(i0, 8) - 0.5) * 0.3, len = yard ? 130 : 190;
     const P = pointAt(i0, side * startLat), tx = S.tx[i0], tz = S.tz[i0];
     const ox = side * -tz, oz = side * tx;
     let dx = ox * Math.cos(ang) + tx * Math.sin(ang), dz = oz * Math.cos(ang) + tz * Math.sin(ang);
     const l = Math.hypot(dx, dz); dx /= l; dz /= l;
+    return { i0, startLat, ang, len, P, dx, dz };
+  }
+
+  buildSideRoad(i0w, side, gate, yard) {
+    const { i0, startLat, ang, len, P, dx, dz } = this.sideRoadPath(i0w, side, yard);
     const px = -dz, pz = dx;
     const offs = [-5.2, -4, 0, 4, 5.2];
     const pos = [], uv = [], col = [], idx = [];
@@ -652,156 +680,6 @@ export class TrackWorld {
     return g;
   }
 
-  // ---- shipping terminal set pieces ----
-
-  // Ship-to-shore quay crane straddling the road: four lattice legs, portal beams, a machinery
-  // house, an A-frame with stays and a long raised boom (reaching toward +X) carrying a trolley
-  // and spreader. Local frame: X across the road, Z along it.
-  quayCraneProto(color, load) {
-    const g = new THREE.Group();
-    const paint = std(color, { roughness: 0.6, metalness: 0.35 }), dark = std(0x2f3235, { roughness: 0.65, metalness: 0.4 }), pale = std(0xcfcbc0, { roughness: 0.7 });
-    const half = 19.5, zL = 8, H = 30;
-    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-      const x = sx * half, z = sz * zL;
-      for (const [dx, dz] of [[-1.3, -1.3], [1.3, -1.3], [-1.3, 1.3], [1.3, 1.3]]) g.add(tube([x + dx, 0, z + dz], [x + dx * 0.8, H, z + dz * 0.8], 0.22, paint, 5));
-      for (let y = 0; y < H - 1; y += 5) {
-        for (const d of [-1.2, 1.2]) {
-          g.add(tube([x - 1.2, y, z + d], [x + 1.2, y + 5, z + d], 0.09, paint, 4));
-          g.add(tube([x + d, y, z - 1.2], [x + d, y + 5, z + 1.2], 0.09, paint, 4));
-        }
-      }
-      g.add(box(2.8, 1.2, 3.6, dark, { pos: [x, 0.6, z] })); // bogie
-    }
-    for (const sx of [-1, 1]) g.add(box(2.2, 1.4, 2 * zL + 2, paint, { pos: [sx * half, 2.2, 0] })); // sill beams
-    for (const sz of [-1, 1]) g.add(box(2 * half + 3, 2.4, 2.2, paint, { pos: [0, H - 1.2, sz * zL] })); // portal beams
-    g.add(box(2 * half + 3, 0.4, 2 * zL + 3, dark, { pos: [0, H + 0.2, 0] })); // deck
-    g.add(box(10, 4.4, 11, pale, { pos: [-7, H + 2.6, 0] })); // machinery house
-    g.add(box(5, 3, 3.2, dark, { pos: [-8.5, H + 0.5, zL + 2.5] }));
-    const apex = [-3, H + 17, 0];
-    for (const sz of [-1, 1]) {
-      g.add(tube([-11, H, sz * zL * 0.7], [apex[0], apex[1], sz * 1.6], 0.3, paint, 5));
-      g.add(tube([6, H, sz * zL * 0.7], [apex[0], apex[1], sz * 1.6], 0.3, paint, 5));
-    }
-    // boom: two lattice trusses from the hinge at the waterside leg out and up
-    const hx = half, hy = H + 1, L = 54, rise = 0.3;
-    const tx = hx + L * Math.cos(rise), ty = hy + L * Math.sin(rise);
-    const ux = -Math.sin(rise) * 3, uy = Math.cos(rise) * 3;
-    const lerp = (t) => [hx + (tx - hx) * t, hy + (ty - hy) * t];
-    for (const sz of [-1.6, 1.6]) {
-      g.add(tube([hx, hy, sz], [tx, ty, sz], 0.2, paint, 5), tube([hx + ux, hy + uy, sz], [tx + ux * 0.4, ty + uy * 0.4, sz], 0.2, paint, 5));
-      for (let k = 0; k < 14; k++) {
-        const [ax, ay] = lerp(k / 14), [bx, by] = lerp((k + 1) / 14), f = 1 - (k / 14) * 0.6, f2 = 1 - ((k + 1) / 14) * 0.6;
-        g.add(tube([ax, ay, sz], [bx + ux * f2, by + uy * f2, sz], 0.08, paint, 4));
-        g.add(tube([ax, ay, sz], [ax + ux * f, ay + uy * f, sz], 0.08, paint, 4));
-      }
-      g.add(tube([apex[0], apex[1], sz], [tx + ux * 0.4, ty + uy * 0.4, sz], 0.12, dark, 4)); // forestay
-      g.add(tube([apex[0], apex[1], sz], [-half, H, sz * 3], 0.12, dark, 4)); // backstay
-    }
-    for (let k = 1; k < 14; k += 3) { const [ax, ay] = lerp(k / 14); g.add(tube([ax, ay, -1.6], [ax, ay, 1.6], 0.07, paint, 4)); }
-    // trolley, hoist ropes and spreader (optionally with a container on it)
-    const [px, py] = lerp(0.62);
-    g.add(box(3.4, 1.4, 3.6, dark, { pos: [px, py - 0.7, 0] }), box(2.2, 2.4, 2.4, pale, { pos: [px + 3.2, py - 1.3, 0] }));
-    const sy = Math.max(H - 4, 12);
-    for (const dz of [-2.4, 2.4]) g.add(tube([px, py - 1.4, dz * 0.4], [px, sy + 0.6, dz], 0.04, dark, 4));
-    g.add(box(2.4, 0.5, 6.2, dark, { pos: [px, sy, 0] }));
-    if (load) {
-      const cm = new THREE.MeshStandardMaterial({ map: ribTexture({ panels: 1, seed: 8, rust: 0.6 }), color: 0x55645a, roughness: 0.7, metalness: 0.3 });
-      g.add(box(2.4, 2.6, 12.2, cm, { pos: [px, sy - 1.55, 0] }));
-    }
-    return g;
-  }
-
-  // Rubber-tyred gantry crane: four box legs on bogies, top beams, trolley, spreader.
-  rtgProto(color) {
-    const g = new THREE.Group();
-    const paint = std(color, { roughness: 0.6, metalness: 0.35 }), dark = std(0x2f3235, { roughness: 0.65, metalness: 0.4 }), pale = std(0xcfcbc0, { roughness: 0.7 });
-    const half = 12.4, zL = 5.8, H = 17;
-    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-      g.add(box(1.3, H, 1.3, paint, { pos: [sx * half, H / 2 + 0.9, sz * zL] }));
-      g.add(box(2, 1.6, 3.4, dark, { pos: [sx * half, 0.8, sz * zL] }));
-      g.add(tube([sx * half, H * 0.4, sz * zL], [sx * half, H, sz * (zL - 3)], 0.1, paint, 4));
-    }
-    for (const sz of [-1, 1]) g.add(box(2 * half + 1.8, 1.7, 1.5, paint, { pos: [0, H + 1.2, sz * zL] }));
-    for (const sx of [-1, 1]) g.add(box(1.4, 1.4, 2 * zL + 1.5, paint, { pos: [sx * half, H + 0.9, 0] }));
-    g.add(box(3.4, 1.3, 3.8, dark, { pos: [2, H, 0] }), box(2.2, 2.2, 2.4, pale, { pos: [-half - 2, H - 3, zL] }));
-    g.add(box(2.4, 0.5, 6.2, dark, { pos: [2, H - 5, 0] }));
-    for (const dz of [-2.4, 2.4]) g.add(tube([2, H - 0.6, dz * 0.4], [2, H - 4.7, dz], 0.04, dark, 4));
-    return g;
-  }
-
-  // A block of container stacks (1 to 4 high) in rows with a lane between, and an RTG over it.
-  containerBlock(i, side, f, rtg) {
-    const lat = side * (RL(i) + (f.off ?? 34)), p = pointAt(i, lat), r = rng(i * 7 + 3);
-    const y0 = this.terrainH(p.x, p.z, roadN(p.x, p.z, 2)), yaw = p.yaw;
-    const tints = [0x7a4a3c, 0x44586c, 0x55645a, 0x9a7f3c, 0xa8a193, 0x6c3d36, 0x3f5a52, 0x8a8478].map(C);
-    const list = [];
-    const cols = [-10.4, -7.8, -5.2, -2.6, 0, 2.6, 5.2, 7.8, 10.4];
-    const lens = f.len ?? 3;
-    for (let u = 0; u < lens; u++) for (const cx of cols) {
-      const h = 1 + Math.floor(r() * (f.high ?? 4));
-      const [x, z] = toWorld(p.x, p.z, yaw, cx, (u - (lens - 1) / 2) * 12.6);
-      for (let k = 0; k < h; k++) list.push({ x, y: y0 + 1.3 + k * 2.6, z, ry: yaw + (r() - 0.5) * 0.01, c: tints[Math.floor(r() * tints.length)] });
-    }
-    this.contMat ??= new THREE.MeshStandardMaterial({ map: ribTexture({ panels: 1, seed: 3, rust: 0.8 }), roughness: 0.7, metalness: 0.3 });
-    this.add(inst(new THREE.BoxGeometry(2.4, 2.6, 12.2), this.contMat, list));
-    if (f.rtg !== false && rtg) {
-      const o = rtg.clone();
-      o.position.set(p.x, y0 - 0.05, p.z);
-      o.rotation.y = yaw;
-      this.add(o);
-    }
-  }
-
-  tankFarm(i, side, f) {
-    const lat = side * (RL(i) + (f.off ?? 30)), p = pointAt(i, lat), r = rng(i * 5 + 1), yaw = p.yaw;
-    const bodies = [], caps = [], rails = [], pipes = [];
-    const cols = [C(0xd5d1c6), C(0xb9bec0), C(0xc9c2b2)];
-    for (let k = 0; k < (f.count ?? 3); k++) {
-      const [x, z] = toWorld(p.x, p.z, yaw, (r() - 0.5) * 8, (k - ((f.count ?? 3) - 1) / 2) * 24);
-      const rad = 7 + r() * 3, h = 11 + r() * 4, y0 = this.terrainH(x, z, roadN(x, z, 2)), c = cols[k % 3];
-      bodies.push({ x, y: y0 + h / 2, z, sx: rad, sy: h, sz: rad, c });
-      caps.push({ x, y: y0 + h + 0.35, z, sx: rad * 1.02, sy: 0.7, sz: rad * 1.02, c: C(0x6f7479) });
-      caps.push({ x, y: y0 + 0.6, z, sx: rad * 1.04, sy: 1.2, sz: rad * 1.04, c: C(0x8f8b82) }); // plinth
-      const [lx, lz] = toWorld(x, z, yaw, rad + 0.1, 0);
-      rails.push({ x: lx, y: y0 + h / 2, z: lz, ry: yaw, sx: 0.5, sy: h, sz: 0.2, c: C(0x4a4c4e) }); // ladder cage
-      pipes.push({ x: x, y: y0 + 0.5, z: z + 0, ry: yaw, sx: 0.7, sy: 0.7, sz: 24, c: C(0x7d8286) });
-    }
-    const cyl = new THREE.CylinderGeometry(1, 1, 1, 28);
-    const mat = new THREE.MeshStandardMaterial({ roughness: 0.75, metalness: 0.3 });
-    this.add(inst(cyl, mat, bodies), inst(cyl, mat, caps), inst(UNIT, mat, rails), inst(UNIT, mat, pipes));
-  }
-
-  silos(i, side, f) {
-    const lat = side * (RL(i) + (f.off ?? 30)), p = pointAt(i, lat), yaw = p.yaw;
-    const bodies = [], tops = [], gallery = [];
-    for (let k = 0; k < (f.count ?? 4); k++) {
-      const [x, z] = toWorld(p.x, p.z, yaw, 0, (k - ((f.count ?? 4) - 1) / 2) * 7.4), y0 = this.terrainH(x, z, roadN(x, z, 2));
-      bodies.push({ x, y: y0 + 12, z, sx: 3.5, sy: 24, sz: 3.5, c: C(0xbdb8aa) });
-      tops.push({ x, y: y0 + 25, z, sx: 3.6, sy: 2, sz: 3.6, c: C(0x7a7d80) });
-    }
-    const [gx, gz] = toWorld(p.x, p.z, yaw, -4.5, 0), y0 = this.terrainH(gx, gz, roadN(gx, gz, 2));
-    gallery.push({ x: gx, y: y0 + 26.5, z: gz, ry: yaw, sx: 2, sy: 1.8, sz: ((f.count ?? 4) + 1) * 7.4, c: C(0x6f7479) });
-    const stair = toWorld(p.x, p.z, yaw, -4.5, -((f.count ?? 4) + 1) * 3.7);
-    gallery.push({ x: stair[0], y: y0 + 13, z: stair[1], ry: yaw, sx: 2, sy: 26, sz: 2, c: C(0x6f7479) });
-    const mat = new THREE.MeshStandardMaterial({ roughness: 0.8, metalness: 0.25 });
-    this.add(inst(new THREE.CylinderGeometry(1, 1, 1, 22), mat, bodies), inst(new THREE.ConeGeometry(1, 1, 22), mat, tops.map((t) => ({ ...t, y: t.y + 1 }))), inst(UNIT, mat, gallery));
-  }
-
-  highMast(i, side) {
-    this.masts ??= { poles: [], rings: [] };
-    const lat = side * (RL(i) + 6), p = pointAt(i, lat), y = this.gl(i, lat);
-    this.masts.poles.push({ x: p.x, y: y + 14, z: p.z });
-    this.masts.rings.push({ x: p.x, y: y + 28.6, z: p.z, ry: p.yaw });
-  }
-
-  flushMasts() {
-    if (!this.masts) return;
-    const { poles, rings } = this.masts;
-    this.add(inst(new THREE.CylinderGeometry(0.16, 0.34, 28, 8), std(0x4a4c4e, { roughness: 0.6, metalness: 0.5 }), poles));
-    this.add(inst(new THREE.BoxGeometry(5, 0.7, 5), new THREE.MeshBasicMaterial({ color: 0xfff0c8 }), rings, { shadow: false }));
-    this.add(inst(new THREE.BoxGeometry(5.6, 0.4, 5.6), std(0x3a3c3e, { roughness: 0.6 }), rings.map((t) => ({ ...t, y: t.y + 0.6 })), { shadow: false }));
-  }
-
   // ---- yard: jersey walls everywhere, plus ground clutter; backdrops come from decor ----
   buildYard() {
     const N = LOOP.n;
@@ -822,15 +700,6 @@ export class TrackWorld {
       wall.castShadow = wall.receiveShadow = true;
       this.add(wall);
     }
-    // barrels and barrier blocks in front of the backdrop on the outside of corners
-    const barrels = [], blocks = [];
-    for (let i = 0; i < N; i += 7) {
-      if (Math.abs(S.k[i]) < 0.012 || hash(i, 91) < 0.35) continue;
-      const side = S.k[i] > 0 ? -1 : 1, p = pointAt(i, side * (RL(i) + 1.3)), y = S.y[i] - 0.1;
-      if (hash(i, 92) < 0.5) barrels.push({ x: p.x, y: y + 0.45, z: p.z, ry: hash(i, 93) * 6, s: 0.9 + hash(i, 94) * 0.2 });
-      else blocks.push({ x: p.x, y: y + 0.4, z: p.z, ry: p.yaw + (hash(i, 95) - 0.5) * 0.3 });
-    }
-    this.add(inst(new THREE.CylinderGeometry(0.3, 0.3, 0.9, 10), std(0x6b4a3a, { roughness: 0.8, metalness: 0.3 }), barrels));
-    this.add(inst(new THREE.BoxGeometry(0.7, 0.8, 1.6), std(0x8f8b82, { roughness: 0.95 }), blocks));
+    this.extraDecor.push(...buildTerminal(this));
   }
 }
