@@ -130,7 +130,9 @@ export class CarController {
       this.wheelspin = inp.throttle > 0 ? Math.max(Math.abs(this.yawRate) > 0.9 ? 1 : 0, 1 - Math.abs(vf) / 7) : 0;
       this.skid = Math.max(Math.min(1, (Math.abs(vl) - 2) / 4), braking && this.drift < 0.3 ? 0.75 : 0, this.wheelspin > 0.5 && Math.abs(vf) < 12 ? 0.8 : 0);
       const sp = Math.abs(vf);
-      this.yawRate = -this.steerS * 2.3 * Math.min(1, sp / 4) / (1 + sp / 30) * (vf < -0.1 ? -1 : 1) * (1 + this.drift * 0.6);
+      // turn rate falls off with speed (a squared term so top speed and boost are clearly
+      // heavier: ~1.8 rad/s at 36 km/h, ~0.6 at 165, ~0.5 boosting); drifting adds rotation back
+      this.yawRate = -this.steerS * 2.4 * Math.min(1, sp / 4) / (1 + sp / 30 + (sp / 40) ** 2) * (vf < -0.1 ? -1 : 1) * (1 + this.drift * 0.6);
     } else {
       this.yawRate *= Math.exp(-dt * 2);
     }
