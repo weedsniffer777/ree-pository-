@@ -450,6 +450,30 @@ export function highMast() {
   return g;
 }
 
+// Desert homestead at the end of a side road: a corrugated shed with a lean-to, a water
+// tank on a timber stand, a carport, drums, tyres and a scrap of fence.
+export function homestead(seed = 1) {
+  const m = mats(), g = new THREE.Group(), r = rng(seed);
+  const shed = warehouse({ W: 7, L: 10, E: 3.2, pitch: 0.3, seed: 900 + seed, base: [150 + r() * 20, 120, 96], roof: [126, 110, 94], rust: 1.2, doors: 1, leanTo: r() < 0.6 });
+  g.add(shed);
+  const wood = std(0x6d5a45, { roughness: 1 }), tankM = new THREE.MeshStandardMaterial({ map: corrugated(940 + seed, [150, 152, 150], 1.0), roughness: 0.7, metalness: 0.4 });
+  const tx = -9, tz = 8;
+  for (const [dx, dz] of [[-1.3, -1.3], [1.3, -1.3], [-1.3, 1.3], [1.3, 1.3]]) bar(g, [tx + dx, 0, tz + dz], [tx + dx * 0.8, 5, tz + dz * 0.8], 0.22, 0.22, wood);
+  bar(g, [tx - 1.3, 0.4, tz - 1.3], [tx + 1.0, 4.6, tz + 1.0], 0.1, 0.1, wood);
+  bx(g, 3.0, 0.2, 3.0, wood, tx, 5.1, tz);
+  const tank = new THREE.Mesh(scaleUV(new THREE.CylinderGeometry(1.6, 1.6, 2.6, 18), 2.5, 0.65), tankM);
+  tank.position.set(tx, 6.5, tz); g.add(tank);
+  cy(g, 0.2, 1.65, 0.5, 18, m.steel, tx, 8.05, tz);
+  for (const [x, z] of [[8, -5], [8, 1], [13, -5], [13, 1]]) cy(g, 0.07, 0.07, 2.6, 6, m.steel, x, 1.3, z); // carport
+  bx(g, 6.4, 0.08, 7.4, tankM, 10.5, 2.65, -2, 0);
+  for (let k = 0; k < 5; k++) cy(g, 0.3, 0.3, 0.9, 10, std([0x6b4a3a, 0x4f5a4a, 0x7a5232][k % 3], { roughness: 0.8 }), -5 + (k % 3) * 0.7, 0.45, -7 + Math.floor(k / 3) * 0.7);
+  for (let k = 0; k < 4; k++) { const t = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.14, 6, 10), m.rubber); t.rotation.x = Math.PI / 2; t.position.set(4 + r() * 2, 0.14 + (k % 2) * 0.28, -8 + r()); g.add(t); }
+  for (let k = 0; k < 6; k++) bar(g, [-14 + k * 2.6, 0, -12], [-14 + k * 2.6, 1.3, -12], 0.12, 0.12, wood);
+  bar(g, [-14, 0.9, -12], [-1, 0.9, -12], 0.08, 0.12, wood);
+  bar(g, [-14, 0.5, -12], [-1, 0.5, -12], 0.08, 0.12, wood);
+  return g;
+}
+
 // ---------------------------------------------------------------- big buildings
 //
 // Shared material sets so dozens of buildings merge into a handful of draw calls.

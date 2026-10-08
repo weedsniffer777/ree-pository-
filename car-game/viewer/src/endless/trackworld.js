@@ -8,7 +8,7 @@ import { bakeGroup } from '../level/bake.js';
 import { S, LOOP, ROAD_HALF, ROAD_BEVEL, RAIL_LAT, FENCE, wAt, pointAt, nearest, gridNearest } from './route.js';
 import { railSide } from './world.js';
 import { hash, C, wrap, RL, EDGE, tex, canvas, chainTexture, inst, UNIT, applyDecor } from './kit.js';
-import { buildTerminal, slabMap } from './yard.js';
+import { buildTerminal, slabMap, homestead } from './yard.js';
 
 // A closed-loop circuit built once at load. Shared: two-layer terrain heightfield (fine
 // near the road, coarse everywhere, the coarse one sunk under the fine so there are no
@@ -79,6 +79,20 @@ export class TrackWorld {
       const i = wrap(Math.floor(f.at * LOOP.n)), P = pointAt(i, 0);
       return { i, x: P.x, z: P.z, tx: S.tx[i], tz: S.tz[i], cx: -S.tz[i], cz: S.tx[i], y0: S.y[i], deckH: S.y[i] + 8.2 };
     });
+    // graded pads under landmarks so they sit level instead of perching on dune slopes
+    this.pads = [];
+    if (def.kind === 'highway') {
+      const pads = [], N = LOOP.n;
+      for (const f of def.features ?? []) {
+        const i = Math.floor(f.at * N), s = f.side ?? 1, at = (ii, lat, r) => { const p = pointAt(ii, lat); pads.push({ x: p.x, z: p.z, r }); };
+        if (f.type === 'billboard') at(i, s * (30 + hash(i, 1) * 6), 7);
+        else if (f.type === 'tower') at(i, s * (34 + hash(i, 2) * 6), 8);
+        else if (f.type === 'windpump') { at(i, s * 42, 7); at(i + 14, s * 52, 9); }
+        else if (f.type === 'sideroad') { const h = this.homesteadAt(i, s); pads.push({ x: h.x, z: h.z, r: 22 }); }
+      }
+      for (const p of pads) p.y = this.terrainH(p.x, p.z, roadN(p.x, p.z, 3));
+      this.pads = pads;
+    }
     this.buildTerrain();
     this.buildRoad();
     this.buildStart();
@@ -124,6 +138,10 @@ export class TrackWorld {
     const far = gentle + hill + roadY * (1 - smoothstep(20, 90, d));
     const t = smoothstep(ROAD_HALF + 1, ROAD_HALF + 18, d);
     let h = (roadY - 0.1) * (1 - t) + far * t;
+    for (const p of this.pads ?? []) {
+      const d = Math.hypot(x - p.x, z - p.z);
+      if (d < p.r + 14) h += (p.y - h) * smoothstep(p.r + 14, p.r, d);
+    }
     // overpass embankments: a plateau carrying the cross road, falling 6% away from the
     // abutments, with 1:1.6 side slopes; the corridor between the abutments stays open
     // and further out the cross road runs at a steady grade: fill where the ground dips
@@ -553,7 +571,7 @@ export class TrackWorld {
     for (const f of def.features ?? []) {
       const i = Math.floor(f.at * N), s = f.side ?? 1;
       if (f.type === 'billboard') this.place(boards[bb++ % 3], i, s * (30 + hash(i, 1) * 6), Math.PI + s * 0.45);
-      else if (f.type === 'tower') this.place(tower, i, s * (50 + hash(i, 2) * 10), hash(i, 3) * 6);
+      else if (f.type === 'tower') this.place(tower, i, s * (34 + hash(i, 2) * 6), hash(i, 3) * 6);
       else if (f.type === 'windpump') {
         const wp = windpump();
         bakeGroup(wp.g, { skip: (o) => o.name === 'rotor' });
@@ -690,6 +708,20 @@ export class TrackWorld {
     o.position.set(gp.x, this.terrainH(gp.x, gp.z, roadN(gp.x, gp.z, 2)), gp.z);
     o.rotation.y = Math.atan2(dx, dz);
     this.add(o);
+    if (!yard) { // a homestead where the track ends
+      const h = this.homesteadAt(i0, side), hs = homestead(i0);
+      bakeGroup(hs);
+      hs.position.set(h.x, this.terrainH(h.x, h.z, roadN(h.x, h.z, 3)), h.z);
+      hs.rotation.y = Math.atan2(dx, dz) + Math.PI / 2;
+      hs.traverse((m) => { if (m.isMesh) m.castShadow = m.receiveShadow = true; });
+      this.add(hs);
+    }
+  }
+
+  homesteadAt(i0, side) {
+    const { startLat, ang, P, dx, dz } = this.sideRoadPath(i0, side, false);
+    const s = (FENCE - startLat) / Math.cos(ang) + 48;
+    return { x: P.x + dx * s - dz * 14 * side, z: P.z + dz * s + dx * 14 * side };
   }
 
   gateProto() {

@@ -31,7 +31,8 @@ export const TRACKS = {
       { type: 'bridge', at: 0.16 }, { type: 'bridge', at: 0.63 },
       { type: 'sideroad', at: 0.08, side: 1 }, { type: 'sideroad', at: 0.4, side: -1 }, { type: 'sideroad', at: 0.82, side: 1 },
       { type: 'billboard', at: 0.05, side: 1 }, { type: 'billboard', at: 0.3, side: -1 }, { type: 'billboard', at: 0.55, side: 1 }, { type: 'billboard', at: 0.9, side: -1 },
-      { type: 'tower', at: 0.46, side: 1 }, { type: 'windpump', at: 0.72, side: -1 },
+      { type: 'tower', at: 0.46, side: 1 }, { type: 'windpump', at: 0.72, side: -1 }, { type: 'tower', at: 0.93, side: 1 },
+      { type: 'billboard', at: 0.2, side: 1 }, { type: 'billboard', at: 0.7, side: 1 }, { type: 'windpump', at: 0.36, side: 1 },
     ],
     decor: [
       { fence: 'barbed', a: 0, b: 0.15, abs: FEN }, { fence: 'woodrail', a: 0.15, b: 0.3, abs: FEN }, { fence: 'barbed', a: 0.3, b: 0.5, abs: FEN },
@@ -62,7 +63,8 @@ export const TRACKS = {
       { type: 'bridge', at: 0.37 },
       { type: 'sideroad', at: 0.12, side: -1 }, { type: 'sideroad', at: 0.55, side: 1 }, { type: 'sideroad', at: 0.88, side: -1 },
       { type: 'billboard', at: 0.2, side: 1 }, { type: 'billboard', at: 0.68, side: -1 },
-      { type: 'tower', at: 0.1, side: 1 }, { type: 'windpump', at: 0.8, side: 1 },
+      { type: 'tower', at: 0.1, side: 1 }, { type: 'windpump', at: 0.8, side: 1 }, { type: 'tower', at: 0.62, side: -1 },
+      { type: 'billboard', at: 0.42, side: -1 }, { type: 'billboard', at: 0.9, side: 1 },
     ],
     decor: [
       { fence: 'cable', a: 0, b: 0.3, abs: FEN }, { fence: 'barbed', a: 0.3, b: 0.7, abs: FEN }, { fence: 'woodrail', a: 0.7, b: 1, abs: FEN },
@@ -92,7 +94,8 @@ export const TRACKS = {
       { type: 'bridge', at: 0.3 },
       { type: 'sideroad', at: 0.15, side: -1 }, { type: 'sideroad', at: 0.7, side: 1 },
       { type: 'billboard', at: 0.06, side: -1 }, { type: 'billboard', at: 0.5, side: 1 },
-      { type: 'windpump', at: 0.88, side: -1 }, { type: 'tower', at: 0.58, side: -1 },
+      { type: 'windpump', at: 0.88, side: -1 }, { type: 'tower', at: 0.58, side: -1 }, { type: 'tower', at: 0.22, side: 1 },
+      { type: 'billboard', at: 0.36, side: 1 }, { type: 'billboard', at: 0.8, side: -1 }, { type: 'sideroad', at: 0.45, side: 1 },
     ],
     decor: [
       { fence: 'woodrail', a: 0, b: 0.3, abs: FEN }, { fence: 'barbed', a: 0.3, b: 0.6, abs: FEN }, { fence: 'cable', a: 0.6, b: 0.8, abs: FEN }, { fence: 'ranch', a: 0.8, b: 1, abs: FEN },
