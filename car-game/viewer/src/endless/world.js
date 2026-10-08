@@ -6,7 +6,7 @@ import { vcMat, bushGeo, grassGeo, saguaroGeo, ocotilloGeo, rockGeo, mesaGeo, in
 import { box, cyl, tube, mesh } from '../lib/geo.js';
 import { bakeGroup } from '../level/bake.js';
 import {
-  S, STEP, I_START, ROAD_HALF, ROAD_BEVEL, FENCE, RAIL_LAT, ensure, pointAt, nearest,
+  S, STEP, I_START, LOOP, ROAD_HALF, ROAD_BEVEL, FENCE, RAIL_LAT, ensure, pointAt, nearest,
 } from './route.js';
 import { biomeAt } from './biomes.js';
 
@@ -55,11 +55,11 @@ function heightFn(i, lat, x, z, B) {
 export function railSide(i) {
   let best = 0;
   for (let j = i - 24; j <= i + 24; j += 4) {
-    if (j < 0 || j >= S.count) continue;
-    const k = S.k[j];
+    if (!LOOP.on && (j < 0 || j >= S.count)) continue;
+    const k = S.k[LOOP.on ? ((j % LOOP.n) + LOOP.n) % LOOP.n : j];
     if (Math.abs(k) > Math.abs(best)) best = k;
   }
-  if (Math.abs(best) < 1 / 900) return 0;
+  if (Math.abs(best) < (LOOP.on ? 1 / 200 : 1 / 900)) return 0;
   return best > 0 ? -1 : 1; // turning right -> the outside is on the left
 }
 

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { S, STEP, I_START, LOOP, RAIL_LAT, ROAD_HALF, ROAD_BEVEL, nearest, corridor, pointAt } from './route.js';
+import { S, STEP, I_START, LOOP, wAt, RAIL_LAT, ROAD_HALF, ROAD_BEVEL, nearest, corridor, pointAt } from './route.js';
 import { roadSurfaceY } from '../level/road.js';
 import { railSide } from './world.js';
 
@@ -24,7 +24,10 @@ const SURF = {
 
 export function groundAt(x, z, n) {
   let h = n && terrainHeightN ? terrainHeightN(x, z, n) : terrainHeight(x, z);
-  if (n && Math.abs(n.lat) < ROAD_BEVEL) h = Math.max(h, n.y + roadSurfaceY(n.lat));
+  if (n) {
+    const w = wAt(n.i);
+    if (Math.abs(n.lat) < ROAD_BEVEL * w) h = Math.max(h, n.y + roadSurfaceY(n.lat / w));
+  }
   return h;
 }
 
@@ -77,7 +80,7 @@ export class CarController {
     let vf = this.vx * fx + this.vz * fz;
     let vl = this.vx * rx + this.vz * rz;
     const n0 = this.n;
-    this.onRoad = Math.abs(n0.lat) < ROAD_HALF + 0.3;
+    this.onRoad = Math.abs(n0.lat) < ROAD_HALF * wAt(n0.i) + 0.3;
     const surf = this.onRoad ? SURF.road : SURF.sand;
 
     // speed-sensitive steering response: quick at low speed, calmer at cruise
@@ -239,12 +242,13 @@ export class CarController {
     }
     n = nearest(this.x, this.z, this.hint);
     // Barriers: loop circuits have both sides walled; the highway only rails the outside of sharp curves.
-    const sides = LOOP.on ? [-1, 1] : railSide(n.i) ? [railSide(n.i)] : [];
+    const sides = LOOP.on && LOOP.walls === 'both' ? [-1, 1] : railSide(n.i) ? [railSide(n.i)] : [];
+    const RL = RAIL_LAT * wAt(n.i);
     for (const side of sides) {
       const ls = n.lat * side, prev = this.prevLat * side;
       let tgt = null;
-      if (prev <= RAIL_LAT && ls > RAIL_LAT - 1.0) tgt = RAIL_LAT - 1.0;
-      else if (prev > RAIL_LAT && ls < RAIL_LAT + 1.0) tgt = RAIL_LAT + 1.0;
+      if (prev <= RL && ls > RL - 1.0) tgt = RL - 1.0;
+      else if (prev > RL && ls < RL + 1.0) tgt = RL + 1.0;
       if (tgt !== null) { this.pushLat(n.i, (ls - tgt) * side); n = nearest(this.x, this.z, this.hint); }
     }
     this.n = nearest(this.x, this.z, this.hint);

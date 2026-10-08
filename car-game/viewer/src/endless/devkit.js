@@ -31,7 +31,7 @@ export function createDevKit({ viewerUrl, onStats, onOpenChange }) {
   el.id = 'devkit';
   el.innerHTML = `<button class="open">Dev kit</button>
     <div class="menu">
-      ${['Highway', 'Track'].map((g) => `<div class="grp">${g === 'Highway' ? 'Endless highway' : 'Closed tracks'}</div>${MAPS.filter((m) => m.group === g).map((m) => `<button data-map="${m.id}" class="${m.id === currentMap().id ? 'cur' : ''}">${m.name}</button>`).join('')}`).join('')}
+      <div class="grp">Maps</div>${MAPS.map((m) => `<button data-map="${m.id}" class="${m.id === currentMap().id ? 'cur' : ''}">${m.name}</button>`).join('')}
       <div class="grp">Tools</div>
       <button data-a="viewer">Model viewer</button>
       <button data-a="stats">Toggle stats</button>

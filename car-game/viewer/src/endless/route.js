@@ -17,7 +17,8 @@ export const RAIL_LAT = 7.2;
 export const START_BACK = 300; // samples of road behind the start line
 const MAP = currentMap();
 // Closed-loop tracks fill the sample arrays once; indices wrap instead of growing.
-export const LOOP = { on: !!MAP.track, n: 0, len: 0, id: MAP.id, def: MAP.track ? TRACKS[MAP.id] : null };
+export const LOOP = { on: !!MAP.track, n: 0, len: 0, id: MAP.id, def: MAP.track ? TRACKS[MAP.id] : null, walls: 'rails' };
+export const wAt = (i) => (LOOP.on ? S.w[((Math.round(i) % LOOP.n) + LOOP.n) % LOOP.n] : 1);
 export const I_START = LOOP.on ? 0 : START_BACK;
 export const I_END = Infinity; // asphalt everywhere
 
@@ -30,6 +31,7 @@ export const S = {
   px: new Float32Array(cap), pz: new Float32Array(cap),
   tx: new Float32Array(cap), tz: new Float32Array(cap),
   y: new Float32Array(cap), k: new Float32Array(cap), // k = signed curvature (+ = turning right)
+  w: new Float32Array(cap).fill(1), // road width scale (loops vary it around the lap)
 };
 export const RAILS = []; // { side, i0, i1 } appended as chunks decide them
 
@@ -40,8 +42,8 @@ const rawElev = (s) => 2.4 * Math.sin(s / 210 + 0.6) + 1.2 * Math.sin(s / 83 + 1
 
 function grow() {
   cap *= 2;
-  for (const key of ['px', 'pz', 'tx', 'tz', 'y', 'k']) {
-    const a = new Float32Array(cap);
+  for (const key of ['px', 'pz', 'tx', 'tz', 'y', 'k', 'w']) {
+    const a = new Float32Array(cap).fill(key === 'w' ? 1 : 0);
     a.set(S[key]);
     S[key] = a;
   }
@@ -108,9 +110,21 @@ function fillLoop(def) {
       cells.get(key).push(i);
     }
   }
+  // road width scale, eased (periodic cosine) between the def's [lap fraction, scale] pairs
+  const wp = [...(def.width ?? [[0, 1]])].sort((a, b) => a[0] - b[0]);
+  for (let i = 0; i < N; i++) {
+    const f = i / N, ff = f < wp[0][0] ? f + 1 : f;
+    let w = wp[0][1];
+    for (let q = 0; wp.length > 1 && q < wp.length; q++) {
+      const a = wp[q], b = wp[(q + 1) % wp.length], f0 = a[0], f1 = q + 1 < wp.length ? b[0] : b[0] + 1;
+      if (ff >= f0 && ff < f1) { const t = (ff - f0) / (f1 - f0); w = a[1] + (b[1] - a[1]) * t * t * (3 - 2 * t); break; }
+    }
+    S.w[i] = w;
+  }
   S.count = N;
   LOOP.n = N;
   LOOP.len = L;
+  LOOP.walls = def.walls ?? 'both';
 }
 if (LOOP.on) fillLoop(LOOP.def);
 else ensure(START_BACK + 2000);

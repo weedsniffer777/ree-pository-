@@ -69,6 +69,9 @@ const CSS = `
 #hud .touch .boostBtn { right: 20px; bottom: calc(190px + env(safe-area-inset-bottom, 0px)); background: var(--yellow); color: var(--black); }
 #hud .touch .fireBtn { right: 108px; bottom: calc(170px + env(safe-area-inset-bottom, 0px)); background: var(--red); }
 #hud .touch .brakeBtn { right: 20px; bottom: calc(280px + env(safe-area-inset-bottom, 0px)); width: 60px; height: 60px; background: var(--white); color: var(--black); }
+#hud .touch .steerL, #hud .touch .steerR { bottom: calc(26px + env(safe-area-inset-bottom, 0px)); width: 92px; height: 92px; border-radius: 22px; background: rgba(242,239,230,0.55); color: var(--black); font-size: 30px; }
+#hud .touch .steerL { left: calc(16px + env(safe-area-inset-left, 0px)); }
+#hud .touch .steerR { left: calc(116px + env(safe-area-inset-left, 0px)); }
 #hud .touch .btn.down { transform: translateY(3px); box-shadow: 0 2px 0 rgba(0,0,0,0.35); }
 /* phones held sideways: the portrait layout, compacted, buttons left of the gauge */
 @media (orientation: landscape) and (max-height: 520px) {
@@ -90,6 +93,8 @@ const CSS = `
   #hud .touch .boostBtn { right: calc(150px + env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
   #hud .touch .fireBtn { right: calc(226px + env(safe-area-inset-right, 0px)); bottom: calc(40px + env(safe-area-inset-bottom, 0px)); }
   #hud .touch .brakeBtn { right: calc(156px + env(safe-area-inset-right, 0px)); bottom: calc(92px + env(safe-area-inset-bottom, 0px)); width: 52px; height: 52px; font-size: 12px; }
+  #hud .touch .steerL, #hud .touch .steerR { width: 78px; height: 78px; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); }
+  #hud .touch .steerR { left: calc(104px + env(safe-area-inset-left, 0px)); }
 }
 @media (max-width: 720px) {
   #hud .track { top: calc(90px + env(safe-area-inset-top, 0px)); width: calc(100% - 64px); }
@@ -118,11 +123,12 @@ export function createHud({ touch = false } = {}) {
     <pre class="debug" hidden></pre>`;
   document.body.append(root);
   const $ = (s) => root.querySelector(s);
-  const t = { steer: 0, boost: false, brake: false, fire: false, active: touch };
+  // left thumb steers (two hold buttons), right thumb fires / boosts / brakes
+  const t = { left: false, right: false, boost: false, brake: false, fire: false, active: touch, get steer() { return (this.right ? 1 : 0) - (this.left ? 1 : 0); } };
   if (touch) {
     const layer = document.createElement('div');
     layer.className = 'touch';
-    layer.innerHTML = '<div class="btn brakeBtn">BRAKE</div><div class="btn fireBtn">FIRE</div><div class="btn boostBtn">BOOST</div>';
+    layer.innerHTML = '<div class="btn steerL">&#9664;</div><div class="btn steerR">&#9654;</div><div class="btn brakeBtn">BRAKE</div><div class="btn fireBtn">FIRE</div><div class="btn boostBtn">BOOST</div>';
     root.append(layer);
     const hold = (el, key) => {
       el.addEventListener('pointerdown', (e) => { e.stopPropagation(); t[key] = true; el.classList.add('down'); el.setPointerCapture(e.pointerId); });
@@ -133,12 +139,8 @@ export function createHud({ touch = false } = {}) {
     hold(layer.querySelector('.boostBtn'), 'boost');
     hold(layer.querySelector('.fireBtn'), 'fire');
     hold(layer.querySelector('.brakeBtn'), 'brake');
-    let sid = null, sx = 0;
-    layer.addEventListener('pointerdown', (e) => { if (e.target !== layer) return; sid = e.pointerId; sx = e.clientX; layer.setPointerCapture(e.pointerId); });
-    layer.addEventListener('pointermove', (e) => { if (e.pointerId === sid) t.steer = Math.max(-1, Math.min(1, (e.clientX - sx) / (innerWidth * 0.12))); });
-    const end = (e) => { if (e.pointerId === sid) { sid = null; t.steer = 0; } };
-    layer.addEventListener('pointerup', end);
-    layer.addEventListener('pointercancel', end);
+    hold(layer.querySelector('.steerL'), 'left');
+    hold(layer.querySelector('.steerR'), 'right');
     $('.cruise').hidden = true;
     $('.bk').hidden = true;
   }

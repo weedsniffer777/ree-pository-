@@ -2,11 +2,10 @@
 // module can read the current map once at import time.
 
 export const MAPS = [
-  { id: 'highway', name: 'Desert Highway', group: 'Highway', at: 0 },
-  { id: 'salt', name: 'Salt Flats', group: 'Highway', at: 2600 },
-  { id: 'canyon', name: 'Red Canyon', group: 'Highway', at: 5000 },
-  { id: 'dustbowl', name: 'Dust Bowl Circuit', group: 'Track', track: true },
-  { id: 'terminal', name: 'Terminal Yard', group: 'Track', track: true },
+  { id: 'desert', name: 'Desert Highway', track: true },
+  { id: 'salt', name: 'Salt Flats', track: true },
+  { id: 'dustbowl', name: 'Dust Bowl', track: true },
+  { id: 'yard', name: 'Yard', track: true },
 ];
 
 const KEY = 'endless.map';
