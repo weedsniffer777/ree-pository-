@@ -671,6 +671,25 @@ function gatehouse() {
   return g;
 }
 
+// Ship accommodation plate: pale paint, plate seams, one small framed window per 2.9 m
+// tile, a little rust weeping from the sills.
+function superTexture() {
+  const [c, g] = canvas(256, 128);
+  const r = rng(321);
+  g.fillStyle = '#cfd2ce'; g.fillRect(0, 0, 256, 128);
+  for (let k = 0; k < 1600; k++) { g.fillStyle = `rgba(${r() < 0.5 ? '60,60,58' : '255,255,250'},${r() * 0.07})`; g.fillRect(r() * 256, r() * 128, 2, 2); }
+  g.fillStyle = 'rgba(0,0,0,0.1)'; g.fillRect(0, 0, 256, 2); g.fillRect(0, 0, 2, 128); g.fillRect(128, 0, 1, 128);
+  g.fillStyle = '#a2a7a5'; g.fillRect(104, 44, 48, 26);
+  g.fillStyle = '#3a454b'; g.fillRect(107, 47, 42, 20);
+  g.fillStyle = 'rgba(190,205,210,0.22)'; g.fillRect(107, 47, 42, 6);
+  const gr = g.createLinearGradient(0, 70, 0, 124);
+  gr.addColorStop(0, 'rgba(120,70,40,0.18)'); gr.addColorStop(1, 'rgba(120,70,40,0)');
+  g.fillStyle = gr; g.fillRect(118 + r() * 18, 70, 3, 54);
+  const t = tex(c);
+  t.repeat.set(0.5, 1); // one window every 5.8 m
+  return t;
+}
+
 // Container ship moored along the quay, bow toward +Z. A lofted hull (transom stern with
 // a raked run, parallel mid-body, flared bow with a raised forecastle, bulb below the
 // waterline) painted in the usual bands: red antifouling, a white boot-top line, dark
@@ -736,32 +755,32 @@ function containerShip(containers, tints, r, x0, z0) {
   }
   // bulwark rail and a white deck line
   for (const sd of [-1, 1]) bar(g, [sd * (B - 0.1), DECK + 1.0, zAt(0.02)], [sd * (B - 0.1), DECK + 1.0, zAt(0.85)], 0.08, 0.08, m.steel);
-  const whiteM = std(0xe6e4dc, { roughness: 0.7 });
+  const whiteM = std(0xd4d6d2, { roughness: 0.6, metalness: 0.3 });
   // forecastle breakwater and foremast
   for (const sd of [-1, 1]) bar(g, [sd * 11, FC, zAt(0.86)], [0, FC + 3.2, zAt(0.86) - 6], 0.4, 3.2, whiteM);
   bar(g, [0, FC, zAt(0.93)], [0, FC + 12, zAt(0.93)], 0.5, 0.5, whiteM);
   bx(g, 0.5, 0.5, 0.5, m.red, 0, FC + 12.3, zAt(0.93));
   for (const sd of [-1, 1]) cy(g, 0.7, 0.7, 1.4, 10, m.dark, sd * 6, FC + 0.7, zAt(0.95)); // windlasses
-  // accommodation block aft: stepped decks with window bands, bridge and wings
+  // accommodation block aft: pale painted plate, small spaced windows, stepped decks
+  const sup = new THREE.MeshStandardMaterial({ map: superTexture(), roughness: 0.6, metalness: 0.35 });
   const az = zAt(0.13), decks = 7, dh = 2.9;
   for (let k = 0; k < decks; k++) {
     const w = 24 - k * 0.6, d = 15 - k * 0.4, y = DECK + k * dh;
-    bx(g, w, dh, d, whiteM, 0, y + dh / 2, az);
-    bx(g, w + 0.05, 0.9, d + 0.05, m.glass, 0, y + dh * 0.62, az);
-    bx(g, w + 1.2, 0.15, d + 1.2, whiteM, 0, y + dh, az); // deck overhang
+    panel(g, w, dh, d, sup, 0, y + dh / 2, az, 2.9);
+    bx(g, w + 0.8, 0.12, d + 0.8, whiteM, 0, y + dh, az); // deck edge
   }
   const by = DECK + decks * dh;
-  bx(g, 2 * B + 4, 3.0, 8, whiteM, 0, by + 1.5, az + 2); // bridge with wings out past the hull
-  bx(g, 2 * B + 4.05, 1.3, 8.05, m.glass, 0, by + 1.9, az + 2);
-  bx(g, 2 * B + 4.6, 0.3, 8.6, m.dark, 0, by + 3.1, az + 2);
+  panel(g, 2 * B + 4, 3.0, 8, sup, 0, by + 1.5, az + 2, 2.9); // bridge with wings out past the hull
+  bx(g, 2 * B + 3.0, 0.75, 8.05, std(0x2a3338, { roughness: 0.25, metalness: 0.6 }), 0, by + 2.05, az + 2); // bridge windows
+  bx(g, 2 * B + 4.6, 0.25, 8.6, whiteM, 0, by + 3.1, az + 2);
   bar(g, [0, by + 3.2, az], [0, by + 10, az], 0.4, 0.4, whiteM); // mast
   bx(g, 4, 0.2, 0.4, m.dark, 0, by + 8.6, az);
   bx(g, 0.4, 0.4, 0.4, m.red, 0, by + 10.2, az);
   // funnel behind the accommodation
   const fz = az - 11;
-  bx(g, 7, 12, 6, std(0x23272b, { roughness: 0.6 }), 0, DECK + 15, fz);
-  bx(g, 7.05, 2.2, 6.05, std(0xb5362a, { roughness: 0.6 }), 0, DECK + 18.5, fz);
-  bx(g, 6, 0.6, 5, m.dark, 0, DECK + 21.3, fz);
+  bx(g, 7, 23, 6, std(0x23272b, { roughness: 0.6 }), 0, DECK + 11.5, fz); // stands on the deck
+  bx(g, 7.05, 2.2, 6.05, std(0xb5362a, { roughness: 0.6 }), 0, DECK + 19.5, fz);
+  bx(g, 6, 0.6, 5, m.dark, 0, DECK + 23.3, fz);
   // lifeboats in davits either side
   for (const sd of [-1, 1]) {
     const lb = new THREE.Mesh(new THREE.CapsuleGeometry(1.4, 5.5, 4, 8).rotateX(Math.PI / 2).scale(1, 0.75, 1), std(0xd9671f, { roughness: 0.6 }));
