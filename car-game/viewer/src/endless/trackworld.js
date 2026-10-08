@@ -74,6 +74,11 @@ export class TrackWorld {
     this.group.name = 'track';
     scene.add(this.group);
     this.roadMat = new THREE.MeshStandardMaterial({ map: paintRoad(def.road), roughness: 0.93 });
+    // overpasses: known before the terrain so it can raise their embankments
+    this.bridges = (def.features ?? []).filter((f) => f.type === 'bridge').map((f) => {
+      const i = wrap(Math.floor(f.at * LOOP.n)), P = pointAt(i, 0);
+      return { i, x: P.x, z: P.z, tx: S.tx[i], tz: S.tz[i], cx: -S.tz[i], cz: S.tx[i], y0: S.y[i], deckH: S.y[i] + 8.2 };
+    });
     this.buildTerrain();
     this.buildRoad();
     this.buildStart();
@@ -118,7 +123,19 @@ export class TrackWorld {
     const roadY = n ? n.y : 0;
     const far = gentle + hill + roadY * (1 - smoothstep(20, 90, d));
     const t = smoothstep(ROAD_HALF + 1, ROAD_HALF + 18, d);
-    const h = (roadY - 0.1) * (1 - t) + far * t;
+    let h = (roadY - 0.1) * (1 - t) + far * t;
+    // overpass embankments: a plateau carrying the cross road, falling 6% away from the
+    // abutments, with 1:1.6 side slopes; the corridor between the abutments stays open
+    // and further out the cross road runs at a steady grade: fill where the ground dips
+    // (1:1.6 slopes), cut through dunes where it rises (1:1.2 cut faces)
+    for (const br of this.bridges ?? []) {
+      const dx = x - br.x, dz = z - br.z, du = Math.abs(dx * br.cx + dz * br.cz), dv = Math.abs(dx * br.tx + dz * br.tz);
+      if (du < 19.5 || dv > 70 || du > 300) continue;
+      const top = Math.max(br.y0 + 0.5, br.deckH - Math.max(0, du - 21.5) * 0.06);
+      const off = Math.max(0, dv - 8.5);
+      if (h < top) h = Math.max(h, top - off / 1.6);
+      else h = Math.min(h, top + off / 1.2);
+    }
     return this.def.terminal && x > this.def.terminal.quayX + 0.01 ? Math.min(h, -6) : h;
   }
 
@@ -228,15 +245,20 @@ export class TrackWorld {
     }
   }
 
+  // The asphalt ribbon. Texture columns are mapped so the centre lines and the 2.4 m
+  // shoulder (edge line, rumble strip) keep their real size whatever the width; only the
+  // lanes stretch, so a wide section reads as extra lanes rather than a zoomed road.
   buildRoad() {
-    const N = LOOP.n, m = ROAD_LATS.length, rows = N + 1;
+    const N = LOOP.n, rows = N + 1;
+    const TL = [-6.6, -6.1, -3.7, -0.5, 0, 0.5, 3.7, 6.1, 6.6], m = TL.length;
+    const world = (L, w) => (Math.abs(L) <= 0.5 ? L : Math.abs(L) < 4 ? Math.sign(L) * (ROAD_HALF * w - 2.4) : L * w);
     const rp = new Float32Array(rows * m * 3), ruv = new Float32Array(rows * m * 2);
     for (let a = 0; a < rows; a++) {
       const i = a % N, w = S.w[i];
       for (let j = 0; j < m; j++) {
-        const p = pointAt(i, ROAD_LATS[j] * w), q = a * m + j;
-        rp[q * 3] = p.x; rp[q * 3 + 1] = S.y[i] + ROAD_DY[j]; rp[q * 3 + 2] = p.z;
-        ruv[q * 2] = (ROAD_LATS[j] + ROAD_BEVEL) / (2 * ROAD_BEVEL);
+        const lat = world(TL[j], w), p = pointAt(i, lat), q = a * m + j;
+        rp[q * 3] = p.x; rp[q * 3 + 1] = S.y[i] + roadSurfaceY(lat / w); rp[q * 3 + 2] = p.z;
+        ruv[q * 2] = (TL[j] + ROAD_BEVEL) / (2 * ROAD_BEVEL);
         ruv[q * 2 + 1] = a / 64; // N is a multiple of 64, so the texture closes seamlessly
       }
     }
@@ -548,24 +570,25 @@ export class TrackWorld {
   }
 
   // Cross road on a viaduct passing 7 m over the circuit, with ramps down to the desert.
+  // Overpass: the cross road comes in on earth embankments (raised in terrainH), over
+  // solid abutments either side of the corridor and a deck on girders with two piers, then
+  // drapes on into the desert either way.
   buildBridge(i0) {
     i0 = wrap(i0);
-    const P = pointAt(i0, 0), tx = S.tx[i0], tz = S.tz[i0], cx = -tz, cz = tx;
-    const y0 = S.y[i0], deckH = y0 + 7.8, half = 40, ramp = 56, ext = 150, hw = ROAD_BEVEL;
+    const br = this.bridges.find((b) => b.i === i0);
+    const P = { x: br.x, z: br.z }, { tx, tz, cx, cz, deckH, y0 } = br, hw = ROAD_BEVEL, AB = 21.5;
     const lats = [];
-    for (let l = -ext; l <= ext; l += 6) lats.push(l);
+    for (let l = -290; l <= 290; l += 4) lats.push(l);
     const m = ROAD_LATS.length, pos = new Float32Array(lats.length * m * 3), uv = new Float32Array(lats.length * m * 2);
     const rowY = [];
     lats.forEach((l, a) => {
       const gx = P.x + cx * l, gz = P.z + cz * l;
-      const g = this.terrainH(gx, gz, roadN(gx, gz, 3)) + 0.1;
-      const t = smoothstep(half, half + ramp, Math.abs(l));
-      const y = deckH * (1 - t) + g * t;
+      const y = Math.abs(l) < AB ? deckH : this.terrainH(gx, gz, roadN(gx, gz, 3)) + 0.05;
       rowY.push(y);
       for (let j = 0; j < m; j++) {
         const q = a * m + j, off = -ROAD_LATS[j];
         pos[q * 3] = gx + tx * off; pos[q * 3 + 1] = y + ROAD_DY[j]; pos[q * 3 + 2] = gz + tz * off;
-        uv[q * 2] = (ROAD_LATS[j] + hw) / (2 * hw); uv[q * 2 + 1] = a / 10.67;
+        uv[q * 2] = (ROAD_LATS[j] + hw) / (2 * hw); uv[q * 2 + 1] = a / 16;
       }
     });
     const idx = [];
@@ -578,32 +601,40 @@ export class TrackWorld {
     g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
     g.setIndex(idx);
     g.computeVertexNormals();
-    const road = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map: this.roadMat.map, roughness: 0.93, side: THREE.DoubleSide }));
-    road.receiveShadow = road.castShadow = true;
+    const road = new THREE.Mesh(g, this.roadMat);
+    road.receiveShadow = true;
     this.add(road);
 
-    const concrete = std(0x9d9990, { roughness: 0.95 });
+    const concrete = std(0xa39f96, { roughness: 0.95 }), dark = std(0x8a867e, { roughness: 0.95 });
     const yaw = Math.atan2(cx, cz);
     const bx = (lat, lz, y, sx, sy, sz) => ({ x: P.x + cx * lat + tx * lz, y, z: P.z + cz * lat + tz * lz, ry: yaw, sx, sy, sz });
-    const list = [bx(0, 0, deckH - 0.75, 2 * hw + 0.8, 1.3, 2 * half)];
+    const deck = [bx(0, 0, deckH - 0.75, 2 * hw + 1.4, 1.4, 2 * AB)];
+    const girders = [];
+    for (const v of [-5.2, -1.8, 1.8, 5.2]) girders.push(bx(0, v, deckH - 2.1, 0.7, 1.4, 2 * AB));
+    const parts = [];
     for (const s of [-1, 1]) {
-      list.push(bx(0, s * (hw + 0.15), deckH + 0.45, 0.5, 0.9, 2 * half));
-      for (const l of [-14, 14]) {
-        const gy = this.terrainH(P.x + cx * l, P.z + cz * l, roadN(P.x + cx * l, P.z + cz * l, 3));
-        const capY = deckH - 1.9;
-        list.push(bx(l, 0, capY, 2 * hw - 1, 1.1, 2));
-        const h = capY - gy;
-        list.push(bx(l, s * 3.4, gy + h / 2, 1.4, h, 1.4));
-        this.colliders.push({ type: 'circle', x: P.x + cx * l + tx * s * 3.4, z: P.z + cz * l + tz * s * 3.4, r: 1.2 });
+      // abutment block filling the end of the embankment, with wing walls
+      parts.push(bx(s * 19.75, 0, (y0 - 1 + deckH) / 2, 2 * hw + 4, deckH - y0 + 1, 3.5));
+      for (const v of [-1, 1]) parts.push(bx(s * 22, v * (hw + 2.4), (y0 + deckH) / 2, 0.8, deckH - y0, 6));
+      for (let v = -hw - 1; v <= hw + 1; v += 1.4) this.colliders.push({ type: 'circle', x: P.x + cx * s * 18.4 + tx * v, z: P.z + cz * s * 18.4 + tz * v, r: 0.6 });
+      // pier: cap beam and two round-ish columns in the verge
+      const pl = s * Math.max(12.5, EDGE(i0) + 2), gy = this.terrainH(P.x + cx * pl, P.z + cz * pl, roadN(P.x + cx * pl, P.z + cz * pl, 3));
+      parts.push(bx(pl, 0, deckH - 3.3, 2 * hw - 0.5, 1.0, 1.6));
+      for (const v of [-3.6, 3.6]) {
+        parts.push(bx(pl, v, (gy + deckH - 3.8) / 2, 1.2, deckH - 3.8 - gy, 1.2));
+        this.colliders.push({ type: 'circle', x: P.x + cx * pl + tx * v, z: P.z + cz * pl + tz * v, r: 0.9 });
       }
     }
+    // parapets on the deck, barrier blocks along the embankment edges
+    const rails = [];
     lats.forEach((l, a) => {
-      if (Math.abs(l) <= half || Math.abs(l) > half + ramp + 6 || a % 2) return;
-      const gx = P.x + cx * l, gz = P.z + cz * l, gy = this.terrainH(gx, gz, roadN(gx, gz, 3)), h = rowY[a] - 1 - gy;
-      if (h < 1) return;
-      for (const s of [-1, 1]) list.push(bx(l, s * 3.4, gy + h / 2, 1.2, h, 1.2));
+      if (Math.abs(l) > 120 || a === lats.length - 1) return;
+      const y = (rowY[a] + rowY[a + 1]) / 2, dy = rowY[a + 1] - rowY[a];
+      for (const v of [-1, 1]) rails.push({ ...bx(l + 2, v * (hw + 0.25), y + 0.5, 0.45, 0.9, 4.02), rx: 0, rz: 0, ry: yaw, ...(dy ? { rx: -Math.atan2(dy, 4) } : {}) });
     });
-    this.add(inst(UNIT, concrete, list));
+    const add = (list, mat) => this.add(inst(UNIT, mat, list));
+    add(deck, concrete); add(girders, dark); add(parts, concrete); add(rails, concrete);
+    this.reserve(i0 - 14, i0 + 14);
   }
 
   // A road leaving the circuit and ending at a closed gate in the fence.

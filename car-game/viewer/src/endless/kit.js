@@ -383,6 +383,14 @@ function markTexture(kind) {
     t.wrapT = THREE.RepeatWrapping;
     return t;
   }
+  if (kind === 'dash') { // 3 m painted, 5 m gap over an 8 m tile
+    const [c, g] = canvas(8, 64);
+    g.fillStyle = 'rgba(236,232,220,0.92)';
+    g.fillRect(0, 0, 8, 24);
+    const t = tex(c, false);
+    t.wrapT = THREE.RepeatWrapping;
+    return t;
+  }
   if (kind === 'zebra') {
     const [c, g] = canvas(64, 64);
     g.fillStyle = 'rgba(236,232,220,0.92)';
@@ -473,7 +481,45 @@ function strip(tw, kind, i0, i1, lo, hi, uvFn, step = 2) {
   tw.add(m);
 }
 
+// A painted line following the road at a per-sample lateral offset (null = no paint here).
+function laneLine(tw, kind, latFn, width = 0.15) {
+  const N = LOOP.n, pos = [], uv = [], idx = [];
+  let run = 0, s = 0;
+  for (let i = 0; i <= N; i += 2) {
+    const lat = latFn(wrap(i));
+    if (lat === null) { run = 0; continue; }
+    const w = wAt(i), k = wrap(i);
+    for (const o of [-width / 2, width / 2]) {
+      const p = pointAt(i, lat + o);
+      pos.push(p.x, S.y[k] + roadSurfaceY((lat + o) / w) + 0.03, p.z);
+      uv.push(o < 0 ? 0 : 1, i / 8);
+    }
+    const q = pos.length / 3 - 2;
+    if (run > 0) idx.push(q - 2, q - 1, q, q - 1, q + 1, q);
+    run++;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  const m = new THREE.Mesh(g, decalMat(tw, kind));
+  m.receiveShadow = true;
+  m.renderOrder = 2;
+  tw.add(m);
+}
+
 const MARKS = {
+  // Lane markings that follow the width: edge lines keep a 2.4 m shoulder (so they taper
+  // out where the road widens) and a dashed divider appears once there's room for a lane.
+  lanes(tw) {
+    const edge = (i) => ROAD_HALF * wAt(i) - 2.4;
+    for (const s of [-1, 1]) {
+      laneLine(tw, 'line', (i) => s * edge(i), 0.16);
+      laneLine(tw, 'dash', (i) => (wAt(i) > 1.42 ? s * 3.7 : null), 0.14);
+    }
+  },
+
   // painted gore / no-go block; stripes stay 45 degrees whatever the width
   hatch(tw, e) {
     const i0 = Math.floor(e.at * LOOP.n), len = e.len ?? 40;
