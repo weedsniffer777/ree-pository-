@@ -153,8 +153,8 @@ function readInput() {
   // tutorial: rolls along at a fixed lower speed until you've learned cruise; W lifts the cap
   const tutDrive = !tut.done && !cruise && !touchCruise;
   const inp = {
-    // cruise drives the throttle; S held pauses it (except mid-slide), releasing S resumes
-    throttle: w || ((cruise || touchCruise || tutDrive) && ((!sKey && !t.brake) || car.driftMode)) ? 1 : 0,
+    // cruise drives the throttle; S held pauses it, releasing S resumes
+    throttle: w || ((cruise || touchCruise || tutDrive) && !sKey && !t.brake) ? 1 : 0,
     cap: tutDrive && !w ? TUT_SPEED : 0,
     push: w,
     brake: sKey || t.brake ? 1 : 0,

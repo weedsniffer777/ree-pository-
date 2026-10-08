@@ -70,6 +70,27 @@ const CSS = `
 #hud .touch .fireBtn { right: 108px; bottom: calc(170px + env(safe-area-inset-bottom, 0px)); background: var(--red); }
 #hud .touch .brakeBtn { right: 20px; bottom: calc(280px + env(safe-area-inset-bottom, 0px)); width: 60px; height: 60px; background: var(--white); color: var(--black); }
 #hud .touch .btn.down { transform: translateY(3px); box-shadow: 0 2px 0 rgba(0,0,0,0.35); }
+/* phones held sideways: the portrait layout, compacted, buttons left of the gauge */
+@media (orientation: landscape) and (max-height: 520px) {
+  #hud .gauge { right: calc(14px + env(safe-area-inset-right, 0px)); bottom: calc(12px + env(safe-area-inset-bottom, 0px)); gap: 6px; }
+  #hud .speed { min-width: 88px; padding: 3px 10px 4px; }
+  #hud .speed .n { font-size: 32px; }
+  #hud .boost { width: 120px; }
+  #hud .boost .lbl { font-size: 12px; }
+  #hud .boost .bar { height: 10px; }
+  #hud .dist { left: calc(14px + env(safe-area-inset-left, 0px)); top: 10px; padding: 4px 10px 5px; }
+  #hud .dist .v { font-size: 22px; }
+  #hud .track { top: 20px; width: min(320px, calc(100% - 360px)); }
+  #hud .title { top: 18%; }
+  #hud .title h3 { font-size: 34px; }
+  #hud .card { top: 34%; padding: 8px 16px 7px; }
+  #hud .card h4 { font-size: 20px; }
+  #hud .card p { font-size: 12px; }
+  #hud .touch .btn { width: 64px; height: 64px; font-size: 13px; }
+  #hud .touch .boostBtn { right: calc(150px + env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+  #hud .touch .fireBtn { right: calc(226px + env(safe-area-inset-right, 0px)); bottom: calc(40px + env(safe-area-inset-bottom, 0px)); }
+  #hud .touch .brakeBtn { right: calc(156px + env(safe-area-inset-right, 0px)); bottom: calc(92px + env(safe-area-inset-bottom, 0px)); width: 52px; height: 52px; font-size: 12px; }
+}
 @media (max-width: 720px) {
   #hud .track { top: calc(90px + env(safe-area-inset-top, 0px)); width: calc(100% - 64px); }
   #hud .speed .n { font-size: 38px; }

@@ -2,7 +2,7 @@
 // page in an overlay), tutorial replay, stats, and a full data reset.
 
 const CSS = `
-#devkit { position: fixed; top: calc(16px + env(safe-area-inset-top, 0px)); right: 16px; z-index: 20; font: 800 12px/1 'Overpass', system-ui, sans-serif; letter-spacing: 0.12em; text-transform: uppercase; }
+#devkit { position: fixed; top: calc(16px + env(safe-area-inset-top, 0px)); right: calc(16px + env(safe-area-inset-right, 0px)); z-index: 20; font: 800 12px/1 'Overpass', system-ui, sans-serif; letter-spacing: 0.12em; text-transform: uppercase; }
 #devkit button { font: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; }
 #devkit .open { background: rgba(22,23,26,0.72); color: #f2efe6; border: 2px solid #16171a; border-radius: 6px; padding: 7px 10px 6px; }
 #devkit .open:hover, #devkit.on .open { background: #f2c21b; color: #16171a; }
@@ -12,6 +12,7 @@ const CSS = `
 #devkit .menu button:last-child { border-bottom: 0; }
 #devkit .menu button:hover { background: #f2c21b; }
 #devkit .menu .danger { color: #b3170f; }
+@media (orientation: landscape) and (max-height: 520px) { #devkit { top: 10px; } #devkit .open { padding: 5px 8px 4px; } }
 #devkit-viewer { position: fixed; inset: 0; z-index: 30; background: #16171a; }
 #devkit-viewer iframe { width: 100%; height: 100%; border: 0; display: block; }
 #devkit-viewer button { position: absolute; top: calc(12px + env(safe-area-inset-top, 0px)); right: 12px; font: 800 12px/1 'Overpass', system-ui, sans-serif; letter-spacing: 0.12em; text-transform: uppercase; background: #f2c21b; color: #16171a; border: 2px solid #16171a; border-radius: 6px; padding: 8px 12px 7px; cursor: pointer; }
