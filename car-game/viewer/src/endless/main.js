@@ -64,10 +64,13 @@ scene.add(new THREE.HemisphereLight(HEMI[0], HEMI[1], HEMI[2]));
 const sun = new THREE.DirectionalLight(SUNL[0], SUNL[1]);
 const SUN_DIR = new THREE.Vector3(70, 85, 45).normalize();
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
-Object.assign(sun.shadow.camera, { left: -42, right: 42, top: 42, bottom: -42, near: 1, far: 320 });
+// One big shadow box (instead of a tight one that makes shadows pop in at ~40 m), pushed
+// ahead of the car and snapped to whole shadow texels so edges don't crawl as you drive.
+const SHADOW = matchMedia('(pointer: coarse)').matches ? { size: 3072, half: 95 } : { size: 4096, half: 130 };
+sun.shadow.mapSize.set(SHADOW.size, SHADOW.size);
+Object.assign(sun.shadow.camera, { left: -SHADOW.half, right: SHADOW.half, top: SHADOW.half, bottom: -SHADOW.half, near: 1, far: 500 });
 sun.shadow.bias = -0.0004;
-sun.shadow.normalBias = 0.03;
+sun.shadow.normalBias = 0.05;
 scene.add(sun, sun.target);
 
 const sky = buildSky(THEME ? THEME.sky : ['#6aaed6', '#aed2e6', '#f3d5b2'], Math.min(1, 1.2 / GR.saturation));
@@ -416,8 +419,13 @@ function frame(now) {
   world.follow(car.x, car.z);
   updateCamera(dt);
   sky.position.copy(camera.position);
-  sun.position.set(car.x + SUN_DIR.x * 150, car.y + SUN_DIR.y * 150, car.z + SUN_DIR.z * 150);
-  sun.target.position.set(car.x, car.y, car.z);
+  {
+    const ahead = SHADOW.half * 0.45, sx = car.x + Math.sin(car.yaw) * ahead, sz = car.z + Math.cos(car.yaw) * ahead;
+    const texel = (SHADOW.half * 2) / SHADOW.size, snap = (v) => Math.round(v / texel) * texel;
+    const cx = snap(sx), cz = snap(sz), cy = snap(car.y);
+    sun.position.set(cx + SUN_DIR.x * 250, cy + SUN_DIR.y * 250, cz + SUN_DIR.z * 250);
+    sun.target.position.set(cx, cy, cz);
+  }
 
   guns.update(dt, inp.fire, car);
   tracers.update(dt);

@@ -671,35 +671,125 @@ function gatehouse() {
   return g;
 }
 
-// Container ship moored along the quay: two-tone hull with a pointed bow, deck containers,
-// aft accommodation block with a bridge and funnel. Bow toward +Z.
+// Container ship moored along the quay, bow toward +Z. A lofted hull (transom stern with
+// a raked run, parallel mid-body, flared bow with a raised forecastle, bulb below the
+// waterline) painted in the usual bands: red antifouling, a white boot-top line, dark
+// topsides. Aft: a tall stepped accommodation block with a wide bridge and wings, mast and
+// radar, funnel with a coloured band, lifeboats in davits. Cargo: hatch covers, lashing
+// bridges between bays, containers stacked up to six high, a breakwater on the foredeck.
 function containerShip(containers, tints, r, x0, z0) {
   const m = mats(), g = new THREE.Group();
-  const sh = new THREE.Shape([new THREE.Vector2(-16, -100), new THREE.Vector2(16, -100), new THREE.Vector2(16, 70), new THREE.Vector2(9, 96), new THREE.Vector2(0, 104), new THREE.Vector2(-9, 96), new THREE.Vector2(-16, 70)]);
-  const hull = (depth, y, mat) => {
-    const geo = new THREE.ExtrudeGeometry(sh, { depth, bevelEnabled: false });
-    geo.rotateX(-Math.PI / 2);
-    const mm = new THREE.Mesh(geo, mat);
-    mm.position.y = y;
-    g.add(mm);
+  const L = 230, B = 16, KEEL = -10, DECK = 9, FC = 12.5; // half beam, keel, main deck, forecastle deck
+  const red = [0.3, 0.05, 0.035], white = [0.78, 0.77, 0.72], top = [0.025, 0.045, 0.075];
+  const ST = 48, HS = 14;
+  const deckAt = (t) => (t > 0.86 ? FC : DECK);
+  // half breadth at station t (0 stern .. 1 bow) and height y
+  const half = (t, y) => {
+    const h = (y - KEEL) / (deckAt(t) - KEEL);
+    let w = B;
+    if (t > 0.68) { const u = (t - 0.68) / 0.32; w = B * Math.sqrt(Math.max(0, 1 - u * u)) * (0.55 + 0.45 * h) + (u < 1 ? 0.6 * (1 - h) * (1 - u) : 0); }
+    if (t < 0.16) w *= 0.35 + 0.65 * Math.min(1, h * 1.6 + t / 0.16 * 0.6); // stern run
+    if (t > 0.93 && y < -2 && y > -8) w = Math.max(w, 2.6 * Math.sqrt(Math.max(0, 1 - ((y + 5) / 3) ** 2))); // bulb
+    return Math.max(0.05, w);
   };
-  hull(7, -7, std(0x5a2a24, { roughness: 0.8 }));
-  hull(9, 0, std(0x2a3640, { roughness: 0.7, metalness: 0.2 }));
-  bx(g, 31, 0.3, 160, m.dark, 0, 9.1, 10);
-  panel(g, 30, 20, 13, m.house, 0, 19, -88, 3);
-  for (let y = 12; y < 28; y += 3.2) bx(g, 30.1, 0.9, 13.1, m.glass, 0, y, -88);
-  bx(g, 38, 1.2, 5, m.house, 0, 29, -84);
-  bx(g, 38.1, 1.0, 5.1, m.glass, 0, 28.2, -84);
-  bx(g, 7, 9, 6, m.dark, 0, 33, -94);
-  bx(g, 7.1, 1.5, 6.1, m.red, 0, 35, -94);
-  for (let bay = 0; bay < 7; bay++) {
-    const z = -66 + bay * 13.2;
-    for (let c = 0; c < 12; c++) {
-      const h = 2 + Math.floor(r() * 4);
-      for (let k = 0; k < h; k++) containers.push({ x: x0 + (c - 5.5) * 2.5, y: 9.2 + 1.3 + k * 2.6, z: z0 + z, ry: 0, c: tints[Math.floor(r() * tints.length)] });
+  const zAt = (t) => (t - 0.5) * L + (t > 0.97 ? (t - 0.97) * 60 : 0); // stem rakes forward
+  const pos = [], col = [], idx = [];
+  const ring = [];
+  for (let s = 0; s <= ST; s++) {
+    const t = s / ST, row = [];
+    const yTop = deckAt(t);
+    for (let k = 0; k <= HS; k++) {
+      const y = KEEL + (yTop - KEEL) * (k / HS);
+      const c = y < 1.6 ? red : y < 2.3 ? white : top; // waterline sits at local y 0
+      for (const sd of [-1, 1]) row.push([sd * half(t, y), y, zAt(t), c]);
+    }
+    ring.push(row);
+  }
+  const vid = (s, k, sd) => (s * (HS + 1) + k) * 2 + (sd > 0 ? 1 : 0);
+  for (const row of ring) for (const [x, y, z, c] of row) { pos.push(x, y, z); col.push(...c); }
+  for (let s = 0; s < ST; s++) for (let k = 0; k < HS; k++) {
+    for (const sd of [-1, 1]) {
+      const a = vid(s, k, sd), b2 = vid(s + 1, k, sd), c = vid(s, k + 1, sd), d = vid(s + 1, k + 1, sd);
+      if (sd > 0) idx.push(a, b2, c, b2, d, c); else idx.push(a, c, b2, b2, c, d);
     }
   }
-  g.position.set(x0, 0, z0);
+  for (let s = 0; s < ST; s++) { // bottom
+    const a = vid(s, 0, -1), b2 = vid(s, 0, 1), c = vid(s + 1, 0, -1), d = vid(s + 1, 0, 1);
+    idx.push(a, c, b2, b2, c, d);
+  }
+  // transom: close the stern
+  for (let k = 0; k < HS; k++) { const a = vid(0, k, -1), b2 = vid(0, k, 1), c = vid(0, k + 1, -1), d = vid(0, k + 1, 1); idx.push(a, b2, c, b2, d, c); }
+  const hg = new THREE.BufferGeometry();
+  hg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  hg.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  hg.setIndex(idx);
+  hg.computeVertexNormals();
+  const hull = new THREE.Mesh(hg, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0.2, side: THREE.DoubleSide }));
+  hull.name = 'hull';
+  g.add(hull);
+  // decks: main deck plate and the raised forecastle
+  const deckM = std(0x5b5f5c, { roughness: 0.85 });
+  for (let s = 0; s < ST; s++) {
+    const t0 = s / ST, t1 = (s + 1) / ST, y = Math.min(deckAt(t0), deckAt(t1)) - 0.05;
+    const w = Math.min(half(t0, deckAt(t0)), half(t1, deckAt(t1)));
+    bx(g, w * 2, 0.2, zAt(t1) - zAt(t0) + 0.05, deckM, 0, deckAt(t0) - 0.05, (zAt(t0) + zAt(t1)) / 2);
+  }
+  // bulwark rail and a white deck line
+  for (const sd of [-1, 1]) bar(g, [sd * (B - 0.1), DECK + 1.0, zAt(0.02)], [sd * (B - 0.1), DECK + 1.0, zAt(0.85)], 0.08, 0.08, m.steel);
+  const whiteM = std(0xe6e4dc, { roughness: 0.7 });
+  // forecastle breakwater and foremast
+  for (const sd of [-1, 1]) bar(g, [sd * 11, FC, zAt(0.86)], [0, FC + 3.2, zAt(0.86) - 6], 0.4, 3.2, whiteM);
+  bar(g, [0, FC, zAt(0.93)], [0, FC + 12, zAt(0.93)], 0.5, 0.5, whiteM);
+  bx(g, 0.5, 0.5, 0.5, m.red, 0, FC + 12.3, zAt(0.93));
+  for (const sd of [-1, 1]) cy(g, 0.7, 0.7, 1.4, 10, m.dark, sd * 6, FC + 0.7, zAt(0.95)); // windlasses
+  // accommodation block aft: stepped decks with window bands, bridge and wings
+  const az = zAt(0.13), decks = 7, dh = 2.9;
+  for (let k = 0; k < decks; k++) {
+    const w = 24 - k * 0.6, d = 15 - k * 0.4, y = DECK + k * dh;
+    bx(g, w, dh, d, whiteM, 0, y + dh / 2, az);
+    bx(g, w + 0.05, 0.9, d + 0.05, m.glass, 0, y + dh * 0.62, az);
+    bx(g, w + 1.2, 0.15, d + 1.2, whiteM, 0, y + dh, az); // deck overhang
+  }
+  const by = DECK + decks * dh;
+  bx(g, 2 * B + 4, 3.0, 8, whiteM, 0, by + 1.5, az + 2); // bridge with wings out past the hull
+  bx(g, 2 * B + 4.05, 1.3, 8.05, m.glass, 0, by + 1.9, az + 2);
+  bx(g, 2 * B + 4.6, 0.3, 8.6, m.dark, 0, by + 3.1, az + 2);
+  bar(g, [0, by + 3.2, az], [0, by + 10, az], 0.4, 0.4, whiteM); // mast
+  bx(g, 4, 0.2, 0.4, m.dark, 0, by + 8.6, az);
+  bx(g, 0.4, 0.4, 0.4, m.red, 0, by + 10.2, az);
+  // funnel behind the accommodation
+  const fz = az - 11;
+  bx(g, 7, 12, 6, std(0x23272b, { roughness: 0.6 }), 0, DECK + 15, fz);
+  bx(g, 7.05, 2.2, 6.05, std(0xb5362a, { roughness: 0.6 }), 0, DECK + 18.5, fz);
+  bx(g, 6, 0.6, 5, m.dark, 0, DECK + 21.3, fz);
+  // lifeboats in davits either side
+  for (const sd of [-1, 1]) {
+    const lb = new THREE.Mesh(new THREE.CapsuleGeometry(1.4, 5.5, 4, 8).rotateX(Math.PI / 2).scale(1, 0.75, 1), std(0xd9671f, { roughness: 0.6 }));
+    lb.position.set(sd * (12.5 - 0.2), DECK + 2 * dh + 1.2, az + 1);
+    g.add(lb);
+    for (const dz of [-3, 3]) bar(g, [sd * 10.5, DECK + 2 * dh, az + 1 + dz], [sd * 13.2, DECK + 2 * dh + 3, az + 1 + dz], 0.25, 0.25, whiteM);
+  }
+  // stern mooring deck gear
+  for (const sd of [-1, 1]) cy(g, 0.7, 0.7, 1.4, 10, m.dark, sd * 6, DECK + 0.7, zAt(0.03));
+  // cargo bays: hatch covers, lashing bridges, containers
+  const hatch = std(0x3d4a52, { roughness: 0.8 });
+  for (let bay = 0; bay < 9; bay++) {
+    const z = zAt(0.22) + bay * 14.2;
+    if (z > zAt(0.83)) break;
+    const tb = (z / L) + 0.5, wb = Math.min(half(tb, DECK), half(Math.min(1, tb + 0.06), DECK)) - 1.2;
+    bx(g, wb * 2, 0.8, 12.8, hatch, 0, DECK + 0.4, z);
+    bar(g, [-wb, DECK, z + 6.9], [wb, DECK, z + 6.9], 0.6, 0.6, m.steel);
+    bx(g, wb * 2, 0.15, 1.0, m.steel, 0, DECK + 5.4, z + 6.9);
+    for (const sd of [-1, 1]) bar(g, [sd * wb, DECK, z + 6.9], [sd * wb, DECK + 5.4, z + 6.9], 0.3, 0.3, m.steel);
+    const across = Math.floor((wb * 2) / 2.5);
+    for (let c = 0; c < across; c++) {
+      const tiers = 2 + Math.floor(r() * 5) - (bay > 6 ? 2 : 0);
+      for (let k = 0; k < tiers; k++) containers.push({ x: x0 + (c - (across - 1) / 2) * 2.5, y: -1.3 + DECK + 0.8 + 1.3 + k * 2.6, z: z0 + z, ry: 0, c: tints[Math.floor(r() * tints.length)] });
+    }
+  }
+  bakeGroup(g, { skip: (o) => o.name === 'hull' }); // keep the hull's painted bands (vertex colours)
+  g.traverse((o) => { if (o.isMesh) o.castShadow = o.receiveShadow = true; });
+  g.position.set(x0, -1.3, z0);
   return g;
 }
 
@@ -762,6 +852,23 @@ export function buildTerminal(tw) {
     tw.addInst(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ roughness: 0.5, metalness: 0.6 }), rails, false);
   }
 
+  // ---- container rows behind the crane legs, right of the quay straight ----
+  if (craneI.length) {
+    const i0 = Math.min(...craneI) - 60, i1 = Math.max(...craneI) + 90;
+    const reserved = (i) => (tw.reserved ?? []).some(([a, b2]) => i >= a && i < b2);
+    for (let i = i0; i < i1; i += 13) {
+      if (Math.abs(S.k[((i % N) + N) % N]) > 0.004 || reserved(i)) continue;
+      for (const lat of [23, 25.6, 28.2, 31.6, 34.2, 36.8, 39.4]) { // two blocks with a lane
+        const p = pointAt(i + 6, lat), q = pointAt(i, lat), e = pointAt(i + 12, lat);
+        const hgt = Math.max(0, Math.round(1 + r() * 3.4 - (lat > 30 && lat < 32 ? 9 : 0)));
+        const y = tw.heightAt(p.x, p.z), yaw = Math.atan2(e.x - q.x, e.z - q.z);
+        for (let k = 0; k < hgt; k++) containers.push({ x: p.x, y: y + 1.3 + k * 2.6, z: p.z, ry: yaw + (r() - 0.5) * 0.015, c: tints[Math.floor(r() * tints.length)] });
+      }
+      const p = pointAt(i + 6, 31);
+      tw.occupy(p.x, p.z, 11);
+    }
+  }
+
   // ---- quay edge, water, moored ship ----
   {
     const m = mats(), qx = T.quayX, len = Z1 - Z0 + 400, zc = (Z0 + Z1) / 2;
@@ -778,7 +885,7 @@ export function buildTerminal(tw) {
     }
     tw.addInst(new THREE.CylinderGeometry(0.3, 0.38, 0.8, 10), new THREE.MeshStandardMaterial({ roughness: 0.6, metalness: 0.4 }), bol);
     tw.addInst(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ roughness: 0.9 }), fend);
-    if (T.ship) big.add(containerShip(containers, tints, r, qx + 21, T.ship));
+    if (T.ship) tw.add(containerShip(containers, tints, r, qx + 21, T.ship));
   }
 
   // ---- service road parallel to the track, gated spurs onto it ----
