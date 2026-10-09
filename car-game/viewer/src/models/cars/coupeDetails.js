@@ -40,12 +40,12 @@ export function addDetails(car, { skinMats, dloRear }) {
   plate({ z0: -1.93, z1: -2.16, sample: topS(0.82, -0.82, 9), side: 1 }, 'back'); // trunk lid
   // angular brows over the headlights, and a centre piece bridging them over the grille
   for (const s of [-1, 1]) {
-    const brow = box(0.44, 0.04, 0.16, metal, { pos: [s * 0.62, 0.6, 2.25], rot: [0.55, 0, s * 0.06] });
+    const brow = box(0.44, 0.04, 0.16, metal, { pos: [s * 0.62, 0.632, 2.25], rot: [0.55, 0, s * 0.06] });
     brow.userData.zone = 'front';
     armor.add(brow);
   }
   {
-    const brow = box(0.82, 0.04, 0.16, metal, { pos: [0, 0.6, 2.25], rot: [0.55, 0, 0] });
+    const brow = box(0.82, 0.04, 0.16, metal, { pos: [0, 0.618, 2.25], rot: [0.55, 0, 0] });
     brow.userData.zone = 'front';
     armor.add(brow);
   }
@@ -61,27 +61,29 @@ export function addDetails(car, { skinMats, dloRear }) {
   // recessed housings with chrome bezels; a narrow slot grille with a chamfered surround;
   // a wraparound bumper in the body's worn paint with angled faces, amber lamps set into
   // its corners, an air dam with fog lamps and a raked splitter under it.
-  const chrome = steelMaterial(0x8a9096), FZ = 2.252, LY = 0.462;
+  const chrome = steelMaterial(0x8a9096), FZ = 2.252, LY = 0.5;
   const lamp = (s) => {
     const g = new THREE.Group();
     g.position.set(s * 0.5, LY, FZ);
     g.rotation.set(-0.14, s * 0.1, 0, 'YXZ'); // leans back with the nose, wraps toward the corner
-    g.add(box(0.38, 0.09, 0.03, chrome, { pos: [0, 0, -0.004] })); // bezel
-    g.add(box(0.35, 0.07, 0.03, darkMaterial(0x0a0b0c), { pos: [0, 0, 0.002] })); // recess
+    // tall enough to fill the face between the bumper and the brows
+    g.add(box(0.38, 0.125, 0.03, chrome, { pos: [0, 0, -0.004] })); // bezel
+    g.add(box(0.35, 0.105, 0.03, darkMaterial(0x0a0b0c), { pos: [0, 0, 0.002] })); // recess
     for (const dx of [-0.085, 0.085]) {
-      g.add(box(0.15, 0.054, 0.01, darkMaterial(0x2a2d30), { pos: [dx, 0, 0.012] })); // reflector bowl
-      g.add(box(0.144, 0.048, 0.008, glowMat('light', 0.5), { pos: [dx, 0.002, 0.019] })); // lens
-      g.add(box(0.144, 0.004, 0.006, chrome, { pos: [dx, -0.008, 0.024] })); // lens divider
+      g.add(box(0.15, 0.088, 0.01, darkMaterial(0x2a2d30), { pos: [dx, 0, 0.012] })); // reflector bowl
+      g.add(box(0.144, 0.08, 0.008, glowMat('light', 0.5), { pos: [dx, 0.002, 0.019] })); // lens
+      g.add(box(0.144, 0.004, 0.006, chrome, { pos: [dx, -0.014, 0.024] })); // lens divider
     }
-    g.add(box(0.008, 0.07, 0.02, chrome, { pos: [0, 0, 0.018] })); // centre mullion
+    g.add(box(0.008, 0.105, 0.02, chrome, { pos: [0, 0, 0.018] })); // centre mullion
     return g;
   };
   for (const s of [-1, 1]) car.add(lamp(s));
   // slot grille: dark slot inside a chamfered surround, small blank badge
-  car.add(box(0.5, 0.05, 0.02, chrome, { pos: [0, LY + 0.004, FZ - 0.002], rot: [-0.14, 0, 0] }));
-  car.add(box(0.47, 0.03, 0.03, darkMaterial(0x060606), { pos: [0, LY + 0.004, FZ + 0.003], rot: [-0.14, 0, 0] }));
-  for (let k = -5; k <= 5; k++) car.add(box(0.004, 0.026, 0.01, metal, { pos: [k * 0.04, LY + 0.004, FZ + 0.016], rot: [-0.14, 0, 0] }));
-  car.add(box(0.05, 0.026, 0.01, chrome, { pos: [0, LY + 0.004, FZ + 0.024], rot: [-0.14, 0, 0] }));
+  car.add(box(0.5, 0.115, 0.02, chrome, { pos: [0, LY, FZ - 0.002], rot: [-0.14, 0, 0] }));
+  car.add(box(0.47, 0.095, 0.03, darkMaterial(0x060606), { pos: [0, LY, FZ + 0.003], rot: [-0.14, 0, 0] }));
+  for (let k = -5; k <= 5; k++) car.add(box(0.004, 0.09, 0.01, metal, { pos: [k * 0.04, LY, FZ + 0.016], rot: [-0.14, 0, 0] }));
+  for (const y of [-0.03, 0.03]) car.add(box(0.46, 0.004, 0.01, metal, { pos: [0, LY + y, FZ + 0.017], rot: [-0.14, 0, 0] }));
+  car.add(box(0.05, 0.03, 0.01, chrome, { pos: [0, LY, FZ + 0.026], rot: [-0.14, 0, 0] }));
   // bumper: three stacked layers traced in plan with chamfered corners (a tucked chin, the
   // main band, a narrower sloped top), so every face is slightly angled
   const plan = (y0, h, front, half, cut) => {
