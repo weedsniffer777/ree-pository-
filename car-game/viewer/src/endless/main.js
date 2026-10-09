@@ -199,8 +199,8 @@ function autopilot() {
 
 function readInput() {
   if (race?.state === 'done' || (race && race.player.armor.wrecked)) {
-    if (race.player.armor.wrecked) return { throttle: 0, brake: 0, steer: 0, boost: false, fire: false }; // the wreck just rolls on
-    return { ...autopilot(), boost: false, fire: false, cap: 20 }; // cool-down lap after the flag
+    if (race.player.armor.wrecked || race.parked) return { throttle: 0, brake: 0, steer: 0, boost: false, fire: false }; // the wreck just rolls on
+    return { ...autopilot(), boost: car.boost > 0.05, fire: false, cap: 0 }; // flat out past the camera
   }
   if (auto) return { ...autopilot(), cap: race?.inputCap || 0, fire: race ? race.canFire && params.get('fire') === '1' : params.get('fire') === '1' };
   const k = (...c) => c.some((x) => keys.has(x));
@@ -241,7 +241,12 @@ function updateLock() {
     if (d < bd) { bd = d; best = { r, sp }; }
   }
   if (!best) { hud.lock(null); hud.reticleState('idle'); return null; }
-  if (bd > LOCK_MAX) { hud.lock(null); hud.reticleState('far', bd); return null; } // seen, but too far to lock
+  if (bd > LOCK_MAX) {
+    // seen, but too far to lock: the guns still match its height (elevation only), so
+    // it can be hit by steering onto it by hand
+    hud.lock(null); hud.reticleState('far', bd);
+    return lockAim.set(car.x + fx * bd, best.r.y + 0.8, car.z + fz * bd);
+  }
   hud.reticleState('lock');
   const size = Math.max(30, Math.min(150, 1100 / bd));
   hud.lock(best.sp[0], best.sp[1], size, best.r.slot, bd);
@@ -270,7 +275,7 @@ function emitFx(dt, inp) {
 }
 
 // ---- Camera ----
-let camYaw = car.yaw, fov = 62, shake = 0, outroYaw = null, outroPos = null, deathSlow = false;
+let camYaw = car.yaw, fov = 62, shake = 0, outroYaw = null, outroPos = null, endCam = null, endShot = null;
 const lerpAngle = (a, b, t) => a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * t;
 function updateCamera(dt) {
   const view = params.get('view') || 'chase';
@@ -296,30 +301,53 @@ function updateCamera(dt) {
   const bx = (Math.random() - 0.5) * buzz, by = (Math.random() - 0.5) * buzz;
   const outro = race?.state === 'done' && view === 'chase' ? race.t - race.doneT : -1;
   if (outro >= 0) {
-    // race over: a wreck gets a slow orbit pulling back over the fire; a finish swings round
-    // to a front three-quarter shot of the car rolling on
-    const e = outro, k = 1 - Math.exp(-dt * 2.5);
-    let ang, dist, up;
-    if (race.why === 'wrecked') {
-      outroYaw ??= camYaw + Math.PI;
-      ang = outroYaw + Math.PI + e * 0.32;
-      dist = 7 + Math.min(e, 4) * 2.2;
-      up = 2.4 + Math.min(e, 4) * 1.1;
-    } else {
-      const u = Math.min(1, e / 2.6), sm = u * u * (3 - 2 * u);
-      ang = car.yaw + Math.PI + (0.55 - Math.PI) * sm;
-      dist = 6.5 + sm * 1.5;
-      up = 1.9 + sm * 0.6;
-    }
-    const px = car.x - Math.sin(ang) * dist, pz = car.z - Math.cos(ang) * dist;
-    const py = Math.max(car.y + up, terrainHeight(px, pz) + 0.8);
-    outroPos ??= camera.position.clone();
-    outroPos.lerp(tmpV.set(px, py, pz), k);
-    camera.position.copy(outroPos);
-    camera.lookAt(car.x, car.y + 0.7, car.z);
+    // race over, by shot: 'wreck' a slow orbit pulling back over our burning car; 'kill' a
+    // slow-mo look at the final kill; 'pass' a fixed roadside camera ahead that we blast
+    // past; 'hero' low, wide and close on the parked car, the finish line behind it
+    const shot = race.endShot, k = 1 - Math.exp(-dt * 2.5);
+    if (shot !== endShot) { endShot = shot; endCam = null; }
+    const look = tmpV2.set(car.x, car.y + 0.7, car.z);
+    let px, py, pz, snap = false;
     fovT = 55;
+    if (shot === 'wreck') {
+      outroYaw ??= camYaw + Math.PI;
+      const e = outro, ang = outroYaw + Math.PI + e * 0.32, dist = 7 + Math.min(e, 4) * 2.2, up = 2.4 + Math.min(e, 4) * 1.1;
+      px = car.x - Math.sin(ang) * dist; pz = car.z - Math.cos(ang) * dist; py = car.y + up;
+    } else if (shot === 'kill' && race.finalKill) {
+      const v = race.finalKill;
+      if (!endCam) { const a = Math.atan2(car.x - v.x, car.z - v.z) + 0.9; endCam = { a, t: 0 }; }
+      endCam.t += dt;
+      const a = endCam.a + endCam.t * 0.5;
+      px = v.x + Math.sin(a) * 9; pz = v.z + Math.cos(a) * 9; py = v.y + 2.6;
+      look.set(v.x, v.y + 0.8, v.z);
+      fovT = 50;
+    } else if (shot === 'pass') {
+      if (!endCam) {
+        const ahead = car.n.i + Math.round(Math.max(28, Math.hypot(car.vx, car.vz) * 1.5) / STEP);
+        const p = pointAt(LOOP.on ? ahead : Math.min(S.count - 1, ahead), (car.n.lat > 0 ? -1 : 1) * (RAIL_LAT - 1.2));
+        endCam = { x: p.x, z: p.z };
+        snap = true;
+      }
+      px = endCam.x; pz = endCam.z; py = terrainHeight(px, pz) + 0.9;
+      fovT = 48;
+    } else {
+      // hero: front three-quarter, low, wide; the car sits left of centre for the results
+      if (!endCam) { endCam = { t: 0 }; snap = true; }
+      endCam.t += dt;
+      const a = car.yaw + 0.78 + endCam.t * 0.012;
+      px = car.x + Math.sin(a) * 6.6; pz = car.z + Math.cos(a) * 6.6; py = car.y + 0.5;
+      const dx = car.x - px, dz = car.z - pz, dl = Math.hypot(dx, dz) || 1;
+      look.set(car.x - (dz / dl) * 2.6, car.y + 0.9, car.z + (dx / dl) * 2.6);
+      fovT = 84;
+    }
+    py = Math.max(py, terrainHeight(px, pz) + 0.4);
+    outroPos ??= camera.position.clone();
+    if (snap) outroPos.set(px, py, pz); else outroPos.lerp(tmpV.set(px, py, pz), shot === 'hero' || shot === 'pass' ? 1 : k);
+    camera.position.copy(outroPos);
+    camera.lookAt(look);
+    if (snap) fov = fovT;
   } else if (view === 'chase' || view === 'high') {
-    outroYaw = null; outroPos = null;
+    outroYaw = null; outroPos = null; endShot = null; endCam = null;
     const back = (view === 'high' ? 13 : 5.5) + Math.min(speed, 45) * 0.03;
     const up = (view === 'high' ? 6.5 : 2.0) + orbitPitch * 4;
     const px = car.x - fx * back, pz = car.z - fz * back;
@@ -359,7 +387,7 @@ function updateCamera(dt) {
 }
 
 // ---- HUD pointer: on-screen marker or edge arrow toward a world position ----
-const tmpV = new THREE.Vector3();
+const tmpV = new THREE.Vector3(), tmpV2 = new THREE.Vector3();
 function screenPointer(x, y, z, label) {
   tmpV.set(x, y, z).project(camera);
   const behind = tmpV.z > 1;
@@ -491,15 +519,16 @@ function frame(now) {
   last = now;
   // slow motion for dramatic tutorial beats: eases back to full speed
   // a beat of slow motion as your car goes up
-  if (race?.state === 'done' && race.why === 'wrecked') { if (!deathSlow) { deathSlow = true; slowmo = 1.6; } } else deathSlow = false;
   slowmo = Math.max(0, slowmo - rdt);
   let dt = rdt * (slowmo > 0 ? 0.35 + 0.65 * Math.max(0, 1 - slowmo / 0.6) ** 2 : 1);
+  // the end sequence: slow motion on our wreck or the final kill, then its timed beats
+  if (race) { dt *= race.endScale; race.tickEnd(rdt); }
   // hitstop: the world all but freezes for a beat on crits and kills
   if (race?.hitstop > 0) { race.hitstop -= rdt; dt *= 0.04; }
   acc += dt;
   const inp = readInput();
   while (acc >= H) {
-    car.step(H, inp);
+    if (!race?.parked) car.step(H, inp);
     race?.stepAI(H);
     emitFx(H, inp);
     acc -= H;

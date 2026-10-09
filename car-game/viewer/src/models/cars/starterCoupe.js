@@ -112,14 +112,16 @@ export function buildStarterCoupe() {
 
   // ---- Everything bolted on: armor, lights, rack, blower, exhausts, rear, guns, dozer ----
   addDetails(car, { skinMats, dloFront, dloRear });
-  // pull the zone-tagged armor plates into one detachable group per zone
+  // pull the tagged armor pieces into one detachable group per zone and stage
   const armor = car.getObjectByName('armor');
   for (const zone of ['front', 'back', 'left', 'right']) {
-    const g = new THREE.Group();
-    g.name = `armor_${zone}`;
-    g.userData.part = zone;
-    car.add(g);
-    for (const c of [...armor.children]) if (c.userData.zone === zone) g.attach(c);
+    for (const stage of [1, 2, 3]) {
+      const g = new THREE.Group();
+      g.name = `armor_${zone}_${stage}`;
+      Object.assign(g.userData, { part: zone, stage });
+      car.add(g);
+      for (const c of [...armor.children]) if (c.userData.zone === zone && c.userData.stage === stage) g.attach(c);
+    }
   }
 
   for (const so of [

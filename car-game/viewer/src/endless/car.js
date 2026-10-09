@@ -140,7 +140,7 @@ export class CarController {
       // back to straight (or past 90 deg into forward driving) as fluidly as a forward one
       const slipA = Math.abs(Math.atan2(vl, Math.abs(vf))), spdA = Math.hypot(vf, vl);
       if (spdA > 8 && slipA > 0.3) driftWant = Math.max(driftWant, Math.min(0.85, (slipA - 0.3) * 1.4) * Math.min(1, (spdA - 8) / 10));
-      this.drift += (driftWant - this.drift) * Math.min(1, dt * (driftWant > this.drift ? 2.4 : 1.6));
+      this.drift += (driftWant - this.drift) * Math.min(1, dt * (driftWant > this.drift ? 1.5 : 1.6));
       this.driftMode = this.drift > 0.35;
       if (inp.brake > 0 && vf < -3) {
         // already rolling backwards (after a 180): S is full reverse, up to half the normal
@@ -162,17 +162,23 @@ export class CarController {
       // Momentum: the velocity keeps its size and swings round toward where the car points
       // (fast with full grip, slowly in a drift), instead of the sideways part being
       // thrown away. Tyres scrub a little speed in proportion to how sideways it is.
-      const grip = surf.grip + (0.75 - surf.grip) * this.drift;
+      // In a slide the tyres pull the velocity round less the further the car points off it,
+      // measured as degrees from the direction of travel (0..180, not folded at 90: a car
+      // 120 deg off grips less than one 60 deg off). So a bigger angle carries the car on
+      // its old line instead of the nose dragging the velocity round with it.
+      const dev = vf < -1 && inp.brake > 0 ? Math.atan2(Math.abs(vl), -vf) : Math.atan2(Math.abs(vl), vf); // reversing on purpose: measured from backwards
+      const hold = 1 / (1 + (dev / 0.55) ** 1.6);
+      const grip = (surf.grip + (0.75 - surf.grip) * this.drift) * (1 - this.drift * (1 - hold));
       const spd = Math.hypot(vf, vl);
       if (spd > 0.3) {
         const fwd = vf >= 0 ? 1 : -1;
         let beta = Math.atan2(vl, Math.abs(vf)); // slip angle
         beta *= Math.exp(-grip * dt);
         // speed lost to the tyres scrubbing sideways: small, growing with the slip angle;
-        // even fully sideways a drift only bleeds ~10% of its speed per second
+        // even fully sideways a drift only bleeds ~17% of its speed per second
         const sb = Math.abs(Math.sin(beta));
         const dk = sm(0.15, 0.5, this.drift);
-        const scrub = Math.exp(-dt * ((0.03 + 0.07 * sb ** 1.5) * dk + 0.08 * sb * (1 - dk)) * (spd > 12 ? 1 : 2));
+        const scrub = Math.exp(-dt * ((0.05 + 0.13 * sb ** 1.5) * dk + 0.08 * sb * (1 - dk)) * (spd > 12 ? 1 : 2));
         const s2 = spd * scrub;
         vf = fwd * s2 * Math.cos(beta);
         vl = s2 * Math.sin(beta);
@@ -201,7 +207,7 @@ export class CarController {
       const sp = Math.abs(vf);
       // turn rate falls off with speed (a squared term so top speed and boost are clearly
       // heavier: ~1.8 rad/s at 36 km/h, ~0.6 at 165, ~0.5 boosting); drifting adds rotation back
-      this.yawRate = -this.steerS * 2.4 * Math.min(1, sp / 4) / (1 + sp / 30 + (sp / 40) ** 2) * THREE.MathUtils.clamp(vf / 2.5, -1, 1) * (1 + this.drift * (0.6 + Math.max(0, Math.abs(this.steerS) - 0.7) * 2.2)); // hard lock in a drift whips the car round
+      this.yawRate = -this.steerS * 2.4 * Math.min(1, sp / 4) / (1 + sp / 30 + (sp / 40) ** 2) * THREE.MathUtils.clamp(vf / 2.5, -1, 1) * (1 + this.drift * (0.4 + Math.max(0, Math.abs(this.steerS) - 0.7) * 1.6)); // hard lock in a drift whips the car round
       const spdY = Math.hypot(vf, vl);
       if (this.whip) this.yawRate = -this.whipDir * 3.4 * Math.min(1, spdY / 14); // assisted swing round
       else if (this.spun && !(inp.brake > 0)) { // S released: swing back to forwards

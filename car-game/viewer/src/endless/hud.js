@@ -156,17 +156,59 @@ html, body, #hud, #hud * { -webkit-user-select: none; user-select: none; -webkit
 #hud .count.go { color: var(--rust); }
 #hud .count.pop { animation: pop 0.45s cubic-bezier(.2,1.6,.4,1) both; }
 @keyframes pop { from { transform: translate(-50%, -50%) skewX(-6deg) scale(1.6); opacity: 0; } }
-/* results */
-#hud .results { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(8,9,10,0.66); pointer-events: auto; }
+/* race over: the HUD fades away, a placement slam, then results over the hero shot */
+#hud.ended :is(.tl, .tr, .map, .armor, .gauge, .ret, .lockbox, .hm, .pops, .glass, .vig, .touch, .title, .flash) { opacity: 0 !important; pointer-events: none !important; transition: opacity 0.5s; }
+#hud .place { position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%); text-align: center; z-index: 4; }
+#hud .place[hidden] { display: none; }
+#hud .place b { display: block; font: 900 clamp(90px, 20vw, 210px)/0.8 var(--display); letter-spacing: 0.02em; transform: skewX(-6deg); color: var(--white); -webkit-text-stroke: 3px #0e0f11; paint-order: stroke fill; text-shadow: 0 6px 0 rgba(0,0,0,0.55); animation: slam 0.5s cubic-bezier(.2,1.5,.4,1) both; }
+#hud .place.win b { color: var(--rust); }
+#hud .place.dead b { color: var(--red); font-size: clamp(60px, 12vw, 140px); }
+#hud .place span { display: inline-block; margin-top: 12px; padding: 7px 16px 6px; font: 800 15px/1 var(--sign); letter-spacing: 0.24em; text-transform: uppercase; background: rgba(14,15,17,0.8); animation: fadeUp 0.4s 0.25s both; }
+@keyframes slam { from { transform: skewX(-6deg) scale(2.2); opacity: 0; } }
+@keyframes fadeUp { from { transform: translateY(10px); opacity: 0; } }
+#hud .results { position: absolute; inset: 0; display: flex; justify-content: flex-end; align-items: center; padding: var(--gy) var(--gxr) var(--gyb) var(--gx); background: linear-gradient(90deg, rgba(8,9,10,0) 30%, rgba(8,9,10,0.75) 62%); pointer-events: auto; }
 #hud .results[hidden] { display: none; }
-#hud .results .box { width: min(420px, calc(100% - 32px)); padding: 18px 20px 20px; display: grid; gap: 10px; }
-#hud .results h2 { margin: 0; font: 900 76px/0.85 var(--display); letter-spacing: 0.04em; transform: skewX(-6deg); }
-#hud .results.win h2 { color: var(--rust); }
-#hud .results .sub { font: 800 13px/1 var(--sign); letter-spacing: 0.2em; text-transform: uppercase; color: var(--dim); }
-#hud .results .list { display: grid; gap: 2px; max-height: 44vh; overflow: hidden; }
-#hud .results .row { grid-template-columns: 22px 1fr auto; }
-#hud .results button { height: 50px; border: 0; cursor: pointer; font: 900 24px/1 var(--display); letter-spacing: 0.14em; color: var(--black); background: var(--rust); clip-path: var(--cut); margin-top: 6px; }
+#hud .rbox { width: min(600px, 100%); max-height: 100%; overflow-y: auto; display: grid; gap: 8px; animation: slideIn 0.6s cubic-bezier(.2,.9,.3,1) both; scrollbar-width: none; }
+@keyframes slideIn { from { transform: translateX(60px); opacity: 0; } }
+#hud .rhead { display: flex; align-items: center; gap: 14px; padding: 10px 16px 10px 10px; }
+#hud .rhead .badge { min-width: 76px; height: 64px; display: grid; place-items: center; padding: 0 8px; background: var(--white); color: var(--black); clip-path: var(--cut); font: 900 40px/1 var(--display); transform: skewX(-6deg); }
+#hud .results.win .badge { background: var(--rust); }
+#hud .results.dead .badge { background: var(--red); color: var(--white); }
+#hud .rhead .rt { flex: 1; min-width: 0; }
+#hud .rhead h2 { margin: 0; font: 900 40px/0.9 var(--display); letter-spacing: 0.05em; transform: skewX(-6deg); }
+#hud .results.dead h2 { color: var(--red); }
+#hud .rhead .sub { margin-top: 5px; font: 800 12px/1 var(--sign); letter-spacing: 0.2em; text-transform: uppercase; color: var(--dim); }
+#hud .rhead .rtime { text-align: right; display: grid; gap: 4px; }
+#hud .rhead .rtime b { font-size: 30px; line-height: 1; }
+#hud .rtable { display: grid; gap: 2px; }
+#hud .rtable .th, #hud .results .row { display: grid; grid-template-columns: 46px 1.1fr 1fr 92px; align-items: center; }
+#hud .rtable .th { padding: 0 12px 2px 10px; font: 800 10px/1 var(--sign); letter-spacing: 0.22em; color: var(--dim); }
+#hud .results .row { height: 30px; padding: 0 12px 0 10px; font-size: 13px; animation: fadeUp 0.35s both; }
+#hud .results .row i { font-size: 19px; }
+#hud .results .row .cn { color: var(--dim); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 8px; }
+#hud .results .row.you .cn { color: var(--white); }
+#hud .results .row em { text-align: right; font-size: 13px; }
+#hud .rstats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+#hud .rstats .panel { padding: 10px 12px; }
+#hud .xr { position: relative; height: 170px; margin-top: 4px; }
+#hud .xr canvas { position: absolute; left: 22%; top: 13%; width: 56%; height: 74%; }
+#hud .xr svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+#hud .xr svg line { stroke: rgba(236,230,217,0.5); stroke-width: 1; }
+#hud .xr svg circle { fill: var(--white); }
+#hud .xr em { position: absolute; font: 800 9px/1.2 var(--sign); font-style: normal; letter-spacing: 0.16em; color: var(--dim); text-transform: uppercase; white-space: nowrap; }
+#hud .xr em b { display: block; font: 900 17px/1 var(--display); color: var(--white); letter-spacing: 0.02em; }
+#hud .nums { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; align-content: start; }
+#hud .nums div { display: grid; gap: 4px; }
+#hud .nums b { font-size: 30px; line-height: 1; }
+#hud .nums .score { grid-column: 1 / -1; padding-top: 8px; border-top: 1px solid rgba(236,230,217,0.14); }
+#hud .nums .score b { font-size: 48px; color: var(--rust); }
+#hud .nums .brk { grid-column: 1 / -1; display: grid; gap: 3px; font: 700 11px/1 var(--sign); color: var(--dim); font-variant-numeric: tabular-nums; }
+#hud .nums .brk p { margin: 0; display: flex; justify-content: space-between; }
+#hud .rbtn { display: grid; grid-template-columns: 1fr 1.4fr; gap: 8px; }
+#hud .results button { height: 50px; border: 0; cursor: pointer; font: 900 24px/1 var(--display); letter-spacing: 0.14em; color: var(--black); background: var(--rust); clip-path: var(--cut); }
 #hud .results button:hover { background: #f07a3a; }
+#hud .results button.replay { background: rgba(236,230,217,0.12); color: var(--dim); cursor: default; }
+#hud .results button small { margin-left: 8px; font: 800 10px/1 var(--sign); letter-spacing: 0.18em; vertical-align: 4px; }
 #hud .row b { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; vertical-align: 1px; }
 
 /* pause screen */
@@ -221,9 +263,16 @@ html, body, #hud, #hud * { -webkit-user-select: none; user-select: none; -webkit
   #hud .armor .hp { font-size: 22px; } #hud .armor .hp small { font-size: 11px; }
   #hud .pop { font-size: 22px; } #hud .pop.combo { font-size: 28px; } #hud .pop.kill { font-size: 38px; }
   #hud .glass .crack canvas { width: 460px; height: 460px; }
-  #hud .results h2 { font-size: 50px; }
-  #hud .results .box { gap: 6px; padding: 12px 16px 14px; }
-  #hud .results .list { max-height: 46vh; }
+  #hud .results { background: rgba(8,9,10,0.6); }
+  #hud .rbox { gap: 6px; }
+  #hud .rhead { padding: 6px 12px 6px 6px; } #hud .rhead .badge { min-width: 56px; height: 44px; font-size: 28px; }
+  #hud .rhead h2 { font-size: 28px; } #hud .rhead .rtime b { font-size: 22px; }
+  #hud .results .row { height: 20px; font-size: 11px; } #hud .results .row i { font-size: 14px; }
+  #hud .rbox { grid-template-columns: 1.25fr 1fr; align-items: start; } #hud .rhead, #hud .rbtn { grid-column: 1 / -1; }
+  #hud .rstats { grid-template-columns: 1fr; gap: 6px; } #hud .rstats .panel { padding: 6px 10px; }
+  #hud .xr { height: 92px; } #hud .xr em b { font-size: 13px; }
+  #hud .nums { grid-template-columns: 1fr 1fr 1.3fr; gap: 4px 8px; } #hud .nums .score { grid-column: auto; padding-top: 0; border-top: 0; } #hud .nums .brk { display: none; }
+  #hud .nums b { font-size: 22px; } #hud .nums .score b { font-size: 26px; }
   #hud .results button { height: 40px; font-size: 20px; }
   #hud .count { top: 30%; }
   #hud .gauge, #hud .speed { width: 146px; }
@@ -297,7 +346,16 @@ export function createHud({ touch = false } = {}) {
     <div class="pops"></div>
     <div class="count" hidden></div>
     <div class="intro shut instant"><i class="t"></i><i class="b"></i></div>
-    <div class="results" hidden><div class="box panel"><h2></h2><div class="sub"></div><div class="list"></div><div class="sub best"></div><button>PLAY AGAIN</button></div></div>
+    <div class="place" hidden><b></b><span></span></div>
+    <div class="results" hidden><div class="rbox">
+      <div class="rhead panel"><div class="badge"></div><div class="rt"><h2></h2><div class="sub"></div></div><div class="rtime"><span class="lbl">Time</span><b class="num"></b></div></div>
+      <div class="rtable"><div class="th"><span>POS</span><span>PLAYER</span><span>CAR NAME</span><span style="text-align:right">TIME</span></div><div class="list"></div></div>
+      <div class="rstats">
+        <div class="panel"><span class="lbl">Damage dealt</span><div class="xr"><canvas></canvas><svg></svg></div></div>
+        <div class="nums panel"><div><span class="lbl">Kills</span><b class="num k">0</b></div><div><span class="lbl">Damage</span><b class="num d">0</b></div><div class="score"><span class="lbl">Score</span><b class="num s">0</b></div><div class="brk"></div></div>
+      </div>
+      <div class="rbtn"><button class="replay" disabled>REPLAY<small>SOON</small></button><button class="next">NEXT</button></div>
+    </div></div>
     <div class="gauge">
       <div class="speed"><canvas></canvas><div class="rd"><div class="v">0</div><div class="u lbl">KM/H</div></div><div class="g">N</div></div>
       <div class="boost"><div class="top"><span class="lbl">Boost</span><span class="bk"><kbd>Shift</kbd></span></div><div class="bar"><i></i></div></div>
@@ -474,7 +532,7 @@ export function createHud({ touch = false } = {}) {
   }
 
   // ---- damage feedback ----
-  let xray = null, vigT = 0, vigBase = 0, hpShown = -1, flashV = 0;
+  let xrRes = null, xrSrc = null, xray = null, vigT = 0, vigBase = 0, hpShown = -1, flashV = 0;
   const cracks = [];
   const flashEl = $('.flash');
   const vig = $('.vig'), hm = $('.hm'), pops = $('.pops'), glass = $('.glass');
@@ -578,6 +636,7 @@ export function createHud({ touch = false } = {}) {
     set({ speed, boost, boosting, throttle, lap, laps, lapT, bestLap, heat = 0, overheated = false, dt = 1 / 60 }) {
       $('.ret .heatv i').style.height = `${Math.round(heat * 100)}%`;
       $('.ret').classList.toggle('hot', overheated);
+      if (overheated) { const tag = $('.ret .tag'); tag.hidden = false; tag.textContent = 'OVERHEAT'; } // takes the tag over from OUT OF RANGE
       const kmh = Math.abs(speed);
       const ng = speed < -2 ? 'R' : kmh < 3 && !throttle ? 'N' : gearFor(kmh, gear);
       if (typeof ng === 'number' && typeof gear === 'number' && ng !== gear) shiftT = 0.18;
@@ -618,7 +677,7 @@ export function createHud({ touch = false } = {}) {
     map: buildMap,
     mapUpdate: drawMap,
     mapDots(list) { dots = list; },
-    armorModel(model, hitbox) { if (root.style.display !== 'none') xray = new XRay($('.armor canvas'), model, hitbox); },
+    armorModel(model, hitbox) { if (root.style.display !== 'none') { xray = new XRay($('.armor canvas'), model, hitbox); xrSrc = { model, hitbox }; } },
     armor(a, t = performance.now() / 1000, dt = 1 / 60) {
       xray?.update(a, t);
       const now = performance.now() / 1000;
@@ -713,17 +772,61 @@ export function createHud({ touch = false } = {}) {
       el.textContent = text;
       el.className = `count pop${text === 'GO' ? ' go' : ''}`;
     },
-    // race over: { title, sub, win, rows: [{ pos, name, you, color, time }], best, onAgain } or null
+    // race over: the HUD fades out (true) or comes back (false)
+    ended(on) { root.classList.toggle('ended', on); if (!on) { $('.place').hidden = true; } },
+    // the placement slam before the results: '1ST', '4TH', 'DESTROYED'; null hides it
+    placement(text, sub = '', kind = '') {
+      const el = $('.place');
+      if (text === null) { el.hidden = true; return; }
+      el.className = `place ${kind}`;
+      el.querySelector('b').textContent = text;
+      el.querySelector('span').textContent = sub;
+      el.querySelector('span').hidden = !sub;
+      el.hidden = false;
+    },
+    // results: { header, badge, sub, time, win, dead, rows: [{ pos, name, you, color, car,
+    // time }], kills, dealt: { front, back, left, right, core } (HP), score: [[label, n]],
+    // onNext } or null
     results(r) {
       const el = $('.results');
       if (!r) { el.hidden = true; return; }
+      $('.place').hidden = true;
       el.classList.toggle('win', !!r.win);
-      el.querySelector('h2').textContent = r.title;
-      el.querySelector('.sub').textContent = r.sub;
-      el.querySelector('.best').textContent = r.best ? `Best lap ${r.best}` : '';
-      el.querySelector('.list').innerHTML = r.rows.map((x) => `<div class="row${x.you ? ' you' : ''}"><i>${x.pos}</i><span><b style="background:${x.color}"></b>${x.name}</span><em>${x.time}</em></div>`).join('');
-      el.querySelector('button').onclick = () => { el.hidden = true; r.onAgain(); };
+      el.classList.toggle('dead', !!r.dead);
+      el.querySelector('.badge').textContent = r.badge;
+      el.querySelector('h2').textContent = r.header;
+      el.querySelector('.rhead .sub').textContent = r.sub;
+      el.querySelector('.rtime b').textContent = r.time;
+      el.querySelector('.list').innerHTML = r.rows.map((x, k) => `<div class="row${x.you ? ' you' : ''}${x.out ? ' out' : ''}" style="animation-delay:${0.25 + k * 0.05}s"><i>${x.pos}</i><span><b style="background:${x.color}"></b>${x.name}</span><span class="cn">${x.car}</span><em>${x.time}</em></div>`).join('');
+      el.querySelector('.next').onclick = () => { el.hidden = true; r.onNext(); };
       el.hidden = false;
+      // damage dealt, by the part of the enemy it went into: the car as an x-ray coloured
+      // by share of the total, with a pointer to each part
+      const d = r.dealt, tot = d.front + d.back + d.left + d.right + d.core, mx = Math.max(1, d.front, d.back, d.left, d.right, d.core);
+      const cv = el.querySelector('.xr canvas');
+      if (!xrRes && xrSrc) xrRes = new XRay(cv, xrSrc.model, xrSrc.hitbox);
+      xrRes?.update({ z: { front: 1 - d.front / mx, back: 1 - d.back / mx, left: 1 - d.left / mx, right: 1 - d.right / mx }, core: 1 - d.core / mx });
+      // pointers: label position, then the point on the car (percent of the box)
+      const P = [['front', 'Front', 50, 2, 50, 20, 'center'], ['back', 'Rear', 50, 86, 50, 80, 'center'], ['left', 'Left', 0, 42, 38, 50, 'left'], ['right', 'Right', 100, 42, 62, 50, 'right'], ['core', 'Hull', 100, 4, 54, 38, 'right']];
+      const xr = el.querySelector('.xr');
+      xr.querySelectorAll('em').forEach((e) => e.remove());
+      el.querySelector('.xr svg').innerHTML = P.map(([, , lx, ly, px, py]) => `<line x1="${lx === 0 ? 14 : lx === 100 ? 86 : lx}%" y1="${ly + 8}%" x2="${px}%" y2="${py}%"/><circle cx="${px}%" cy="${py}%" r="2.5"/>`).join('');
+      for (const [k, name, lx, ly, , , al] of P) {
+        const e = document.createElement('em');
+        e.innerHTML = `${name}<b>${Math.round(d[k])}</b>`;
+        Object.assign(e.style, { top: `${ly}%`, textAlign: al, ...(al === 'right' ? { right: '0' } : al === 'left' ? { left: '0' } : { left: `${lx}%`, transform: 'translateX(-50%)' }) });
+        xr.append(e);
+      }
+      // numbers count up
+      const sTot = r.score.reduce((a, [, n]) => a + n, 0);
+      el.querySelector('.brk').innerHTML = r.score.map(([l, n]) => `<p><span>${l}</span><span>+${n}</span></p>`).join('');
+      const K = el.querySelector('.k'), D = el.querySelector('.d'), Sc = el.querySelector('.s'), t0 = performance.now();
+      const tick = () => {
+        const u = Math.min(1, (performance.now() - t0 - 600) / 1400), e2 = u < 0 ? 0 : 1 - (1 - u) ** 3;
+        K.textContent = Math.round(r.kills * e2); D.textContent = Math.round(tot * e2); Sc.textContent = Math.round(sTot * e2).toLocaleString('en-US');
+        if (u < 1 && !el.hidden) requestAnimationFrame(tick);
+      };
+      tick();
     },
     track() {},
     pulseTrack() {},

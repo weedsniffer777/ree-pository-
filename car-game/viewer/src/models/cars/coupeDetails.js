@@ -21,39 +21,46 @@ export function addDetails(car, { skinMats, dloRear }) {
   const armor = new THREE.Group();
   armor.name = 'armor';
   car.add(armor);
-  // every plate remembers its damage zone so it can be torn off when that zone is stripped
-  const plate = (opts, zone) => {
+  // Armor comes off in big chunks, three stages per side: stage 1 goes when that side is
+  // down to 2/3, stage 2 at 1/3, stage 3 when it's stripped. Every piece remembers its zone
+  // and stage; the car groups them into one detachable part per zone and stage.
+  //   front: hood plates / windshield cage + brows / dozer blade
+  //   back:  ducktail spoiler / rear-window louvres, trunk plate + light cages / bumper
+  //   sides: fender + quarter plates + skirt / window bars + louvres / the big door plate
+  const tag = (o, zone, stage) => { o.userData.zone = zone; o.userData.stage = stage; armor.add(o); return o; };
+  const plate = (opts, zone, stage) => {
     const n0 = armor.children.length;
-    conformalPlate({ ...opts, skinMats, weld, group: armor });
-    for (const c of armor.children.slice(n0)) c.userData.zone = zone;
+    conformalPlate({ ...opts, skinMats: plateMats, weld, group: armor }); // bare bolted steel over the paint
+    for (const c of armor.children.slice(n0)) { c.userData.zone = zone; c.userData.stage = stage; }
   };
+  const boltMat = steelMaterial(0x5d6369), plateMats = Array(4).fill(metal);
+  // bolt heads: on a side plate (axis out along x) or a top plate (axis up)
+  const sideBolt = (s, z, y, out, zone, stage) => tag(cyl(0.016, 0.016, 0.014, 6, boltMat, { pos: [s * (sideX(z, y) + out), y, z], rot: [0, 0, Math.PI / 2] }), zone, stage);
+  const topBolt = (x, z, out, zone, stage) => tag(cyl(0.016, 0.016, 0.014, 6, boltMat, { pos: [x, topY(z, x) + out, z] }), zone, stage);
   const sideS = (y0, y1, k) => (z) => Array.from({ length: k }, (_, i) => { const y = y0 + ((y1 - y0) * i) / (k - 1); return [sideX(z, y), y]; });
   const topS = (x0, x1, k) => (z) => Array.from({ length: k }, (_, i) => { const x = x0 + ((x1 - x0) * i) / (k - 1); return [x, topY(z, x)]; });
   for (const s of [-1, 1]) {
     const zs = s > 0 ? 'left' : 'right'; // +x is the car's left
-    plate({ z0: 0.8, z1: -0.38, sample: sideS(0.36, 0.79, 6), side: s }, zs); // door
-    plate({ z0: 2.14, z1: 1.74, sample: sideS(0.32, 0.62, 5), side: s }, zs); // front fender
-    plate({ z0: -1.67, z1: -2.1, sample: sideS(0.36, 0.76, 5), side: s }, zs); // rear quarter
-    plate({ z0: 0.9, z1: -0.84, sample: sideS(0.21, 0.35, 4), side: s, thick: 0.045 }, zs); // rocker skirt
-    plate({ z0: 2.1, z1: 0.98, sample: topS(0.87, 0.3, 7), side: s, steps: 4 }, 'front'); // hood
+    plate({ z0: 0.8, z1: -0.38, sample: sideS(0.36, 0.79, 6), side: s, thick: 0.06, bev: 0.05 }, zs, 3); // door: the big slab
+    for (const z of [0.72, 0.21, -0.3]) for (const y of [0.42, 0.73]) sideBolt(s, z, y, 0.062, zs, 3);
+    plate({ z0: 2.14, z1: 1.74, sample: sideS(0.32, 0.62, 5), side: s, thick: 0.045 }, zs, 1); // front fender
+    plate({ z0: -1.67, z1: -2.1, sample: sideS(0.36, 0.76, 5), side: s, thick: 0.045 }, zs, 1); // rear quarter
+    for (const z of [2.06, 1.82]) sideBolt(s, z, 0.47, 0.047, zs, 1);
+    for (const z of [-1.75, -2.02]) sideBolt(s, z, 0.56, 0.047, zs, 1);
+    plate({ z0: 0.9, z1: -0.84, sample: sideS(0.21, 0.35, 4), side: s, thick: 0.05 }, zs, 1); // rocker skirt
+    plate({ z0: 2.1, z1: 0.98, sample: topS(0.87, 0.3, 7), side: s, steps: 4, thick: 0.05 }, 'front', 1); // hood
+    for (const z of [2.0, 1.55, 1.1]) for (const x of [0.36, 0.8]) topBolt(s * x, z, 0.052, 'front', 1);
   }
-  plate({ z0: -1.93, z1: -2.16, sample: topS(0.82, -0.82, 9), side: 1 }, 'back'); // trunk lid
+  plate({ z0: -1.93, z1: -2.16, sample: topS(0.82, -0.82, 9), side: 1, thick: 0.045 }, 'back', 2); // trunk lid
   // angular brows over the headlights, and a centre piece bridging them over the grille
+  for (const s of [-1, 1]) tag(box(0.44, 0.04, 0.16, metal, { pos: [s * 0.62, 0.632, 2.25], rot: [0.55, 0, s * 0.06] }), 'front', 2);
+  tag(box(0.82, 0.04, 0.16, metal, { pos: [0, 0.618, 2.25], rot: [0.55, 0, 0] }), 'front', 2);
+  // door gun slits and a hinge strap (they go with the door plate)
   for (const s of [-1, 1]) {
-    const brow = box(0.44, 0.04, 0.16, metal, { pos: [s * 0.62, 0.632, 2.25], rot: [0.55, 0, s * 0.06] });
-    brow.userData.zone = 'front';
-    armor.add(brow);
-  }
-  {
-    const brow = box(0.82, 0.04, 0.16, metal, { pos: [0, 0.618, 2.25], rot: [0.55, 0, 0] });
-    brow.userData.zone = 'front';
-    armor.add(brow);
-  }
-  // door gun slits and a hinge strap
-  for (const s of [-1, 1]) {
-    armor.add(box(0.012, 0.035, 0.36, dark, { pos: [s * (sideX(0.2, 0.62) + 0.033), 0.62, 0.25] }));
-    armor.add(box(0.02, 0.05, 0.14, metal, { pos: [s * (sideX(0.7, 0.5) + 0.04), 0.5, 0.7] }));
-    armor.add(box(0.02, 0.05, 0.14, metal, { pos: [s * (sideX(0.7, 0.68) + 0.04), 0.68, 0.7] }));
+    const zs = s > 0 ? 'left' : 'right';
+    tag(box(0.012, 0.035, 0.36, dark, { pos: [s * (sideX(0.2, 0.62) + 0.063), 0.62, 0.25] }), zs, 3);
+    tag(box(0.02, 0.05, 0.14, metal, { pos: [s * (sideX(0.7, 0.5) + 0.07), 0.5, 0.7] }), zs, 3);
+    tag(box(0.02, 0.05, 0.14, metal, { pos: [s * (sideX(0.7, 0.68) + 0.07), 0.68, 0.7] }), zs, 3);
   }
 
   // =================== Front: 80s Japanese nose ===================
@@ -144,7 +151,7 @@ export function addDetails(car, { skinMats, dloRear }) {
   // =================== Windshield cage, door-window bars, rear louvres ===================
   for (let i = 0; i < 5; i++) {
     const x = -0.44 + i * 0.22;
-    car.add(slabAlong(...along(WS.base, WS.top, 0.06), ...along(WS.base, WS.top, 0.8), 0.028, 0.022, metal, 0.03, x));
+    tag(slabAlong(...along(WS.base, WS.top, 0.06), ...along(WS.base, WS.top, 0.8), 0.028, 0.022, metal, 0.03, x), 'front', 2);
   }
   // visor: armor plate over the top of the windshield, folding back onto the roof
   const visorA = along(WS.base, WS.top, 0.74);
@@ -154,29 +161,29 @@ export function addDetails(car, { skinMats, dloRear }) {
   car.add(skinned(slabAlong(...along(WS.base, WS.top, 0.7), ...visorA, 1.34, 0.03, metal, 0.05), skinMats)); // chamfered lip
   for (const x of [-0.67, 0.67]) car.add(tube([x, visorA[1] + 0.03, visorA[0] + 0.02], [x * 0.97, WS.top[1] + 0.03, WS.top[0]], 0.007, weld, 4));
   car.add(tube([-0.67, visorA[1] + 0.01, visorA[0] + 0.035], [0.67, visorA[1] + 0.01, visorA[0] + 0.035], 0.007, weld, 4));
-  for (const t of [0.36, 0.7]) car.add(slabAlong(...along(WS.base, WS.top, t - 0.02), ...along(WS.base, WS.top, t + 0.02), 1.2, 0.022, metal, 0.045));
+  for (const t of [0.36, 0.7]) tag(slabAlong(...along(WS.base, WS.top, t - 0.02), ...along(WS.base, WS.top, t + 0.02), 1.2, 0.022, metal, 0.045), 'front', 2);
   for (const s of [-1, 1]) {
     for (const z of [0.3, 0.02, -0.24]) {
       const yb = cabinBase(z) + 0.03;
       const yt = cabinTop(z) - 0.07;
       const xAt = (y) => 0.8 - 0.12 * ((y - cabinBase(z)) / Math.max(0.05, cabinTop(z) - 0.05 - cabinBase(z)));
-      car.add(tube([s * (xAt(yb) + 0.012), yb, z], [s * (xAt(yt) + 0.012), yt, z], 0.011, metal, 6));
+      tag(tube([s * (xAt(yb) + 0.012), yb, z], [s * (xAt(yt) + 0.012), yt, z], 0.011, metal, 6), s > 0 ? 'left' : 'right', 2);
     }
   }
   for (let i = 0; i < 9; i++) {
     const t = 0.06 + i * 0.1;
     const l = slabAlong(...along(RG.top, RG.base, t), ...along(RG.top, RG.base, t + 0.07), 1.1, 0.012, metal, 0.035);
     l.rotation.x += 0.45;
-    car.add(l);
+    tag(l, 'back', 2);
   }
-  for (const x of [-0.56, 0, 0.56]) car.add(slabAlong(...along(RG.top, RG.base, 0.03), ...along(RG.top, RG.base, 0.96), 0.035, 0.03, metal, 0.05, x));
+  for (const x of [-0.56, 0, 0.56]) tag(slabAlong(...along(RG.top, RG.base, 0.03), ...along(RG.top, RG.base, 0.96), 0.035, 0.03, metal, 0.05, x), 'back', 2);
   // R17-style louvres filling the rear quarter openings
   for (const s of [-1, 1]) {
     for (let z = -0.58; z > -1.56; z -= 0.055) {
       const yb = cabinBase(z) + 0.035;
       const yt = cabinTop(z) - 0.078;
       if (yt - yb < 0.04) continue;
-      car.add(box(0.07, yt - yb, 0.012, metal, { pos: [s * 0.715, (yb + yt) / 2, z], rot: [0, s * 0.7, s * 0.12] }));
+      tag(box(0.07, yt - yb, 0.012, metal, { pos: [s * 0.715, (yb + yt) / 2, z], rot: [0, s * 0.7, s * 0.12] }), s > 0 ? 'left' : 'right', 2);
     }
   }
 
@@ -185,11 +192,11 @@ export function addDetails(car, { skinMats, dloRear }) {
     car.add(tube([s * 0.86, 0.84, 0.78], [s * 0.98, 0.9, 0.74], 0.012, metal, 6));
     car.add(box(0.14, 0.08, 0.05, metal, { pos: [s * 1.02, 0.92, 0.74], rot: [0.1, s * 0.25, 0] }));
     {
-      const hx = sideX(-0.2, 0.7) + 0.03; // door plate surface
-      car.add(box(0.006, 0.05, 0.18, dark, { pos: [s * (hx + 0.003), 0.7, -0.2] }));
-      for (const z of [-0.13, -0.27]) car.add(box(0.03, 0.022, 0.022, metal, { pos: [s * (hx + 0.018), 0.7, z] }));
-      car.add(cyl(0.01, 0.01, 0.17, 8, steelMaterial(0x5d6369), { pos: [s * (hx + 0.034), 0.7, -0.2], rot: [Math.PI / 2, 0, 0] }));
-      for (const z of [-0.115, -0.285]) car.add(cyl(0.007, 0.007, 0.004, 6, steelMaterial(), { pos: [s * (hx + 0.007), 0.7, z], rot: [0, 0, Math.PI / 2] }));
+      const hx = sideX(-0.2, 0.7) + 0.06, zs = s > 0 ? 'left' : 'right'; // door plate surface
+      tag(box(0.006, 0.05, 0.18, dark, { pos: [s * (hx + 0.003), 0.7, -0.2] }), zs, 3);
+      for (const z of [-0.13, -0.27]) tag(box(0.03, 0.022, 0.022, metal, { pos: [s * (hx + 0.018), 0.7, z] }), zs, 3);
+      tag(cyl(0.01, 0.01, 0.17, 8, steelMaterial(0x5d6369), { pos: [s * (hx + 0.034), 0.7, -0.2], rot: [Math.PI / 2, 0, 0] }), zs, 3);
+      for (const z of [-0.115, -0.285]) tag(cyl(0.007, 0.007, 0.004, 6, steelMaterial(), { pos: [s * (hx + 0.007), 0.7, z], rot: [0, 0, Math.PI / 2] }), zs, 3);
     }
     const heat = new THREE.MeshStandardMaterial({ color: 0x4a423b, roughness: 0.6, metalness: 0.6 });
     for (const [dy, dx, zEnd] of [[0, 0, -0.78], [0.075, 0.012, -0.6]]) {
@@ -216,15 +223,15 @@ export function addDetails(car, { skinMats, dloRear }) {
       car.add(box(0.075, 0.1, 0.02, i === 0 ? glowMat('#e08a1c', 0.5) : glowMat('#c8261a', 0.65), { pos: [x, 0.66, -2.272] }));
     }
     // welded guard cage
-    for (let i = 0; i < 4; i++) car.add(tube([s * (0.44 + i * 0.105), 0.585, -2.31], [s * (0.44 + i * 0.105), 0.735, -2.31], 0.007, metal, 5));
-    for (const y of [0.6, 0.72]) car.add(tube([s * 0.43, y, -2.31], [s * 0.78, y, -2.31], 0.007, metal, 5));
-    for (const x of [0.43, 0.78]) car.add(box(0.015, 0.015, 0.07, metal, { pos: [s * x, 0.66, -2.28] }));
+    for (let i = 0; i < 4; i++) tag(tube([s * (0.44 + i * 0.105), 0.585, -2.31], [s * (0.44 + i * 0.105), 0.735, -2.31], 0.007, metal, 5), 'back', 2);
+    for (const y of [0.6, 0.72]) tag(tube([s * 0.43, y, -2.31], [s * 0.78, y, -2.31], 0.007, metal, 5), 'back', 2);
+    for (const x of [0.43, 0.78]) tag(box(0.015, 0.015, 0.07, metal, { pos: [s * x, 0.66, -2.28] }), 'back', 2);
   }
   const duck = extrudeProfile([[-2.02, bodyTop(-2.02) + 0.03], [-2.27, 1.0], [-2.28, 0.97], [-2.2, 0.88]], 1.66);
-  car.add(mesh(projectAndGroup(toCreasedNormals(duck, deg(25)), [UV.side, UV.top, UV.front, UV.back]), skinMats));
+  tag(mesh(projectAndGroup(toCreasedNormals(duck, deg(25)), [UV.side, UV.top, UV.front, UV.back]), skinMats), 'back', 1);
   const bumper = extrudeProfile([[-2.14, 0.2], [-2.32, 0.23], [-2.38, 0.33], [-2.36, 0.47], [-2.2, 0.5], [-2.14, 0.48]], 1.88);
-  car.add(mesh(projectAndGroup(toCreasedNormals(bumper, deg(25)), [UV.side, UV.top, UV.front, UV.back]), skinMats));
-  for (const x of [-0.78, -0.3, 0.3, 0.78]) car.add(box(0.03, 0.27, 0.2, metal, { pos: [x, 0.36, -2.33] }));
+  tag(mesh(projectAndGroup(toCreasedNormals(bumper, deg(25)), [UV.side, UV.top, UV.front, UV.back]), skinMats), 'back', 3);
+  for (const x of [-0.78, -0.3, 0.3, 0.78]) tag(box(0.03, 0.27, 0.2, metal, { pos: [x, 0.36, -2.33] }), 'back', 3);
   {
     const shackle = new THREE.MeshStandardMaterial({ color: 0xb8962a, roughness: 0.65, metalness: 0.4 });
     car.add(box(0.16, 0.05, 0.1, metal, { pos: [0, 0.215, -2.33] }));
@@ -258,6 +265,7 @@ export function addDetails(car, { skinMats, dloRear }) {
   // =================== Attachments: dozer, twin Brownings + belts ===================
   const front = socket('FRONT', [0, 0.36, 2.42]);
   front.userData.part = 'front'; // the dozer blade is the front armor's last piece
+  front.userData.stage = 3;
   car.add(front);
   const plow = buildCautionPlow();
   plow.userData.attachment = true;
