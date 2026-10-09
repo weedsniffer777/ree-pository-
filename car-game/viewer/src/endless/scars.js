@@ -45,7 +45,7 @@ export class Scars {
     if (model.userData.body) return model.userData.body;
     const out = [];
     const walk = (o) => {
-      if (o !== model && o.userData.part) return;
+      if (o !== model && (o.userData.part || o.name.startsWith('merged_'))) return;
       if (o.isMesh && o.material.blending !== THREE.AdditiveBlending && ![].concat(o.material).some((m) => m.transparent) && !o.userData.scar) out.push(o); // no rust on windows
       for (const ch of o.children) walk(ch);
     };

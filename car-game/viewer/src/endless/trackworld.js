@@ -144,18 +144,6 @@ export class TrackWorld {
       const d = Math.hypot(x - p.x, z - p.z);
       if (d < p.r + 14) h += (p.y - h) * smoothstep(p.r + 14, p.r, d);
     }
-    // overpass embankments: a plateau carrying the cross road, falling 6% away from the
-    // abutments, with 1:1.6 side slopes; the corridor between the abutments stays open
-    // and further out the cross road runs at a steady grade: fill where the ground dips
-    // (1:1.6 slopes), cut through dunes where it rises (1:1.2 cut faces)
-    for (const br of this.bridges ?? []) {
-      const dx = x - br.x, dz = z - br.z, du = Math.abs(dx * br.cx + dz * br.cz), dv = Math.abs(dx * br.tx + dz * br.tz);
-      if (du < 19.5 || dv > 70 || du > 300) continue;
-      const top = Math.max(br.y0 + 0.5, br.deckH - Math.max(0, du - 21.5) * 0.06);
-      const off = Math.max(0, dv - 8.5);
-      if (h < top) h = Math.max(h, top - off / 1.6);
-      else h = Math.min(h, top + off / 1.2);
-    }
     return this.def.terminal && x > this.def.terminal.quayX + 0.01 ? Math.min(h, -6) : h;
   }
 
@@ -638,68 +626,40 @@ export class TrackWorld {
   // Overpass: the cross road comes in on earth embankments (raised in terrainH), over
   // solid abutments either side of the corridor and a deck on girders with two piers, then
   // drapes on into the desert either way.
+  // A crossing road: runs out from both sides of the track at grade, on the natural ground
+  // (no embankment, no bridge), so it's scenery the cars can drive over without a bump.
   buildBridge(i0) {
     i0 = wrap(i0);
     const br = this.bridges.find((b) => b.i === i0);
-    const P = { x: br.x, z: br.z }, { tx, tz, cx, cz, deckH, y0 } = br, hw = ROAD_BEVEL, AB = 21.5;
+    const P = { x: br.x, z: br.z }, { tx, tz, cx, cz } = br, hw = ROAD_BEVEL, gap = RL(i0) + 1.5;
     this.map.roads.push({ pts: [[P.x - cx * 290, P.z - cz * 290], [P.x + cx * 290, P.z + cz * 290]], w: 12 });
-    const lats = [];
-    for (let l = -290; l <= 290; l += 4) lats.push(l);
-    const m = ROAD_LATS.length, pos = new Float32Array(lats.length * m * 3), uv = new Float32Array(lats.length * m * 2);
-    const rowY = [];
-    lats.forEach((l, a) => {
-      const gx = P.x + cx * l, gz = P.z + cz * l;
-      const y = Math.abs(l) < AB ? deckH : this.terrainH(gx, gz, roadN(gx, gz, 3)) + 0.05;
-      rowY.push(y);
-      for (let j = 0; j < m; j++) {
-        const q = a * m + j, off = -ROAD_LATS[j];
-        pos[q * 3] = gx + tx * off; pos[q * 3 + 1] = y + ROAD_DY[j]; pos[q * 3 + 2] = gz + tz * off;
-        uv[q * 2] = (ROAD_LATS[j] + hw) / (2 * hw); uv[q * 2 + 1] = a / 16;
-      }
-    });
-    const idx = [];
-    for (let a = 0; a < lats.length - 1; a++) for (let j = 0; j < m - 1; j++) {
-      const q = a * m + j;
-      idx.push(q, q + 1, q + m, q + 1, q + m + 1, q + m);
-    }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-    g.setIndex(idx);
-    g.computeVertexNormals();
-    const road = new THREE.Mesh(g, this.roadMat);
-    road.receiveShadow = true;
-    this.add(road);
-
-    const concrete = std(0xa39f96, { roughness: 0.95 }), dark = std(0x8a867e, { roughness: 0.95 });
-    const yaw = Math.atan2(cx, cz);
-    const bx = (lat, lz, y, sx, sy, sz) => ({ x: P.x + cx * lat + tx * lz, y, z: P.z + cz * lat + tz * lz, ry: yaw, sx, sy, sz });
-    const deck = [bx(0, 0, deckH - 0.75, 2 * hw + 1.4, 1.4, 2 * AB)];
-    const girders = [];
-    for (const v of [-5.2, -1.8, 1.8, 5.2]) girders.push(bx(0, v, deckH - 2.1, 0.7, 1.4, 2 * AB));
-    const parts = [];
+    const m = ROAD_LATS.length;
     for (const s of [-1, 1]) {
-      // abutment block filling the end of the embankment, with wing walls
-      parts.push(bx(s * 19.75, 0, (y0 - 1 + deckH) / 2, 2 * hw + 4, deckH - y0 + 1, 3.5));
-      for (const v of [-1, 1]) parts.push(bx(s * 22, v * (hw + 2.4), (y0 + deckH) / 2, 0.8, deckH - y0, 6));
-      for (let v = -hw - 1; v <= hw + 1; v += 1.4) this.colliders.push({ type: 'circle', x: P.x + cx * s * 18.4 + tx * v, z: P.z + cz * s * 18.4 + tz * v, r: 0.6 });
-      // pier: cap beam and two round-ish columns in the verge
-      const pl = s * Math.max(12.5, EDGE(i0) + 2), gy = this.terrainH(P.x + cx * pl, P.z + cz * pl, roadN(P.x + cx * pl, P.z + cz * pl, 3));
-      parts.push(bx(pl, 0, deckH - 3.3, 2 * hw - 0.5, 1.0, 1.6));
-      for (const v of [-3.6, 3.6]) {
-        parts.push(bx(pl, v, (gy + deckH - 3.8) / 2, 1.2, deckH - 3.8 - gy, 1.2));
-        this.colliders.push({ type: 'circle', x: P.x + cx * pl + tx * v, z: P.z + cz * pl + tz * v, r: 0.9 });
+      const lats = [];
+      for (let l = gap; l <= 290; l += 4) lats.push(s * l);
+      const pos = new Float32Array(lats.length * m * 3), uv = new Float32Array(lats.length * m * 2);
+      lats.forEach((l, a) => {
+        const gx = P.x + cx * l, gz = P.z + cz * l;
+        for (let j = 0; j < m; j++) {
+          const q = a * m + j, off = -ROAD_LATS[j], qx = gx + tx * off, qz = gz + tz * off;
+          pos[q * 3] = qx; pos[q * 3 + 1] = this.terrainH(qx, qz, roadN(qx, qz, 3)) + 0.06; pos[q * 3 + 2] = qz;
+          uv[q * 2] = (ROAD_LATS[j] + hw) / (2 * hw); uv[q * 2 + 1] = a / 16;
+        }
+      });
+      const idx = [];
+      for (let a = 0; a < lats.length - 1; a++) for (let j = 0; j < m - 1; j++) {
+        const q = a * m + j;
+        if (s > 0) idx.push(q, q + 1, q + m, q + 1, q + m + 1, q + m); else idx.push(q, q + m, q + 1, q + 1, q + m, q + m + 1);
       }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+      g.setIndex(idx);
+      g.computeVertexNormals();
+      const road = new THREE.Mesh(g, this.roadMat);
+      road.receiveShadow = true;
+      this.add(road);
     }
-    // parapets on the deck, barrier blocks along the embankment edges
-    const rails = [];
-    lats.forEach((l, a) => {
-      if (Math.abs(l) > 120 || a === lats.length - 1) return;
-      const y = (rowY[a] + rowY[a + 1]) / 2, dy = rowY[a + 1] - rowY[a];
-      for (const v of [-1, 1]) rails.push({ ...bx(l + 2, v * (hw + 0.25), y + 0.5, 0.45, 0.9, 4.02), rx: 0, rz: 0, ry: yaw, ...(dy ? { rx: -Math.atan2(dy, 4) } : {}) });
-    });
-    const add = (list, mat) => this.add(inst(UNIT, mat, list));
-    add(deck, concrete); add(girders, dark); add(parts, concrete); add(rails, concrete);
     this.reserve(i0 - 14, i0 + 14);
   }
 

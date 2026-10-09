@@ -5,7 +5,7 @@ import { roadSurfaceY } from '../level/road.js';
 import { Guns } from '../level/combat.js';
 import { paintTopSkin } from '../models/cars/starterCoupe.js';
 import { bakeGroup } from '../level/bake.js';
-import { partsOf, charModel, unchar, Wreckage } from './carparts.js';
+import { partsOf, charModel, unchar, Wreckage, mergeByMaterial } from './carparts.js';
 import { Holes } from './holes.js';
 import { CarController } from './car.js';
 import { AI, think } from './ai.js';
@@ -123,13 +123,20 @@ function rivalTemplate(model) {
   let meshes = 0;
   m.traverse((o) => { if (o.isMesh) meshes++; });
   window.__dbg = { ...window.__dbg, rivalMeshes: meshes };
-  template = { model: m, skins: ud.skins, brakeMats: ud.brakeMats };
+  // the intact car as one merged model (guns stay separate: they turn), plus a far version
+  // without the small detail
+  const isPart = (p, ...names) => names.includes(p.userData.part);
+  const merged = {
+    near: mergeByMaterial(m, (p) => isPart(p, 'gun')),
+    far: mergeByMaterial(m, (p) => isPart(p, 'gun', 'feed', 'rack')),
+  };
+  template = { model: m, skins: ud.skins, brakeMats: ud.brakeMats, merged };
   return template;
 }
 
 // A rival: the template with its own skin materials (own streak colour, own damage).
 function cloneCar(base, color) {
-  const { model, skins, brakeMats } = rivalTemplate(base);
+  const { model, skins, brakeMats, merged } = rivalTemplate(base);
   const m = model.clone(true);
   const src = skins, mats = { side: src.side.clone(), front: src.front.clone(), back: src.back.clone(), top: paintTopSkin(color), lamps: Object.fromEntries(Object.entries(brakeMats).map(([k, m]) => [k, m.clone()])) };
   const map = new Map([[src.side, mats.side], [src.front, mats.front], [src.back, mats.back], [src.top, mats.top], ...Object.keys(brakeMats).map((k) => [brakeMats[k], mats.lamps[k]])]);
@@ -140,7 +147,21 @@ function cloneCar(base, color) {
     o.castShadow = o.geometry.attributes.position.count > 3000; // only the big panels throw shadows
   });
   const wheels = [];
-  return { model: m, mats, wheels };
+  // this rival's merged models, on its own materials
+  const build = (list, name) => {
+    const g = new THREE.Group();
+    g.name = name;
+    for (const { mat, geo } of list) {
+      const mesh = new THREE.Mesh(geo, map.get(mat) ?? mat);
+      mesh.castShadow = geo.attributes.position.count > 3000;
+      mesh.userData.merged = true;
+      g.add(mesh);
+    }
+    m.add(g);
+    return g;
+  };
+  const mergedNear = build(merged.near, 'merged_near'), mergedFar = build(merged.far, 'merged_far');
+  return { model: m, mats, wheels, merged: { near: mergedNear, far: mergedFar } };
 }
 
 // ---------------------------------------------------------------- AI speed profile
@@ -170,8 +191,11 @@ class Rival {
   constructor(slot, base, scene, fx, colliders) {
     const r = ROSTER[slot];
     Object.assign(this, { slot, name: r.name, hex: r.hex, ai: true });
-    const { model, mats, wheels } = cloneCar(base, r.color);
-    Object.assign(this, { model, mats, wheels, parts: partsOf(model), lamps: { mats: mats.lamps, out: {} } });
+    const { model, mats, wheels, merged } = cloneCar(base, r.color);
+    Object.assign(this, { model, mats, wheels, merged, parts: partsOf(model), lamps: { mats: mats.lamps, out: {} } });
+    // what the merged model stands in for: the loose chassis meshes and every part but the guns
+    this.solo = [...model.children.filter((o) => o.isMesh && !o.userData.merged), ...this.parts.filter((p) => p.userData.part !== 'gun')];
+    this.setMerged(true);
     this.car = new CarController(model, colliders);
     this.rig = this.car.rig;
     scene.add(this.rig);
@@ -185,6 +209,13 @@ class Rival {
     this.burst = 0;
     this.cool = 2 + Math.random() * 3;
     this.inp = { throttle: 1, brake: 0, steer: 0, boost: false, fire: false, cap: 0 };
+  }
+  // intact: draw the merged model; once anything comes off, the separate parts take over
+  setMerged(on) {
+    this.mergedOn = on;
+    for (const o of this.solo) o.visible = !on;
+    this.merged.near.visible = on && this.detailOn !== false;
+    this.merged.far.visible = on && this.detailOn === false;
   }
   get x() { return this.car.x; } get y() { return this.car.y; } get z() { return this.car.z; }
   get yaw() { return this.car.yaw; } get vx() { return this.car.vx; } get vz() { return this.car.vz; }
@@ -272,6 +303,7 @@ export class Race {
     wear(this.player.mats, this.player.armor);
     this.wreckage.restoreAll();
     for (const q of [this.player, ...this.rivals]) { q.lamps.out = {}; q.detailOn = undefined; }
+    for (const r of this.rivals) { for (const p of r.parts) p.visible = true; r.setMerged(true); }
     this.scars.clear();
     this.holes.clear();
     this.car.dead = false;
@@ -436,6 +468,7 @@ export class Race {
       const o = target.lamps.out, side = !o.L && !o.R ? (Math.random() < 0.5 ? 'L' : 'R') : !o.L ? 'L' : 'R';
       if (stage >= 2) o.L = o.R = true; else o[side] = true;
     }
+    if (target.mergedOn) { target.setMerged(false); target.detailOn = undefined; }
     const me = target === this.player, parts = me ? this.playerParts : target.parts, yaw = me ? this.car.yaw : target.yaw;
     const f = [Math.sin(yaw), Math.cos(yaw)], out = { front: f, back: [-f[0], -f[1]], left: [f[1], -f[0]], right: [-f[1], f[0]] }[zone];
     for (const part of parts) {
@@ -465,6 +498,7 @@ export class Race {
   // chassis left as a charred, burning wreck that slides to a stop and stays solid
   detonate(target, cause = 'gun') {
     const me = target === this.player, c = this.car;
+    if (target.mergedOn) { target.setMerged(false); target.detailOn = undefined; for (const p of target.parts) p.visible = true; }
     const p = new THREE.Vector3(me ? c.x : target.x, (me ? c.y : target.y) + 0.7, me ? c.z : target.z);
     const v = me ? new THREE.Vector3(c.vx, 0, c.vz) : new THREE.Vector3(target.vx, 0, target.vz);
     this.booms.blast(p, v, true);
@@ -611,6 +645,7 @@ export class Race {
       const near = Math.abs(r.x - c.x) + Math.abs(r.z - c.z) < 60 || r.armor.wrecked;
       if (near === r.detailOn) continue;
       r.detailOn = near;
+      if (r.mergedOn) { r.setMerged(true); for (const p of r.parts) if (p.userData.part === 'gun' && !p.userData.home) p.visible = near; continue; }
       for (const p of r.parts) if ((p.userData.part === 'feed' || p.userData.part === 'rack' || p.userData.part === 'gun') && !p.userData.home) p.visible = near;
     }
   }

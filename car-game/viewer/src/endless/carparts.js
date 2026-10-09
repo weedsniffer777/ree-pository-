@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { bakeGroup } from '../level/bake.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // Cars as a chassis plus bolt-on parts that can come off: four armor zones (plates, and
 // the dozer blade with the front), the guns, the roof rack and the wheels. Baking keeps
@@ -130,4 +131,45 @@ export class Wreckage {
       if (it.burn && onBurn && it.t < 16 && Math.random() < dt * (it.t < 5 ? 22 : 9)) onBurn(p, it.t, !it.rest);
     }
   }
+}
+
+// One model for a whole intact car: every mesh (minus `skip`) baked into the car's space
+// and merged per material, instances expanded, so the car draws in a handful of calls
+// instead of one per part. Returns [{ mat, geo }]; the caller builds meshes from it.
+export function mergeByMaterial(model, skip = () => false) {
+  model.updateMatrixWorld(true);
+  const inv = model.matrixWorld.clone().invert(), byMat = new Map(), M = new THREE.Matrix4(), I = new THREE.Matrix4();
+  const skipped = (o) => { for (let p = o; p && p !== model; p = p.parent) if (!p.visible || skip(p)) return true; return false; };
+  const piece = (geo, start, count, mat, m) => {
+    const src = geo.index ? geo.toNonIndexed() : geo, n = Math.min(count, src.attributes.position.count - start), g = new THREE.BufferGeometry();
+    const take = (a, size) => new THREE.BufferAttribute(a ? a.array.slice(start * size, (start + n) * size) : new Float32Array(n * size).fill(1), size);
+    g.setAttribute('position', take(src.attributes.position, 3));
+    g.setAttribute('normal', take(src.attributes.normal, 3));
+    g.setAttribute('uv', src.attributes.uv ? take(src.attributes.uv, 2) : new THREE.BufferAttribute(new Float32Array(n * 2), 2));
+    if (mat.vertexColors) g.setAttribute('color', src.attributes.color ? take(src.attributes.color, src.attributes.color.itemSize) : take(null, 3));
+    g.applyMatrix4(m);
+    if (!byMat.has(mat)) byMat.set(mat, []);
+    byMat.get(mat).push(g);
+  };
+  model.traverse((o) => {
+    if (!o.isMesh || skipped(o)) return;
+    const base = new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld), geo = o.geometry;
+    const cnt = (geo.index ?? geo.attributes.position).count;
+    const groups = Array.isArray(o.material) ? (geo.groups.length ? geo.groups : [{ start: 0, count: cnt, materialIndex: 0 }]) : [{ start: 0, count: cnt, materialIndex: -1 }];
+    const n = o.isInstancedMesh ? o.count : 1;
+    for (let k = 0; k < n; k++) {
+      if (o.isInstancedMesh) { o.getMatrixAt(k, I); M.multiplyMatrices(base, I); } else M.copy(base);
+      for (const gr of groups) {
+        const mat = gr.materialIndex < 0 ? o.material : o.material[gr.materialIndex];
+        if (mat) piece(geo, gr.start, gr.count, mat, M);
+      }
+    }
+  });
+  const out = [];
+  for (const [mat, list] of byMat) {
+    const sets = new Set(list.map((g) => Object.keys(g.attributes).sort().join()));
+    if (sets.size > 1) continue; // mismatched attributes: leave that material out rather than break
+    out.push({ mat, geo: mergeGeometries(list, false) });
+  }
+  return out;
 }
