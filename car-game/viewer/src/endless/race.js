@@ -1,4 +1,5 @@
 import { Scars } from './scars.js';
+import { Impostor } from './impostor.js';
 import * as THREE from 'three';
 import { S, STEP, LOOP, wAt, RAIL_LAT, pointAt } from './route.js';
 import { roadSurfaceY } from '../level/road.js';
@@ -167,7 +168,7 @@ const latMax = (i) => RAIL_LAT * wAt(wrapI(i)) - 1.3;
 // throttle / brake. Personality: racers run their line and dodge fire; fighters hunt a
 // target, ride its lane, ram it and go for PIT maneuvers.
 class Rival {
-  constructor(slot, base, scene, fx, colliders) {
+  constructor(slot, base, scene, fx, colliders, renderer) {
     const r = ROSTER[slot];
     Object.assign(this, { slot, name: r.name, hex: r.hex, ai: true });
     const { model, mats, wheels } = cloneCar(base, r.color);
@@ -175,6 +176,9 @@ class Rival {
     this.car = new CarController(model, colliders);
     this.rig = this.car.rig;
     scene.add(this.rig);
+    // the baked stand-in it switches to beyond ~30 m
+    this.imp = new Impostor(renderer, model, scene.environment, scene.environmentIntensity);
+    model.parent.add(this.imp.mesh);
     this.armor = new Armor();
     this.personality = 'racer'; // a label for its anger (see AI.rage): racer, killer past half
     this.drifter = slot % 2 === 0; // throws the car into tight corners
@@ -211,7 +215,12 @@ class Rival {
   }
   sync(dt) {
     this.car.sync(dt);
-    this.rig.visible = Math.hypot(this.x - (Race.camX ?? this.x), this.z - (Race.camZ ?? this.z)) < 420;
+    const d = Math.hypot(this.x - (Race.camX ?? this.x), this.z - (Race.camZ ?? this.z));
+    this.rig.visible = d < 420;
+    // far and in one piece: the baked stand-in; close, wrecked or flying: the real car
+    const far = d > 30 && !this.armor.wrecked && !this.air;
+    this.model.visible = !far;
+    this.imp.mesh.visible = far;
     // a launched wreck tumbles about the body's middle (0.6 m up) while it flies
     if (this.air) {
       const A = this.air;
@@ -226,7 +235,7 @@ class Rival {
 
 // ---------------------------------------------------------------- race
 export class Race {
-  constructor({ scene, model, car, fx, hud, gunsHitHook, booms, debris }) {
+  constructor({ scene, model, car, fx, hud, gunsHitHook, booms, debris, renderer }) {
     Object.assign(this, { scene, car, fx, hud, booms, debris, model, hitstop: 0 });
     this.wreckage = new Wreckage(scene, fx.height);
     this.holes = new Holes();
@@ -238,7 +247,7 @@ export class Race {
     this.player = { name: 'You', hex: ROSTER[0].hex, you: true, armor: new Armor(), mats: model.userData.skins, lamps: { mats: model.userData.brakeMats, out: {} } };
     this.hb = car.hitbox;
     this.rivals = [];
-    for (let s = 1; s < ROSTER.length; s++) this.rivals.push(new Rival(s, model, scene, fx, car.colliders));
+    for (let s = 1; s < ROSTER.length; s++) this.rivals.push(new Rival(s, model, scene, fx, car.colliders, renderer));
     for (const r of this.rivals) this.wallHits(r.car, () => r);
     const hitTest = (o, d, range, shooter) => this.rayHit(o, d, range, shooter);
     for (const r of this.rivals) { r.guns.hitTest = hitTest; r.guns.onTargetHit = (h) => this.damage(h.target, h.zone, 0.028, r, h.point, 'gun', h.dir); }
@@ -271,7 +280,7 @@ export class Race {
     this.player.armor.reset();
     wear(this.player.mats, this.player.armor);
     this.wreckage.restoreAll();
-    for (const q of [this.player, ...this.rivals]) { q.lamps.out = {}; q.detailOn = undefined; }
+    for (const q of [this.player, ...this.rivals]) { q.lamps.out = {}; q.bakeDirty = !!q.imp; }
     this.scars.clear();
     this.holes.clear();
     this.car.dead = false;
@@ -368,6 +377,7 @@ export class Race {
       if (this.t - (tk[cause] ?? -9) >= CRIT.tick) { tk[cause] = this.t; critRoll = Math.random() < chance; if (critRoll) dmg += CRIT.burst; }
     } else if (Math.random() < chance) { critRoll = true; dmg *= CRIT.mult; }
     a.hit(zone, dmg);
+    if (target.imp) target.bakeDirty = true;
     if (attacker === this.player && target !== this.player) { this.dealt[zone] += (zb - a.z[zone]) * 100; this.dealt.core += (hb - a.core) * 100; }
     if (target === this.player) {
       const t = this.taken, lost = (zb - a.z[zone]) * 100 + (hb - a.core) * 100;
@@ -603,16 +613,14 @@ export class Race {
     }
   }
 
-  // Far rivals drop their small detail (guns, ammo belts, roof rack: ~17k triangles a car);
-  // it pops back in closer up.
-  detailLOD() {
-    const c = this.car;
-    for (const r of this.rivals) {
-      const near = Math.abs(r.x - c.x) + Math.abs(r.z - c.z) < 60 || r.armor.wrecked;
-      if (near === r.detailOn) continue;
-      r.detailOn = near;
-      for (const p of r.parts) if ((p.userData.part === 'feed' || p.userData.part === 'rack' || p.userData.part === 'gun') && !p.userData.home) p.visible = near;
-    }
+  // Re-photograph rivals whose look changed (damage wear, parts off, a new race), one a
+  // frame so it never spikes.
+  rebake() {
+    const r = this.rivals.find((q) => q.bakeDirty && !q.armor.wrecked && this.t - (q.bakeT ?? -9) > 0.4);
+    if (!r) return;
+    r.bakeDirty = false;
+    r.bakeT = this.t;
+    r.imp.bake();
   }
 
   // The driver: pick a speed and a lateral line, then steer at a point down the road.
@@ -746,7 +754,7 @@ export class Race {
     this.contacts(dt);
     this.scrapes(dt);
     for (const r of this.rivals) r.sync(dt);
-    this.detailLOD();
+    this.rebake();
     // damage tiers from hull HP: untouched = clean; hurt = light smoke; heavy = black
     // smoke; critical = black smoke and flame licking out of the engine bay
     for (const r of [...this.rivals, this.player]) {

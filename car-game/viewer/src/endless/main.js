@@ -157,7 +157,7 @@ if (LOOP.on && LOOP.walls === 'both') {
   };
 }
 const race = LOOP.on && params.get('race') !== '0'
-  ? new Race({ scene, model, car, hud, booms, debris, fx: { tracers, dust, sparks: embers, lines: lineSparks, height: terrainHeight }, gunsHitHook: (test, onHit) => { guns.hitTest = test; guns.onTargetHit = onHit; } })
+  ? new Race({ scene, model, car, hud, booms, debris, renderer, fx: { tracers, dust, sparks: embers, lines: lineSparks, height: terrainHeight }, gunsHitHook: (test, onHit) => { guns.hitTest = test; guns.onTargetHit = onHit; } })
   : null;
 if (race) for (const r of race.rivals) r.guns.blockTest = guns.blockTest;
 if (LOOP.on) hud.map(world, S, LOOP.n, I_START);
