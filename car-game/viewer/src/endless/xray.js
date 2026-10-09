@@ -4,7 +4,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 // Damage readout: the car model itself as a glowing x-ray, seen from above and behind,
 // split into four armor sectors (front / back / left / right) with seams between them,
 // and a solid core box inside for the hull HP. Its own small renderer; it only redraws
-// when a value changes or something is flashing.
+// when a value changes.
 
 const VERT = `
 varying vec3 vP; varying vec3 vN; varying vec3 vV;
@@ -86,24 +86,22 @@ export class XRay {
     this.key = '';
   }
 
-  // armor: { z: { front, back, left, right }, core, flash: {...} }, t: seconds (pulse)
+  // armor: { z: { front, back, left, right }, core }
   update(a, t) {
     const w = this.canvas.clientWidth, h = this.canvas.clientHeight;
     if (!w || !h) return;
-    const pulse = a.core < 0.3 && !a.wrecked ? Math.round((Math.sin(t * 9) * 0.5 + 0.5) * 6) : 0;
-    const key = [a.z.front, a.z.back, a.z.left, a.z.right, a.core].map((v) => v.toFixed(2)).join() + Object.values(a.flash).map((f) => (f > 0 ? 1 : 0)).join('') + pulse + w + 'x' + h;
+    const key = [a.z.front, a.z.back, a.z.left, a.z.right, a.core].map((v) => v.toFixed(2)).join() + w + 'x' + h;
     if (key === this.key) return;
     this.key = key;
     if (this.canvas.width !== Math.round(w * this.r.getPixelRatio())) { this.r.setSize(w, h, false); this.cam.aspect = w / h; this.cam.updateProjectionMatrix(); }
-    // hit flash: a hot orange pop rather than white
-    const set = (c, v, f) => (f > 0 ? c.setRGB(1, 0.42, 0.08) : c.setRGB(...damageColor(v)));
-    set(this.u.cF.value, a.z.front, a.flash.front);
-    set(this.u.cB.value, a.z.back, a.flash.back);
-    set(this.u.cL.value, a.z.left, a.flash.left);
-    set(this.u.cR.value, a.z.right, a.flash.right);
+    // each part's colour simply follows what's left of it (no hit flashes)
+    this.u.cF.value.setRGB(...damageColor(a.z.front));
+    this.u.cB.value.setRGB(...damageColor(a.z.back));
+    this.u.cL.value.setRGB(...damageColor(a.z.left));
+    this.u.cR.value.setRGB(...damageColor(a.z.right));
     const hp = a.core;
     this.coreM.color.setRGB(...damageColor(hp));
-    this.coreM.opacity = 0.35 + 0.5 * (pulse / 6 * 0.5 + 0.5) * (hp > 0 ? 1 : 0.2);
+    this.coreM.opacity = hp > 0 ? 0.72 : 0.15;
     this.core.scale.y = 0.25 + 0.75 * hp; // drains as HP falls
     this.r.render(this.scene, this.cam);
   }

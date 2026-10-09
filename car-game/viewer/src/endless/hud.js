@@ -86,8 +86,6 @@ html, body, #hud, #hud * { -webkit-user-select: none; user-select: none; -webkit
 #hud .armor .hp { text-align: center; font: 900 32px/1 var(--display); letter-spacing: 0.02em; font-variant-numeric: tabular-nums; text-shadow: 0 2px 0 rgba(0,0,0,0.65); white-space: nowrap; }
 #hud .armor .hp .lbl { font-size: 11px; margin-right: 2px; }
 #hud .armor .hp small { font-size: 15px; color: var(--dim); }
-#hud .armor .hp.low { animation: hpLow 0.6s steps(1) infinite; }
-@keyframes hpLow { 50% { opacity: 0.45; } }
 /* lock-on, military fire-control style: white reticle with mil ticks; a lock is phosphor
    green corner brackets + LOCK and range. No outlines, just a soft glow on the lock. */
 #hud { --lock: #5dff7a; --ret: rgba(255,255,255,0.9); --mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace; }
@@ -635,7 +633,6 @@ export function createHud({ touch = false } = {}) {
         const el = $('.armor .hp b'), [r, g, b] = damageColor(a.core);
         el.textContent = String(hp);
         el.style.color = `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)})`;
-        $('.armor .hp').classList.toggle('low', hp <= 25);
       }
       flashV = Math.max(0, flashV - dt * 5);
       flashEl.style.opacity = flashV.toFixed(3);
