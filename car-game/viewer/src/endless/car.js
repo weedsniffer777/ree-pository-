@@ -203,7 +203,7 @@ export class CarController {
     if (!this.airborne && moved > 1e-4 && gC - this.y > Math.max(0.25, moved * 1.0)) {
       const dx = (this.x - px) / moved, dz = (this.z - pz) / moved, into = this.vx * dx + this.vz * dz;
       this.x = px; this.z = pz;
-      if (into > 0) { this.vx -= dx * into * 1.15; this.vz -= dz * into * 1.15; if (into > 3) { this.events.impact = Math.max(this.events.impact, into); this.onImpact?.(into, -dx, -dz); } }
+      if (into > 0) { this.vx -= dx * into * 0.85; this.vz -= dz * into * 0.85; if (into > 3) { this.events.impact = Math.max(this.events.impact, into); this.onImpact?.(into, -dx, -dz); } }
       gC = this.groundCenter();
     }
     this.vy -= G * dt;
@@ -270,7 +270,7 @@ export class CarController {
         const vn = this.vx * nx + this.vz * nz;
         if (vn < 0) {
           this.onImpact?.(-vn, nx, nz);
-          const e = this.dead ? 1 : 1.3; // wrecks don't bounce off, they stop against it
+          const e = 0.85; // walls take away most of the speed going into them, no bounce back
           this.vx -= nx * vn * e;
           this.vz -= nz * vn * e;
           this.hit(-vn);
@@ -288,7 +288,7 @@ export class CarController {
     this.scrape = { nx: rx * Math.sign(dl), nz: rz * Math.sign(dl), v: Math.abs(this.vx * S.tx[i] + this.vz * S.tz[i]) };
     if (vn * dl > 0) {
       this.onImpact?.(Math.abs(vn), rx * -Math.sign(dl), rz * -Math.sign(dl));
-      const e = this.dead ? 1 : 1.2;
+      const e = 0.85; // no bounce: just most of the speed into the wall is lost
       this.vx -= rx * vn * e;
       this.vz -= rz * vn * e;
       this.hit(Math.abs(vn));
@@ -308,7 +308,7 @@ export class CarController {
       this.x += S.tx[i] * back;
       this.z += S.tz[i] * back;
       const vn = this.vx * S.tx[i] + this.vz * S.tz[i];
-      if ((n.i < lo && vn < 0) || (n.i > hi && vn > 0)) { this.vx -= S.tx[i] * vn * 1.2; this.vz -= S.tz[i] * vn * 1.2; this.hit(Math.abs(vn)); }
+      if ((n.i < lo && vn < 0) || (n.i > hi && vn > 0)) { this.vx -= S.tx[i] * vn * 0.85; this.vz -= S.tz[i] * vn * 0.85; this.hit(Math.abs(vn)); }
     };
     if (!LOOP.on) {
       const lo = I_START - 100, hi = S.count - 50;

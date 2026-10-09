@@ -93,6 +93,18 @@ export function buildStarterCoupe() {
   const dloFront = dlo(0.62, -0.38);
   const dloRear = dlo(-0.5, -1.6);
   for (const shape of [dloFront, dloRear]) cabCut(new Brush(extrudeX(shape, 2.2), frame));
+  // the front side window frames are the top of the doors: cut out on the same lines so
+  // they come away with them
+  for (const s of [-1, 1]) {
+    const wb = new Brush(new THREE.BoxGeometry(0.35, 0.8, 1.213), skins.side);
+    wb.position.set(s * 0.775, 1.2, 0.21);
+    wb.updateMatrixWorld();
+    const w = ev.evaluate(cab, wb, INTERSECTION);
+    cab = ev.evaluate(cab, wb, SUBTRACTION);
+    const frameMesh = mesh(project(toCreasedNormals(w.geometry, deg(25)), [interior, frame].map((m) => w.material.indexOf(m))), [...skinMats, interior, frame]);
+    Object.assign(frameMesh.userData, { zone: s > 0 ? 'left' : 'right', stage: 3 });
+    doors.push(frameMesh);
+  }
   const cabMesh = mesh(project(toCreasedNormals(cab.geometry, deg(25)), [interior, frame].map((m) => cab.material.indexOf(m))), [...skinMats, interior, frame]);
   cabMesh.name = 'cabin';
   car.add(cabMesh);
@@ -104,7 +116,8 @@ export function buildStarterCoupe() {
   for (const s of [-1, 1]) {
     const pane = mesh(extrudeX(dloFront.map(([z, y]) => [z, y]), 0.006, 0.02), glass);
     pane.position.x = s * 0.668;
-    car.add(pane);
+    Object.assign(pane.userData, { zone: s > 0 ? 'left' : 'right', stage: 3 }); // the door's window
+    doors.push(pane);
   }
 
   addInterior(car);

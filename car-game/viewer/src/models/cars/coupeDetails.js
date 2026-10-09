@@ -179,11 +179,11 @@ export function addDetails(car, { skinMats, dloRear }) {
   for (const x of [-0.56, 0, 0.56]) tag(slabAlong(...along(RG.top, RG.base, 0.03), ...along(RG.top, RG.base, 0.96), 0.035, 0.03, metal, 0.05, x), 'back', 2);
   // R17-style louvres filling the rear quarter openings
   for (const s of [-1, 1]) {
-    for (let z = -0.58; z > -1.56; z -= 0.055) {
+    for (let z = -0.58; z > -1.56; z -= 0.09) {
       const yb = cabinBase(z) + 0.035;
       const yt = cabinTop(z) - 0.078;
       if (yt - yb < 0.04) continue;
-      tag(box(0.07, yt - yb, 0.012, metal, { pos: [s * 0.715, (yb + yt) / 2, z], rot: [0, s * 0.7, s * 0.12] }), s > 0 ? 'left' : 'right', 2);
+      tag(box(0.012, yt - yb, 0.04, metal, { pos: [s * 0.715, (yb + yt) / 2, z], rot: [0, 0, s * 0.12] }), s > 0 ? 'left' : 'right', 2); // flat bars leaning with the glass, like the front window bars
     }
   }
 
