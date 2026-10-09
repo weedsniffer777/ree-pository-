@@ -30,6 +30,6 @@ export const FEEDS = {
 export function buildFeed(variant, opts) {
   if (!variant || !FEEDS[variant]) return null;
   const g = FEEDS[variant](opts);
-  Object.assign(g.userData, { part: 'feed', feed: variant, attachment: true });
+  Object.assign(g.userData, { part: 'feed', feed: variant, attachment: true, low: 'shell' });
   return g;
 }

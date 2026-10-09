@@ -6,6 +6,7 @@ await server.listen();
 const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 page.on('pageerror', (e) => console.log('PAGEERROR', e.message));
+page.on('console', (m) => { if (m.type() === 'warning' || m.type() === 'error') console.log(m.type(), m.text().slice(0, 200)); });
 await page.goto('http://localhost:5190/endless.html?ui=0&orbit=150');
 await page.waitForFunction(() => window.__ready === true, null, { timeout: 150000 });
 await page.evaluate(() => {

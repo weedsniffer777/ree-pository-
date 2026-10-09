@@ -273,8 +273,6 @@ html, body, #hud, #hud * { -webkit-user-select: none; user-select: none; -webkit
 #hud .touch .btn.down { transform: scale(0.94); background: rgba(216,100,42,0.6); }
 #hud .touch .btn[hidden] { display: none; }
 #hud .touch .btn.small { width: 46px; height: 46px; font-size: 11px; }
-#hud .touch .lockBtn { right: 120px; bottom: calc(330px + env(safe-area-inset-bottom, 0px)); }
-#hud .touch .lockBtn.off .x { display: none; } /* the X shows while the guns are on: tap to hold fire */
 #hud .touch .btn svg { display: block; }
 #hud .touch .backBtn { left: 16px; top: calc(46% + env(safe-area-inset-top, 0px)); }
 /* phones held sideways: compact, buttons left of the gauge */
@@ -322,7 +320,6 @@ html, body, #hud, #hud * { -webkit-user-select: none; user-select: none; -webkit
   #hud .touch .boostBtn { right: calc(170px + env(safe-area-inset-right, 0px)); bottom: calc(14px + env(safe-area-inset-bottom, 0px)); }
   #hud .touch .fireBtn { right: calc(246px + env(safe-area-inset-right, 0px)); bottom: calc(36px + env(safe-area-inset-bottom, 0px)); }
   #hud .touch .brakeBtn { right: calc(176px + env(safe-area-inset-right, 0px)); bottom: calc(90px + env(safe-area-inset-bottom, 0px)); width: 52px; height: 52px; font-size: 12px; }
-  #hud .touch .lockBtn { right: calc(250px + env(safe-area-inset-right, 0px)); bottom: calc(112px + env(safe-area-inset-bottom, 0px)); }
   #hud .touch .backBtn { left: calc(12px + env(safe-area-inset-left, 0px)); top: auto; bottom: calc(132px + env(safe-area-inset-bottom, 0px)); }
 }
 @media (max-width: 720px) and (orientation: portrait) {
@@ -403,11 +400,11 @@ export function createHud({ touch = false } = {}) {
   for (const ev of ['contextmenu', 'selectstart', 'dragstart']) document.addEventListener(ev, (e) => e.preventDefault());
   const $ = (s) => root.querySelector(s);
   // left half of the screen steers left, right half steers right; buttons take their own touches
-  const t = { left: false, right: false, boost: false, brake: false, fire: false, back: false, gunsOff: false, active: touch, get steer() { return (this.right ? 1 : 0) - (this.left ? 1 : 0); } };
+  const t = { left: false, right: false, boost: false, brake: false, fire: false, back: false, active: touch, get steer() { return (this.right ? 1 : 0) - (this.left ? 1 : 0); } };
   if (touch) {
     const layer = document.createElement('div');
     layer.className = 'touch';
-    layer.innerHTML = '<div class="btn brakeBtn">BRAKE</div><div class="btn fireBtn">FIRE</div><div class="btn boostBtn">BOOST</div><div class="btn small lockBtn"><svg viewBox="0 0 32 32" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="16" cy="17" r="2.2" fill="currentColor"/><circle cx="16" cy="17" r="10"/><path d="M16 4v4M16 26v4M3 17h4M25 17h4"/><path class="x" d="M7 8l18 18M25 8L7 26" stroke="#ff3b26" stroke-width="3"/></svg></div><div class="btn small backBtn"><svg viewBox="0 0 32 32" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"><rect x="5" y="10" width="22" height="15" rx="2"/><path d="M11 10l2-3h6l2 3"/><path d="M20.5 17.5a4.5 4.5 0 1 1-1.3-3.2"/><path d="M19.6 11.6l-.4 2.9 2.9.2"/></svg></div>';
+    layer.innerHTML = '<div class="btn brakeBtn">BRAKE</div><div class="btn fireBtn">FIRE</div><div class="btn boostBtn">BOOST</div><div class="btn small backBtn"><svg viewBox="0 0 32 32" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"><rect x="5" y="10" width="22" height="15" rx="2"/><path d="M11 10l2-3h6l2 3"/><path d="M20.5 17.5a4.5 4.5 0 1 1-1.3-3.2"/><path d="M19.6 11.6l-.4 2.9 2.9.2"/></svg></div>';
     root.insertBefore(layer, $('.tr'));
     const hold = (el, key) => {
       el.addEventListener('pointerdown', (e) => { e.stopPropagation(); t[key] = true; el.classList.add('down'); el.setPointerCapture(e.pointerId); });
@@ -419,9 +416,6 @@ export function createHud({ touch = false } = {}) {
     hold(layer.querySelector('.fireBtn'), 'fire');
     hold(layer.querySelector('.brakeBtn'), 'brake');
     hold(layer.querySelector('.backBtn'), 'back');
-    // guns toggle: locking always runs; off holds fire (the reticle flashes GUNS OFF)
-    const lockBtn = layer.querySelector('.lockBtn');
-    lockBtn.addEventListener('pointerdown', (e) => { e.stopPropagation(); t.gunsOff = !t.gunsOff; lockBtn.classList.toggle('off', t.gunsOff); });
     layer.querySelector('.fireBtn').hidden = settings.fire === 'auto';
     const steerPtr = new Map();
     const side = (e) => (e.clientX < innerWidth / 2 ? -1 : 1);
@@ -476,7 +470,7 @@ export function createHud({ touch = false } = {}) {
       ${touch ? '' : `<section><span class="lbl">Controls</span><div class="kb">${ACTIONS.map(([a, label]) => `<span>${label}</span><button data-bind="${a}" class="${waiting === a ? 'wait' : ''}">${waiting === a ? 'PRESS A KEY' : settings.keys[a].map(keyName).join(' / ')}</button>`).join('')}</div></section>`}
       <section><span class="lbl">Firing</span><div class="seg"><button data-fire="manual" class="${settings.fire === 'manual' ? 'on' : ''}">MANUAL</button><button data-fire="auto" class="${settings.fire === 'auto' ? 'on' : ''}">AUTO</button></div>
         <span class="note">${settings.fire === 'auto' ? 'The guns fire on their own whenever a target is locked.' : touch ? 'Hold FIRE to shoot.' : `Hold ${keyName(settings.keys.fire[0])} to shoot.`}</span></section>
-      ${touch ? '<section><span class="lbl">Buttons</span><span class="note">The reticle button switches your guns on and off; the camera button looks behind you. Moving the buttons around is coming.</span></section>' : `<section><span class="lbl">Free look sensitivity · ${settings.sens.toFixed(1)}</span><input type="range" min="0.4" max="4" step="0.1" value="${settings.sens}" data-sens></section>`}
+      ${touch ? '<section><span class="lbl">Buttons</span><span class="note">The camera button looks behind you. Moving the buttons around is coming.</span></section>' : `<section><span class="lbl">Free look sensitivity · ${settings.sens.toFixed(1)}</span><input type="range" min="0.4" max="4" step="0.1" value="${settings.sens}" data-sens></section>`}
       <section><span class="lbl">Volume (no sound yet)</span><input type="range" min="0" max="1" step="0.05" value="${settings.volume}" data-vol disabled></section>
       <div class="row2">${touch ? '' : '<button data-a="keys">RESET KEYS</button>'}<button class="main" data-a="back">BACK</button></div>`;
   };
@@ -726,8 +720,8 @@ export function createHud({ touch = false } = {}) {
     // speed km/h (signed), boost 0..1, lap number, current / best lap seconds
     set({ speed, boost, boosting, throttle, lap, laps, lapT, bestLap, heat = 0, overheated = false, dt = 1 / 60 }) {
       $('.ret .heatv i').style.height = `${Math.round(heat * 100)}%`;
-      $('.ret').classList.toggle('hot', overheated || t.gunsOff); // overheated or guns switched off: red / white flash
-      retTag(overheated ? 'OVERHEAT' : t.gunsOff ? 'GUNS OFF' : farTag); // these take the tag over from OUT OF RANGE
+      $('.ret').classList.toggle('hot', overheated);
+      retTag(overheated ? 'OVERHEAT' : farTag); // overheat takes the tag over from OUT OF RANGE
       const kmh = Math.abs(speed);
       const ng = speed < -2 ? 'R' : kmh < 3 && !throttle ? 'N' : gearFor(kmh, gear);
       if (typeof ng === 'number' && typeof gear === 'number' && ng !== gear) shiftT = 0.18;

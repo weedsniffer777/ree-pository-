@@ -132,7 +132,7 @@ export function buildStarterCoupe() {
     spin.name = `wheel_${key}`;
     steer.add(spin);
     car.add(steer);
-    steer.userData.part = 'wheel';
+    Object.assign(steer.userData, { part: 'wheel', low: 'shell' });
     wheels[key] = { steer, spin, front: z > 0 };
   }
   car.userData.wheels = wheels;
@@ -146,7 +146,9 @@ export function buildStarterCoupe() {
     for (const stage of [1, 2, 3]) {
       const g = new THREE.Group();
       g.name = `armor_${zone}_${stage}`;
-      Object.assign(g.userData, { part: zone, zone, stage, armor: true });
+      // low-poly stand-in form: the spoiler and the bumper stick out, the rest lies on the body
+      const low = zone === 'back' && stage !== 2 ? 'box' : 'shell';
+      Object.assign(g.userData, { part: zone, zone, stage, armor: true, low });
       car.add(g);
       for (const c of [...armor.children]) if (c.userData.zone === zone && c.userData.stage === stage) g.attach(c);
     }

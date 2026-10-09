@@ -217,7 +217,7 @@ function readInput() {
     steer: (k('right') ? 1 : 0) - (k('left') ? 1 : 0) || t.steer,
     boost: k('boost') || t.boost,
     // auto fire: shoot whenever something is locked (the fire key still works too)
-    fire: (k('fire') || t.fire || (settings.fire === 'auto' && lockedNow)) && !t.gunsOff && (!race || race.canFire), // phones: guns toggle
+    fire: (k('fire') || t.fire || (settings.fire === 'auto' && lockedNow)) && (!race || race.canFire),
   };
   freeCam = k('look') || rightDrag;
   lookBack = k('back') || t.back;

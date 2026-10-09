@@ -129,7 +129,7 @@ export function addDetails(car, { skinMats, dloRear }) {
   const RY = 1.37;
   const rack = new THREE.Group();
   rack.name = 'roof_rack';
-  Object.assign(rack.userData, { part: 'rack', armor: true }); // only comes off when the car goes up
+  Object.assign(rack.userData, { part: 'rack', armor: true, low: 'rack' }); // only comes off when the car goes up
   car.add(rack);
   for (const s of [-1, 1]) {
     for (const z of [0.1, -0.86]) rack.add(tube([s * 0.55, cabinTop(z) - 0.01, z], [s * 0.58, RY, z], 0.018, metal, 6));
@@ -270,7 +270,7 @@ export function addDetails(car, { skinMats, dloRear }) {
   // =================== Attachments: dozer, twin Brownings + belts ===================
   const front = socket('FRONT', [0, 0.36, 2.42]);
   // the dozer blade: its own part (a ram, like the guns), torn off with the front armor's last stage
-  Object.assign(front.userData, { part: 'dozer', zone: 'front', stage: 3 });
+  Object.assign(front.userData, { part: 'dozer', zone: 'front', stage: 3, low: 'box' });
   car.add(front);
   const plow = buildCautionPlow();
   plow.userData.attachment = true;
@@ -281,7 +281,7 @@ export function addDetails(car, { skinMats, dloRear }) {
     const gx = s * 0.66;
     const gy = topY(gz, gx) + 0.03;
     const mount = socket(s > 0 ? 'GUN_L' : 'GUN_R', [gx, gy, gz]);
-    mount.userData.part = 'gun';
+    Object.assign(mount.userData, { part: 'gun', low: 'gun' });
     car.add(mount);
     const gun = buildBrowningM2({ feedSide: -s });
     gun.userData.attachment = true;
