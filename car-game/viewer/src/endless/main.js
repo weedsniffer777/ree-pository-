@@ -38,7 +38,7 @@ const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'h
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = matchMedia('(pointer: coarse)').matches ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap; // phones: the cheaper filter
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.12;
 renderer.info.autoReset = false;
@@ -51,7 +51,8 @@ scene.fog = THEME ? new THREE.Fog(HORIZON, THEME.fog[1], THEME.fog[2]) : new THR
 scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
 scene.environmentIntensity = 0.22;
 
-const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.1, 6000);
+// nothing is drawn past the point where the fog has fully hidden it
+const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.1, scene.fog.far + 60);
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
 const grade = screenPass(renderer); // tone map + output + windscreen glass + grade, one pass
@@ -70,7 +71,7 @@ const SUN_DIR = new THREE.Vector3(70, 85, 45).normalize();
 sun.castShadow = true;
 // One big shadow box (instead of a tight one that makes shadows pop in at ~40 m), pushed
 // ahead of the car and snapped to whole shadow texels so edges don't crawl as you drive.
-const SHADOW = matchMedia('(pointer: coarse)').matches ? { size: 2048, half: 75 } : { size: 4096, half: 130 }; // phones: ~the same sharpness per metre, a quarter fewer pixels
+const SHADOW = matchMedia('(pointer: coarse)').matches ? { size: 3072, half: 95 } : { size: 4096, half: 130 };
 sun.shadow.mapSize.set(SHADOW.size, SHADOW.size);
 Object.assign(sun.shadow.camera, { left: -SHADOW.half, right: SHADOW.half, top: SHADOW.half, bottom: -SHADOW.half, near: 1, far: 500 });
 sun.shadow.bias = -0.0004;
@@ -78,6 +79,7 @@ sun.shadow.normalBias = 0.05;
 scene.add(sun, sun.target);
 
 const sky = buildSky(THEME ? THEME.sky : ['#6aaed6', '#aed2e6', '#f3d5b2'], Math.min(1, 1.2 / GR.saturation));
+sky.scale.setScalar((camera.far * 0.9) / 4500); // inside the shortened view distance
 scene.add(sky);
 
 // ---- World ----
@@ -379,6 +381,7 @@ function updateCamera(dt) {
     fovT = 60;
   } else if (view === 'top' && LOOP.on) {
     scene.fog = null;
+    if (camera.far < 6000) { camera.far = 6000; camera.updateProjectionMatrix(); } // dev overview: the whole map
     camera.position.set(world.box.cx, 1100, world.box.cz);
     camera.up.set(0, 0, 1);
     camera.lookAt(world.box.cx, 0, world.box.cz + 0.01);
