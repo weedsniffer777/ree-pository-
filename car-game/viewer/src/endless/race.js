@@ -4,6 +4,7 @@ import { roadSurfaceY } from '../level/road.js';
 import { Guns } from '../level/combat.js';
 import { paintTopSkin } from '../models/cars/starterCoupe.js';
 import { bakeGroup } from '../level/bake.js';
+import { partsOf, charModel, unchar, Wreckage } from './carparts.js';
 
 // Closed-loop race: the player plus seven AI rivals on the same model, each with its own
 // streak colour. Rolling start mid-pack behind the line, three laps, four-zone armor on
@@ -65,13 +66,22 @@ function rivalTemplate(model) {
   model.userData = {};
   const m = model.clone(true);
   model.userData = ud;
+  for (const n of ['flames', 'flame_light']) m.getObjectByName(n)?.removeFromParent();
   const skins = new Set(Object.values(ud.skins)), canon = new Map();
   // close-enough colours share a material (rivals are seen at speed, not in the garage)
-  const q = (c) => (c ? [c.r, c.g, c.b].map((v) => Math.round(Math.sqrt(v) * 6)).join(',') : '');
+  const q = (c) => (c ? [c.r, c.g, c.b].map((v) => Math.round(Math.sqrt(v) * 4)).join(',') : '');
   const keyOf = (x) => (skins.has(x) ? x.uuid : [x.type, q(x.color), x.map?.uuid, x.transparent, x.emissive && x.emissive.getHex() ? q(x.emissive) : '', x.blending].join('|'));
   const dedupe = (x) => { const k = keyOf(x); if (!canon.has(k)) canon.set(k, x); return canon.get(k); };
   m.traverse((o) => { if (o.isMesh) o.material = Array.isArray(o.material) ? o.material.map(dedupe) : dedupe(o.material); });
-  bakeGroup(m); // wheels included (no spin); gun sockets survive as empty groups
+  // small bolt-ons get one flat material each (seen at speed, they read the same)
+  const flat = { wheel: new THREE.MeshStandardMaterial({ color: 0x1f2022, roughness: 0.7, metalness: 0.4 }), gun: new THREE.MeshStandardMaterial({ color: 0x2c2e30, roughness: 0.5, metalness: 0.7 }), rack: new THREE.MeshStandardMaterial({ color: 0x35373a, roughness: 0.6, metalness: 0.6 }) };
+  for (const part of partsOf(m)) {
+    const fm = flat[part.userData.part];
+    if (fm) part.traverse((o) => { if (o.isMesh && !(o.material.blending === THREE.AdditiveBlending)) o.material = fm; });
+  }
+  // chassis and each detachable part baked on their own (rival wheels don't spin)
+  bakeGroup(m, { skip: (o) => !!o.userData.part });
+  for (const part of partsOf(m)) bakeGroup(part);
   let meshes = 0;
   m.traverse((o) => { if (o.isMesh) meshes++; });
   window.__dbg = { ...window.__dbg, rivalMeshes: meshes };
@@ -119,7 +129,7 @@ class Rival {
     const r = ROSTER[slot];
     Object.assign(this, { slot, name: r.name, hex: r.hex, ai: true });
     const { model, mats, wheels } = cloneCar(base, r.color);
-    Object.assign(this, { model, mats, wheels });
+    Object.assign(this, { model, mats, wheels, parts: partsOf(model) });
     this.rig = new THREE.Group();
     this.rig.add(model);
     scene.add(this.rig);
@@ -142,7 +152,7 @@ class Rival {
     const ia = wrapI(i0), ib = wrapI(i0 + 1), w = wAt(ia);
     this.y = S.y[ia] + (S.y[ib] - S.y[ia]) * f + roadSurfaceY(this.lat / w);
     this.tx = S.tx[ia]; this.tz = S.tz[ia];
-    const slip = this.armor.wrecked ? this.spin ?? 0 : Math.atan2(this.latV, Math.max(4, this.v));
+    const slip = this.armor.wrecked ? (this.spin ?? 0) * Math.min(1, this.deadT * 2) : Math.atan2(this.latV, Math.max(4, this.v));
     this.yaw = Math.atan2(this.tx, this.tz) - slip;
     this.vx = this.tx * this.v - this.tz * this.latV;
     this.vz = this.tz * this.v + this.tx * this.latV;
@@ -165,7 +175,9 @@ class Rival {
 // ---------------------------------------------------------------- race
 export class Race {
   constructor({ scene, model, car, fx, hud, gunsHitHook, booms, debris }) {
-    Object.assign(this, { scene, car, fx, hud, booms, debris });
+    Object.assign(this, { scene, car, fx, hud, booms, debris, model, hitstop: 0 });
+    this.wreckage = new Wreckage(scene, fx.height);
+    this.playerParts = partsOf(model);
     profile ??= speedProfile(17, 9);
     this.player = { name: 'You', hex: ROSTER[0].hex, you: true, armor: new Armor(), mats: model.userData.skins };
     this.hb = car.hitbox;
@@ -201,9 +213,10 @@ export class Race {
     });
     this.player.armor.reset();
     wear(this.player.mats, this.player.armor);
-    this.player.gone = false;
-    this.car.body.visible = true;
-    for (const r of this.rivals) { r.gone = false; r.rig.visible = true; }
+    this.wreckage.restoreAll();
+    unchar(this.model);
+    this.model.position.y = 0;
+    for (const r of this.rivals) { unchar(r.model); r.model.position.y = 0; }
     this.kills = 0;
     this.combo = { n: 0, t: -9 };
     this.hud.clearCracks();
@@ -275,11 +288,15 @@ export class Race {
     const pos = point ?? new THREE.Vector3(target.x ?? this.car.x, (target.y ?? this.car.y) + 0.8, target.z ?? this.car.z);
     const vel = target === this.player ? new THREE.Vector3(this.car.vx, 0, this.car.vz) : new THREE.Vector3(target.vx, 0, target.vz);
     if (crit || Math.random() < 0.04) this.booms.blast(pos, vel, false);
+    if (broke) this.tearOff(target, zone, vel);
     if (attacker === this.player && target !== this.player) {
       const cb = this.combo;
       cb.n = this.raceT - cb.t < 0.75 ? cb.n + 1 : 1;
       cb.t = this.raceT;
+      if (crit) { this.hitstop = Math.max(this.hitstop, 0.07); this.hud.flash(0.16); }
       if (a.wrecked) {
+        this.hitstop = Math.max(this.hitstop, 0.18);
+        this.hud.flash(0.6);
         this.kills++;
         this.hud.hitmarker('kill');
         this.hud.popup(`DESTROYED<small>x${this.kills}</small>`, 'kill');
@@ -298,25 +315,40 @@ export class Race {
     if (a.wrecked) this.detonate(target);
   }
 
-  // a car going up: big blast, and the car becomes a shower of parts carrying its speed
+  // an armor zone stripped: its plates (and with the front, the dozer blade) come away
+  tearOff(target, zone, vel) {
+    const me = target === this.player, parts = me ? this.playerParts : target.parts, yaw = me ? this.car.yaw : target.yaw;
+    const f = [Math.sin(yaw), Math.cos(yaw)], out = { front: f, back: [-f[0], -f[1]], left: [f[1], -f[0]], right: [-f[1], f[0]] }[zone];
+    for (const part of parts) {
+      if (part.userData.part !== zone) continue;
+      const kick = new THREE.Vector3(out[0] * (2 + Math.random() * 3), 2 + Math.random() * 3, out[1] * (2 + Math.random() * 3));
+      this.wreckage.detach(part, vel.clone().multiplyScalar(0.9), kick);
+    }
+  }
+
+  // a car going up: big blast, every bolt-on part blown off with the car's speed, and the
+  // chassis left as a charred, burning wreck that slides to a stop and stays solid
   detonate(target) {
     const me = target === this.player, c = this.car;
     const p = new THREE.Vector3(me ? c.x : target.x, (me ? c.y : target.y) + 0.7, me ? c.z : target.z);
     const v = me ? new THREE.Vector3(c.vx, 0, c.vz) : new THREE.Vector3(target.vx, 0, target.vz);
     this.booms.blast(p, v, true);
-    const hex = (me ? ROSTER[0] : ROSTER[target.slot]).hex;
+    const model = me ? this.model : target.model;
+    charModel(model);
+    for (const part of me ? this.playerParts : target.parts) {
+      const kick = new THREE.Vector3((Math.random() - 0.5) * 18, 5 + Math.random() * 9, (Math.random() - 0.5) * 18);
+      this.wreckage.detach(part, v.clone().multiplyScalar(0.8 + Math.random() * 0.25), kick, Math.random() < 0.4);
+    }
+    model.position.y = -0.3; // on its belly with the wheels gone
     const tmp = new THREE.Vector3(), tv = new THREE.Vector3();
-    for (let k = 0; k < 30; k++) {
-      const wheel = k < 4, panel = k < 16;
+    for (let k = 0; k < 12; k++) { // shrapnel
       tmp.set(p.x + (Math.random() - 0.5) * 1.8, p.y + Math.random() * 0.8, p.z + (Math.random() - 0.5) * 3.5);
       tv.set(v.x * (0.7 + Math.random() * 0.3) + (Math.random() - 0.5) * 16, 4 + Math.random() * 12, v.z * (0.7 + Math.random() * 0.3) + (Math.random() - 0.5) * 16);
-      const size = wheel ? [0.32, 0.68, 0.68] : panel ? [0.5 + Math.random() * 0.9, 0.06, 0.4 + Math.random() * 0.8] : [0.15 + Math.random() * 0.35, 0.15 + Math.random() * 0.3, 0.15 + Math.random() * 0.4];
-      const color = wheel ? 0x141414 : k % 5 === 0 ? hex : [0x3a3d40, 0x2b2d2f, 0x4a4c4e, 0x1a1a1a][k % 4];
-      this.debris.spawn(tmp, tv, { size, life: 4 + Math.random() * 3, spin: 14, color, burn: k % 3 === 0 });
+      this.debris.spawn(tmp, tv, { size: [0.12 + Math.random() * 0.3, 0.05 + Math.random() * 0.15, 0.12 + Math.random() * 0.35], life: 3 + Math.random() * 3, spin: 16, color: [0x1c1c1c, 0x2a2b2c, 0x141414][k % 3], burn: k % 4 === 0 });
     }
-    if (me) { c.body.visible = false; this.player.gone = true; c.vx *= 0.3; c.vz *= 0.3; this.over('wrecked'); }
-    else { target.gone = true; target.rig.visible = false; }
-    if (!me && this.rivals.every((r) => r.gone) && this.state === 'race') this.over('annihilation');
+    if (me) { c.vx *= 0.5; c.vz *= 0.5; this.over('wrecked'); }
+    else { target.deadT = 0; target.spin = (Math.random() - 0.5) * 2.2; target.v *= 0.7; }
+    if (!me && this.rivals.every((r) => r.armor.wrecked) && this.state === 'race') this.over('annihilation');
   }
 
   // circle-pair contact between every two cars: separate, swap normal velocity, scrape armor
@@ -339,7 +371,7 @@ export class Race {
       const move = (body, s) => {
         if (body.ref === this.player) { c.x += nx * s; c.z += nz * s; } else body.ref.push(nx * s, nz * s);
       };
-      const wA = A.ref.armor?.wrecked && A.ref !== this.player ? 0.1 : 1, wC = C.ref.armor?.wrecked && C.ref !== this.player ? 0.1 : 1;
+      const wA = A.ref.armor?.wrecked ? 0.7 : 1, wC = C.ref.armor?.wrecked ? 0.7 : 1; // wrecks are heavy, solid obstacles
       move(A, pen * wA / (wA + wC)); move(C, -pen * wC / (wA + wC));
       const vrel = (vA[0] - vC[0]) * nx + (vA[1] - vC[1]) * nz;
       if (vrel >= 0) continue;
@@ -358,8 +390,9 @@ export class Race {
 
   updateRival(r, dt, all) {
     const N = LOOP.n, i = wrapI(r.prog);
-    if (r.armor.wrecked) { // coast to a stop, smoking
-      r.v = Math.max(0, r.v - 16 * dt);
+    if (r.armor.wrecked) { // slide to a stop, burning
+      r.deadT += dt;
+      r.v = Math.max(0, r.v - 7 * dt);
       r.latV *= Math.exp(-dt * 3);
       r.lat += r.latV * dt;
       r.prog += r.v * dt / STEP;
@@ -439,8 +472,8 @@ export class Race {
     // smoke; critical = black smoke and flame licking out of the engine bay
     for (const r of [...this.rivals, this.player]) {
       const a = r.armor;
-      if (r.gone || a.core >= 0.999) continue;
-      const tier = a.core > 0.55 ? 1 : a.core > 0.25 ? 2 : 3;
+      if (a.core >= 0.999) continue;
+      const tier = a.wrecked ? 3 : a.core > 0.55 ? 1 : a.core > 0.25 ? 2 : 3;
       r.smokeAcc = (r.smokeAcc ?? 0) + dt * [0, 7, 14, 22][tier];
       const me = r === this.player, x = me ? c.x : r.x, y = me ? c.y : r.y, z = me ? c.z : r.z, yaw = me ? c.yaw : r.yaw;
       const vx = me ? c.vx : r.vx, vz = me ? c.vz : r.vz;
@@ -459,7 +492,11 @@ export class Race {
     this.order = rows;
     this.hud.standings(rows.map((r) => ({ name: r.name, you: !!r.you, color: r.hex, out: r.armor.wrecked, gap: r.you ? '' : r.armor.wrecked ? 'OUT' : r.finished ? 'FIN' : `${r.prog > this.pProg ? '+' : '-'}${Math.round(Math.abs(r.prog - this.pProg) * STEP)}m` })));
     this.hud.armor(this.player.armor, this.t, dt);
-    this.hud.mapDots(this.rivals.filter((r) => !r.gone).map((r) => ({ x: r.x, z: r.z, color: r.hex })));
+    this.wreckage.update(dt, (q) => {
+      this.fx.dust.emit(q.x, q.y + 0.3, q.z, 0, 1.2 + Math.random(), 0, 0.6 + Math.random() * 0.5, 1 + Math.random(), 0.1, 0.09, 0.08);
+      this.fx.sparks.emit(q.x, q.y + 0.2, q.z, (Math.random() - 0.5), 1 + Math.random() * 1.5, (Math.random() - 0.5), 0.3, 0.3, 1.0, 0.5, 0.1);
+    });
+    this.hud.mapDots(this.rivals.filter((r) => !r.armor.wrecked).map((r) => ({ x: r.x, z: r.z, color: r.hex })));
     if (this.state === 'done' && !this.shown && this.t - this.doneT > 1.6) this.showResults();
   }
 

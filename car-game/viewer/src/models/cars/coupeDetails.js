@@ -21,20 +21,28 @@ export function addDetails(car, { skinMats, dloRear }) {
   const armor = new THREE.Group();
   armor.name = 'armor';
   car.add(armor);
-  const plate = (opts) => conformalPlate({ ...opts, skinMats, weld, group: armor });
+  // every plate remembers its damage zone so it can be torn off when that zone is stripped
+  const plate = (opts, zone) => {
+    const n0 = armor.children.length;
+    conformalPlate({ ...opts, skinMats, weld, group: armor });
+    for (const c of armor.children.slice(n0)) c.userData.zone = zone;
+  };
   const sideS = (y0, y1, k) => (z) => Array.from({ length: k }, (_, i) => { const y = y0 + ((y1 - y0) * i) / (k - 1); return [sideX(z, y), y]; });
   const topS = (x0, x1, k) => (z) => Array.from({ length: k }, (_, i) => { const x = x0 + ((x1 - x0) * i) / (k - 1); return [x, topY(z, x)]; });
   for (const s of [-1, 1]) {
-    plate({ z0: 0.8, z1: -0.38, sample: sideS(0.36, 0.79, 6), side: s }); // door
-    plate({ z0: 2.14, z1: 1.74, sample: sideS(0.32, 0.62, 5), side: s }); // front fender
-    plate({ z0: -1.67, z1: -2.1, sample: sideS(0.36, 0.76, 5), side: s }); // rear quarter
-    plate({ z0: 0.9, z1: -0.84, sample: sideS(0.21, 0.35, 4), side: s, thick: 0.045 }); // rocker skirt
-    plate({ z0: 2.1, z1: 0.98, sample: topS(0.87, 0.3, 7), side: s, steps: 4 }); // hood
+    const zs = s > 0 ? 'left' : 'right'; // +x is the car's left
+    plate({ z0: 0.8, z1: -0.38, sample: sideS(0.36, 0.79, 6), side: s }, zs); // door
+    plate({ z0: 2.14, z1: 1.74, sample: sideS(0.32, 0.62, 5), side: s }, zs); // front fender
+    plate({ z0: -1.67, z1: -2.1, sample: sideS(0.36, 0.76, 5), side: s }, zs); // rear quarter
+    plate({ z0: 0.9, z1: -0.84, sample: sideS(0.21, 0.35, 4), side: s, thick: 0.045 }, zs); // rocker skirt
+    plate({ z0: 2.1, z1: 0.98, sample: topS(0.87, 0.3, 7), side: s, steps: 4 }, 'front'); // hood
   }
-  plate({ z0: -1.93, z1: -2.16, sample: topS(0.82, -0.82, 9), side: 1 }); // trunk lid
+  plate({ z0: -1.93, z1: -2.16, sample: topS(0.82, -0.82, 9), side: 1 }, 'back'); // trunk lid
   // angular brows over the headlights
   for (const s of [-1, 1]) {
-    armor.add(box(0.44, 0.04, 0.16, metal, { pos: [s * 0.62, 0.6, 2.25], rot: [0.55, 0, s * 0.06] }));
+    const brow = box(0.44, 0.04, 0.16, metal, { pos: [s * 0.62, 0.6, 2.25], rot: [0.55, 0, s * 0.06] });
+    brow.userData.zone = 'front';
+    armor.add(brow);
   }
   // door gun slits and a hinge strap
   for (const s of [-1, 1]) {
@@ -67,6 +75,7 @@ export function addDetails(car, { skinMats, dloRear }) {
   const RY = 1.37;
   const rack = new THREE.Group();
   rack.name = 'roof_rack';
+  rack.userData.part = 'rack';
   car.add(rack);
   for (const s of [-1, 1]) {
     for (const z of [0.1, -0.86]) rack.add(tube([s * 0.55, cabinTop(z) - 0.01, z], [s * 0.58, RY, z], 0.018, metal, 6));
@@ -201,6 +210,7 @@ export function addDetails(car, { skinMats, dloRear }) {
 
   // =================== Attachments: dozer, twin Brownings + belts ===================
   const front = socket('FRONT', [0, 0.36, 2.42]);
+  front.userData.part = 'front'; // the dozer blade is the front armor's last piece
   car.add(front);
   const plow = buildCautionPlow();
   plow.userData.attachment = true;
@@ -211,6 +221,7 @@ export function addDetails(car, { skinMats, dloRear }) {
     const gx = s * 0.66;
     const gy = topY(gz, gx) + 0.03;
     const mount = socket(s > 0 ? 'GUN_L' : 'GUN_R', [gx, gy, gz]);
+    mount.userData.part = 'gun';
     car.add(mount);
     const gun = buildBrowningM2({ feedSide: -s });
     gun.userData.attachment = true;

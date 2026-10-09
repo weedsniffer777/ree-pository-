@@ -20,6 +20,7 @@ import { Skids } from './skids.js';
 import { SpeedLines } from './speedlines.js';
 import { Race } from './race.js';
 import { Booms, Bits } from './boom.js';
+import { bakeCar } from './carparts.js';
 import { nearest, wAt, RAIL_LAT } from './route.js';
 import { createDevKit } from './devkit.js';
 import { Tracers, Guns } from '../level/combat.js';
@@ -90,8 +91,7 @@ world.update(startI(), true);
 
 // ---- Car ----
 const model = buildStarterCoupe();
-bakeGroup(model, { skip: (o) => o.name.startsWith('wheel_') });
-for (const w of Object.values(model.userData.wheels)) bakeGroup(w.spin);
+bakeCar(model); // chassis + detachable parts (armor zones, plow, guns, rack, wheels)
 const flames = addFlames(model);
 const car = new CarController(model, world.colliders);
 scene.add(car.rig);
@@ -436,7 +436,9 @@ function frame(now) {
   last = now;
   // slow motion for dramatic tutorial beats: eases back to full speed
   slowmo = Math.max(0, slowmo - rdt);
-  const dt = rdt * (slowmo > 0 ? 0.35 + 0.65 * Math.max(0, 1 - slowmo / 0.6) ** 2 : 1);
+  let dt = rdt * (slowmo > 0 ? 0.35 + 0.65 * Math.max(0, 1 - slowmo / 0.6) ** 2 : 1);
+  // hitstop: the world all but freezes for a beat on crits and kills
+  if (race?.hitstop > 0) { race.hitstop -= rdt; dt *= 0.04; }
   acc += dt;
   const inp = readInput();
   while (acc >= H) {

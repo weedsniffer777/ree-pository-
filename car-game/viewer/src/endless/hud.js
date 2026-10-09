@@ -72,7 +72,12 @@ const CSS = `
 
 /* armor: top-down car, four zones + core, green -> grey -> black */
 #hud .armor { position: absolute; left: calc(var(--gx) + 184px); bottom: calc(var(--gyb) - 6px); width: 96px; height: 150px; filter: drop-shadow(0 0 6px rgba(0,0,0,0.6)); }
-#hud .armor canvas { width: 100%; height: 100%; display: block; }
+#hud .armor canvas { width: 100%; height: calc(100% - 18px); display: block; }
+#hud .armor .hp { text-align: center; font: 900 17px/1 var(--display); letter-spacing: 0.04em; font-variant-numeric: tabular-nums; text-shadow: 0 2px 0 rgba(0,0,0,0.6); }
+#hud .armor .hp small { font-size: 11px; color: var(--dim); }
+#hud .armor .hp.low b { color: #ff4a2a; }
+/* white flash on kills / crits */
+#hud .flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
 /* hits: centre hitmarker, combo / critical / destroyed popups, damage vignette, cracked glass */
 #hud .hm { position: absolute; left: 50%; top: 44%; width: 44px; height: 44px; margin: -22px 0 0 -22px; opacity: 0; }
 #hud .hm i { position: absolute; left: 50%; top: 50%; width: 15px; height: 4px; margin: -2px 0 0 -7.5px; background: #fff; box-shadow: 0 0 0 1.5px rgba(0,0,0,0.6); }
@@ -240,9 +245,10 @@ export function createHud({ touch = false } = {}) {
     </div>
     <div class="tr"><button class="pause" aria-label="Pause"></button></div>
     <div class="map panel"><canvas></canvas></div>
-    <div class="armor"><canvas></canvas></div>
+    <div class="armor"><canvas></canvas><div class="hp"><span class="lbl">HP</span> <b>100</b><small>/100</small></div></div>
     <div class="glass"></div>
     <div class="vig"></div>
+    <div class="flash"></div>
     <div class="hm"><i></i><i></i><i></i><i></i></div>
     <div class="pops"></div>
     <div class="count" hidden></div>
@@ -422,7 +428,8 @@ export function createHud({ touch = false } = {}) {
   }
 
   // ---- damage feedback ----
-  let xray = null, vigT = 0, vigBase = 0;
+  let xray = null, vigT = 0, vigBase = 0, hpShown = -1, flashV = 0;
+  const flashEl = $('.flash');
   const vig = $('.vig'), hm = $('.hm'), pops = $('.pops'), glass = $('.glass');
   const crackCanvas = (seed) => {
     const c = document.createElement('canvas');
@@ -506,11 +513,16 @@ export function createHud({ touch = false } = {}) {
     armorModel(model, hitbox) { if (root.style.display !== 'none') xray = new XRay($('.armor canvas'), model, hitbox); },
     armor(a, t = performance.now() / 1000, dt = 1 / 60) {
       xray?.update(a, t);
+      const hp = Math.ceil(a.core * 100);
+      if (hp !== hpShown) { hpShown = hp; $('.armor .hp b').textContent = String(hp); $('.armor .hp').classList.toggle('low', hp <= 30); }
+      flashV = Math.max(0, flashV - dt * 5);
+      flashEl.style.opacity = flashV.toFixed(3);
       // red vignette: flashes on damage, settles to a glow that grows as HP drops
       vigBase = a.wrecked ? 0.9 : Math.max(0, (0.55 - a.core) * 1.2);
       vigT = Math.max(0, vigT - dt * 2.2);
       vig.style.opacity = Math.min(1, vigBase + vigT).toFixed(3);
     },
+    flash(v) { flashV = Math.max(flashV, v); },
     hurt(amount) { vigT = Math.min(0.9, vigT + 0.18 + amount * 4); },
     // cracked glass when HP crosses a threshold; cleared on a new race
     crack() {

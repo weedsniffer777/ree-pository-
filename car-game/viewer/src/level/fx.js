@@ -153,6 +153,8 @@ export function addFlames(model) {
   light.position.set(0, 0.45, -2.9);
   model.add(light);
   group.visible = false;
+  group.name = 'flames';
+  light.name = 'flame_light';
   model.add(group);
   let ramp = 0, t = 0, wasOn = false;
   const tmp = new THREE.Vector3();

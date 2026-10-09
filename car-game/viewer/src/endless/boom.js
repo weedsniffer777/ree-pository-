@@ -1,63 +1,114 @@
 import * as THREE from 'three';
 
-// Explosions and flying bits. Booms: additive fireball sprites that swell and fade, one
+// Explosions and flying bits, drawn comic-book style: hard-edged spiky bursts in flat
+// white/yellow/orange/red with a black ink outline, lumpy cartoon clouds that flash from
+// fire to sooty smoke and shrink away instead of fading, and an ink shockwave ring. One
 // shared flash light (created up front so the light count never changes). Bits: an
-// instanced pool of small rigid pieces (debris, shell casings, belt links) that fly with
-// gravity, tumble, skip off the ground and shrink away.
+// instanced pool of small rigid pieces (debris, shell casings, belt links).
 
-function fireTexture() {
+const ink = '#120d0b';
+function burstTexture(seed) {
   const c = document.createElement('canvas');
-  c.width = c.height = 128;
+  c.width = c.height = 256;
   const g = c.getContext('2d');
-  const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
-  gr.addColorStop(0, 'rgba(255,250,220,1)');
-  gr.addColorStop(0.25, 'rgba(255,200,90,0.95)');
-  gr.addColorStop(0.55, 'rgba(255,110,30,0.6)');
-  gr.addColorStop(0.8, 'rgba(160,40,10,0.18)');
-  gr.addColorStop(1, 'rgba(0,0,0,0)');
-  g.fillStyle = gr;
-  g.fillRect(0, 0, 128, 128);
+  let r = seed;
+  const rnd = () => ((r = (r * 16807) % 2147483647) / 2147483647);
+  g.translate(128, 128);
+  g.lineJoin = 'miter';
+  const spikes = 9 + Math.floor(rnd() * 4), lens = Array.from({ length: spikes }, () => 0.7 + rnd() * 0.3);
+  const star = (R, inner) => {
+    g.beginPath();
+    for (let k = 0; k < spikes * 2; k++) {
+      const a = (k / (spikes * 2)) * Math.PI * 2, rr = k % 2 ? R * inner : R * lens[k >> 1];
+      g.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+    }
+    g.closePath();
+  };
+  star(118, 0.5); g.fillStyle = ink; g.fill();
+  star(108, 0.5); g.fillStyle = '#d8261a'; g.fill();
+  star(84, 0.52); g.fillStyle = '#ff8a1c'; g.fill();
+  star(58, 0.55); g.fillStyle = '#ffd43a'; g.fill();
+  star(32, 0.6); g.fillStyle = '#fffbe6'; g.fill();
+  return new THREE.CanvasTexture(c);
+}
+// a cartoon cloud: overlapping lobes, flat fill, one darker shade on the underside, ink rim
+function cloudTexture(seed, fill, shade) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const g = c.getContext('2d');
+  let r = seed;
+  const rnd = () => ((r = (r * 16807) % 2147483647) / 2147483647);
+  const lobes = [[128, 128, 62]];
+  for (let k = 0; k < 7; k++) { const a = (k / 7) * Math.PI * 2 + rnd() * 0.5, d = 44 + rnd() * 14; lobes.push([128 + Math.cos(a) * d, 128 + Math.sin(a) * d, 30 + rnd() * 16]); }
+  const blob = (grow, dy = 0) => { g.beginPath(); for (const [x, y, rr] of lobes) { g.moveTo(x + rr + grow, y + dy); g.arc(x, y + dy, rr + grow, 0, Math.PI * 2); } };
+  blob(7); g.fillStyle = ink; g.fill();
+  blob(0); g.fillStyle = shade; g.fill();
+  g.save(); blob(0); g.clip();
+  g.beginPath(); for (const [x, y, rr] of lobes) { g.moveTo(x - 6 + rr, y - 9); g.arc(x - 6, y - 9, rr * 0.86, 0, Math.PI * 2); } g.fillStyle = fill; g.fill();
+  g.beginPath(); g.arc(104, 96, 18, 0, Math.PI * 2); g.fillStyle = 'rgba(255,255,255,0.35)'; g.fill(); // highlight
+  g.restore();
+  return new THREE.CanvasTexture(c);
+}
+function ringTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const g = c.getContext('2d');
+  g.lineWidth = 14; g.strokeStyle = ink; g.beginPath(); g.arc(128, 128, 112, 0, Math.PI * 2); g.stroke();
+  g.lineWidth = 7; g.strokeStyle = '#fff3c8'; g.beginPath(); g.arc(128, 128, 112, 0, Math.PI * 2); g.stroke();
   return new THREE.CanvasTexture(c);
 }
 
 export class Booms {
-  constructor(scene, { dust, sparks, max = 48 }) {
+  constructor(scene, { dust, sparks, max = 64 }) {
     Object.assign(this, { dust, sparks });
-    const tex = fireTexture();
+    this.tex = {
+      burst: [burstTexture(11), burstTexture(29), burstTexture(47)],
+      fire: [cloudTexture(5, '#ffb52e', '#e2541c'), cloudTexture(9, '#ffd04a', '#f07a1c')],
+      smoke: [cloudTexture(13, '#5a5450', '#2e2a28'), cloudTexture(17, '#6b6460', '#3a3533')],
+      ring: [ringTexture()],
+    };
     this.items = [];
     for (let k = 0; k < max; k++) {
-      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.tex.burst[0], transparent: true, alphaTest: 0.5, depthWrite: false }));
       s.visible = false;
       s.frustumCulled = false;
+      s.renderOrder = 3;
       scene.add(s);
-      this.items.push({ s, t: 0, life: 0, s0: 1, s1: 2, v: new THREE.Vector3() });
+      this.items.push({ s, t: 0, life: 0, size: 1, kind: 'burst', v: new THREE.Vector3(), spin: 0 });
     }
     this.next = 0;
     this.light = new THREE.PointLight(0xff8a3a, 0, 40, 2);
     scene.add(this.light);
   }
-  ball(x, y, z, size, life, vx = 0, vy = 0, vz = 0, delay = 0) {
+  spawn(kind, x, y, z, size, life, v = null, delay = 0) {
     const it = this.items[this.next];
     this.next = (this.next + 1) % this.items.length;
-    it.s.position.set(x, y, z);
-    it.v.set(vx, vy, vz);
-    Object.assign(it, { t: -delay, life, s0: size * 0.4, s1: size });
+    const set = this.tex[kind === 'fireball' ? 'fire' : kind];
+    it.s.material.map = set[Math.floor(Math.random() * set.length)];
     it.s.material.rotation = Math.random() * Math.PI * 2;
+    it.s.position.set(x, y, z);
+    it.v.set(v?.x ?? 0, v?.y ?? 0, v?.z ?? 0);
+    Object.assign(it, { kind, t: -delay, life, size, spin: (Math.random() - 0.5) * 2, swapped: false });
     it.s.visible = false;
   }
-  // small: a hit pop. big: a car going up.
+  // small: a crit pop. big: a car going up.
   blast(p, vel, big = false) {
-    const n = big ? 11 : 3, R = big ? 2.4 : 0.7, keep = big ? 0.75 : 0.9;
+    const keep = big ? 0.75 : 0.9, R = big ? 2.2 : 0.6, tv = new THREE.Vector3();
+    this.spawn('burst', p.x, p.y + (big ? 1 : 0.3), p.z, big ? 9 : 3.2, big ? 0.22 : 0.14, tv.set(vel.x * keep, 0, vel.z * keep));
+    if (big) this.spawn('burst', p.x, p.y + 1.6, p.z, 6.5, 0.3, tv, 0.08);
+    this.spawn('ring', p.x, p.y + 0.6, p.z, big ? 14 : 4.5, big ? 0.35 : 0.2, tv);
+    const n = big ? 12 : 4;
     for (let k = 0; k < n; k++) {
       const a = Math.random() * Math.PI * 2, r = Math.random() * R;
-      this.ball(p.x + Math.cos(a) * r, p.y + Math.random() * R * 0.6, p.z + Math.sin(a) * r,
-        (big ? 5.5 : 2.2) * (0.6 + Math.random() * 0.6), (big ? 0.75 : 0.32) * (0.7 + Math.random() * 0.6),
-        vel.x * keep, 1 + Math.random() * (big ? 4 : 1.5), vel.z * keep, k ? Math.random() * (big ? 0.25 : 0.06) : 0);
+      tv.set(vel.x * keep + Math.cos(a) * (big ? 4 : 2), 2 + Math.random() * (big ? 5 : 2.5), vel.z * keep + Math.sin(a) * (big ? 4 : 2));
+      this.spawn('fireball', p.x + Math.cos(a) * r, p.y + 0.4 + Math.random() * R * 0.5, p.z + Math.sin(a) * r, (big ? 4.2 : 1.7) * (0.7 + Math.random() * 0.6), (big ? 1.5 : 0.7) * (0.75 + Math.random() * 0.5), tv, Math.random() * (big ? 0.18 : 0.05));
     }
-    const sp = big ? 46 : 14;
-    for (let k = 0; k < sp; k++) this.sparks.emit(p.x, p.y + 0.4, p.z, vel.x * keep + (Math.random() - 0.5) * (big ? 26 : 12), 2 + Math.random() * (big ? 14 : 6), vel.z * keep + (Math.random() - 0.5) * (big ? 26 : 12), big ? 0.16 : 0.1, 0.35 + Math.random() * 0.5, 1.0, 0.7, 0.3);
-    const sm = big ? 16 : 4;
-    for (let k = 0; k < sm; k++) this.dust.emit(p.x + (Math.random() - 0.5) * R, p.y + 0.6, p.z + (Math.random() - 0.5) * R, vel.x * 0.5 + (Math.random() - 0.5) * 4, 1.5 + Math.random() * 3, vel.z * 0.5 + (Math.random() - 0.5) * 4, big ? 3.2 + Math.random() * 2 : 1.4, big ? 2.6 + Math.random() * 1.5 : 1.2, 0.12, 0.11, 0.1);
+    if (big) for (let k = 0; k < 6; k++) {
+      tv.set(vel.x * 0.4 + (Math.random() - 0.5) * 3, 3 + Math.random() * 3, vel.z * 0.4 + (Math.random() - 0.5) * 3);
+      this.spawn('smoke', p.x + (Math.random() - 0.5) * 3, p.y + 2 + Math.random() * 2, p.z + (Math.random() - 0.5) * 3, 4.5 + Math.random() * 2.5, 2.2 + Math.random(), tv, 0.25 + Math.random() * 0.3);
+    }
+    const sp = big ? 40 : 12;
+    for (let k = 0; k < sp; k++) this.sparks.emit(p.x, p.y + 0.4, p.z, vel.x * keep + (Math.random() - 0.5) * (big ? 30 : 14), 2 + Math.random() * (big ? 14 : 6), vel.z * keep + (Math.random() - 0.5) * (big ? 30 : 14), big ? 0.18 : 0.12, 0.3 + Math.random() * 0.4, 1.0, 0.85, 0.4);
     this.light.position.set(p.x, p.y + 1.5, p.z);
     this.light.intensity = Math.max(this.light.intensity, big ? 160 : 30);
   }
@@ -71,9 +122,19 @@ export class Booms {
       if (u >= 1) { it.life = 0; it.s.visible = false; continue; }
       it.s.visible = true;
       it.s.position.addScaledVector(it.v, dt);
-      it.v.multiplyScalar(Math.exp(-dt * 2.5));
-      it.s.scale.setScalar(it.s0 + (it.s1 - it.s0) * Math.sqrt(u));
-      it.s.material.opacity = (1 - u) ** 1.5;
+      it.v.multiplyScalar(Math.exp(-dt * 3));
+      it.s.material.rotation += it.spin * dt;
+      let sc;
+      if (it.kind === 'burst') sc = u < 0.3 ? 0.5 + (u / 0.3) * 0.6 : 1.1 * (1 - (u - 0.3) / 0.7); // punch out, then collapse
+      else if (it.kind === 'ring') { sc = 0.2 + u * 0.9; it.s.material.opacity = 1 - u; }
+      else {
+        // clouds pop up, hang, then shrink to nothing; fire turns to soot halfway
+        sc = u < 0.15 ? 0.4 + (u / 0.15) * 0.6 : u < 0.55 ? 1 + (u - 0.15) * 0.3 : 1.12 * (1 - (u - 0.55) / 0.45);
+        if (it.kind === 'fireball' && !it.swapped && u > 0.45) { it.swapped = true; it.s.material.map = this.tex.smoke[Math.floor(Math.random() * 2)]; }
+        it.v.y += dt * 1.5;
+      }
+      if (it.kind !== 'ring') it.s.material.opacity = 1;
+      it.s.scale.setScalar(Math.max(0.01, it.size * sc));
     }
   }
 }

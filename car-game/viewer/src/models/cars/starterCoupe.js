@@ -105,12 +105,22 @@ export function buildStarterCoupe() {
     spin.name = `wheel_${key}`;
     steer.add(spin);
     car.add(steer);
+    steer.userData.part = 'wheel';
     wheels[key] = { steer, spin, front: z > 0 };
   }
   car.userData.wheels = wheels;
 
   // ---- Everything bolted on: armor, lights, rack, blower, exhausts, rear, guns, dozer ----
   addDetails(car, { skinMats, dloFront, dloRear });
+  // pull the zone-tagged armor plates into one detachable group per zone
+  const armor = car.getObjectByName('armor');
+  for (const zone of ['front', 'back', 'left', 'right']) {
+    const g = new THREE.Group();
+    g.name = `armor_${zone}`;
+    g.userData.part = zone;
+    car.add(g);
+    for (const c of [...armor.children]) if (c.userData.zone === zone) g.attach(c);
+  }
 
   for (const so of [
     socket('SIDE_L', [0.97, 0.55, 0.2], [0, Math.PI / 2, 0]),

@@ -19,12 +19,16 @@ const FRAG = `
 uniform vec3 cF; uniform vec3 cB; uniform vec3 cL; uniform vec3 cR;
 uniform float zc; uniform float hz; uniform float hx;
 varying vec3 vP; varying vec3 vN; varying vec3 vV;
+// rectangular panels: a nose band, a tail band, and a side band each side between them
 void main() {
-  float rz = abs(vP.z - zc) / hz, rx = abs(vP.x) / hx;
-  vec3 c = rz > rx ? (vP.z > zc ? cF : cB) : (vP.x < 0.0 ? cR : cL);
+  float nz = (vP.z - zc) / hz, nx = vP.x / hx;
+  vec3 c = vec3(0.5, 0.55, 0.52) * 0.35; // the hull between the panels
+  float seam = 0.0;
+  if (nz > 0.58) { c = cF; seam = smoothstep(0.05, 0.0, nz - 0.58); }
+  else if (nz < -0.58) { c = cB; seam = smoothstep(0.05, 0.0, -0.58 - nz); }
+  else if (abs(nx) > 0.5) { c = nx < 0.0 ? cR : cL; seam = max(smoothstep(0.05, 0.0, abs(nx) - 0.5), smoothstep(0.05, 0.0, 0.58 - abs(nz))); }
   float rim = 1.0 - abs(dot(normalize(vN), normalize(vV)));
-  float a = 0.07 + pow(rim, 2.2) * 0.9;
-  float seam = smoothstep(0.035, 0.0, abs(rz - rx));
+  float a = 0.08 + pow(rim, 2.2) * 0.9;
   a *= 1.0 - seam * 0.85;
   gl_FragColor = vec4(c * a * 1.6, 1.0);
 }`;
@@ -39,7 +43,7 @@ export class XRay {
     model.updateMatrixWorld(true);
     const inv = model.matrixWorld.clone().invert(), geos = [];
     model.traverse((o) => {
-      if (!o.isMesh) return;
+      if (!o.isMesh || !o.visible || o.material.blending === THREE.AdditiveBlending) return;
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', o.geometry.attributes.position.clone());
       g.setAttribute('normal', o.geometry.attributes.normal.clone());
@@ -65,7 +69,7 @@ export class XRay {
     this.core.add(this.edge);
     this.cam = new THREE.PerspectiveCamera(30, 1, 0.1, 100);
     this.cam.up.set(0, 0, 1);
-    this.cam.position.set(0, 12.5, -6.2);
+    this.cam.position.set(0, 9.6, -4.7);
     this.cam.lookAt(0, 0, 0.2);
     this.key = '';
   }
