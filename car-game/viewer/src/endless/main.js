@@ -2,9 +2,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { GradeShader } from '../lib/grade.js';
+import { screenPass } from './screen.js';
 import { buildStarterCoupe } from '../models/cars/starterCoupe.js';
 import { S, STEP, I_START, LOOP, pointAt, ensure } from './route.js';
 import { World } from './world.js';
@@ -36,7 +34,7 @@ const THEME = LOOP.def; // set on closed-loop circuits
 const num = (k, d) => (params.has(k) ? Number(params.get(k)) : d);
 const tBuild = performance.now();
 
-const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' }); // the frame is drawn into the composer's target, so canvas MSAA only cost time
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
@@ -56,8 +54,7 @@ scene.environmentIntensity = 0.22;
 const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.1, 6000);
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
-composer.addPass(new OutputPass());
-const grade = new ShaderPass(GradeShader);
+const grade = screenPass(renderer); // tone map + output + windscreen glass + grade, one pass
 const GR = THEME ? THEME.grade : { saturation: 1.58, contrast: 1.04, lift: 0.07, toon: 0.45 };
 grade.uniforms.saturation.value = GR.saturation;
 grade.uniforms.contrast.value = GR.contrast;
@@ -125,7 +122,7 @@ const coarse = matchMedia('(pointer: coarse)').matches;
 const hud = createHud({ touch: coarse });
 if (params.get('ui') === '0') hud.hide();
 // cracked windscreen: a refracting post pass on the frame replaces the old DOM overlay
-const glass = new Glass(composer);
+const glass = new Glass(grade);
 { const clr = hud.clearCracks.bind(hud); hud.crack = () => glass.add(); hud.clearCracks = () => { clr(); glass.clear(); }; }
 if (params.get('stats') === '1') hud.toggleDebug();
 // the garage viewer: index.html in dev, garage.html next to the page in the artifact

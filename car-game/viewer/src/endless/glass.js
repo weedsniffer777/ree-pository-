@@ -1,45 +1,16 @@
 import * as THREE from 'three';
-import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
-// Shattered windscreen as a post pass on the finished frame. Each strike is a web of
+// Shattered windscreen, applied in the combined screen pass (screen.js). Each strike is a web of
 // shards: radial cracks from the impact, rings joining them. Every shard shifts the
 // image behind it a little (glass pieces sit at slightly different angles, so the view
 // through them breaks up), the pit at the centre is crushed white frost, and the crack
 // lines carry a bright fracture face, a dark edge and a touch of colour fringing.
 // Two screen-sized maps drive it: disp (RG = shard offset, B = frost) and lines (RGBA).
 
-const Shader = {
-  uniforms: { tDiffuse: { value: null }, tDisp: { value: null }, tLines: { value: null }, px: { value: new THREE.Vector2(1 / 1280, 1 / 720) } },
-  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-  fragmentShader: `
-    uniform sampler2D tDiffuse, tDisp, tLines; uniform vec2 px; varying vec2 vUv;
-    void main(){
-      vec4 d = texture2D(tDisp, vUv);
-      vec2 off = (d.rg - 0.5) * 0.09;
-      float frost = d.b;
-      vec3 c = texture2D(tDiffuse, vUv + off).rgb;
-      // crushed glass: scatter the view and wash it towards white
-      if (frost > 0.01) {
-        vec2 r = px * (2.0 + frost * 9.0);
-        vec3 b = texture2D(tDiffuse, vUv + off + vec2(r.x, r.y)).rgb + texture2D(tDiffuse, vUv + off - vec2(r.x, r.y)).rgb
-               + texture2D(tDiffuse, vUv + off + vec2(-r.x, r.y)).rgb + texture2D(tDiffuse, vUv + off + vec2(r.x, -r.y)).rgb;
-        c = mix(c, b * 0.25, min(1.0, frost * 1.4));
-        c = mix(c, vec3(0.86, 0.9, 0.93), frost * 0.55);
-      }
-      vec4 l = texture2D(tLines, vUv);
-      // colour fringe along the cracks
-      float fr = texture2D(tLines, vUv + vec2(px.x * 2.0, 0.0)).a - l.a;
-      c.r += fr * 0.12; c.b -= fr * 0.12;
-      c = mix(c, l.rgb, l.a);
-      gl_FragColor = vec4(c, 1.0);
-    }`,
-};
-
 export class Glass {
-  constructor(composer) {
-    this.pass = new ShaderPass(Shader);
-    this.pass.enabled = false;
-    composer.addPass(this.pass);
+  // `pass` is the combined screen pass (screen.js), which applies the maps
+  constructor(pass) {
+    this.pass = pass;
     this.cracks = [];
     this.disp = document.createElement('canvas');
     this.lines = document.createElement('canvas');
@@ -186,7 +157,7 @@ export class Glass {
       if (a <= 0) { this.cracks.splice(k, 1); this.dirty = true; continue; }
       if (Math.abs(a - c.a) > 0.04) { c.a = a; this.dirty = true; }
     }
-    this.pass.enabled = this.cracks.length > 0;
+    this.pass.uniforms.glass.value = this.cracks.length > 0 ? 1 : 0;
     if (this.dirty && this.cracks.length) this.render();
     this.dirty = false;
     this.pass.uniforms.px.value.set(1 / innerWidth, 1 / innerHeight);
