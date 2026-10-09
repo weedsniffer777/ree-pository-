@@ -473,6 +473,7 @@ export function createHud({ touch = false } = {}) {
 
   // ---- damage feedback ----
   let xray = null, vigT = 0, vigBase = 0, hpShown = -1, flashV = 0;
+  const cracks = [];
   const flashEl = $('.flash');
   const vig = $('.vig'), hm = $('.hm'), pops = $('.pops'), glass = $('.glass');
   // Bullet-strike on the windscreen: a crushed, frosted pit; radial cracks that taper and
@@ -492,6 +493,20 @@ export function createHud({ touch = false } = {}) {
       g.save(); g.translate(1.2, 1.4); path(); g.strokeStyle = 'rgba(0,0,0,0.32)'; g.lineWidth = w + 1.2; g.stroke(); g.restore();
       path(); g.strokeStyle = 'rgba(255,255,255,0.07)'; g.lineWidth = w + 5; g.stroke();
       path(); g.strokeStyle = 'rgba(245,250,255,0.82)'; g.lineWidth = w; g.stroke();
+      // the far fracture face catches light on the other side of the line
+      g.save(); g.translate(-0.7, -0.9); path(); g.strokeStyle = 'rgba(255,255,255,0.45)'; g.lineWidth = Math.max(0.4, w * 0.35); g.stroke(); g.restore();
+    };
+    // hairline fractures and glints along a crack, the fine detail real breaks have
+    const detail = (pts) => {
+      for (let k = 1; k < pts.length; k++) {
+        const [x0, y0] = pts[k - 1], [x1, y1] = pts[k], a = Math.atan2(y1 - y0, x1 - x0);
+        if (rnd() < 0.5) {
+          const b = a + (rnd() < 0.5 ? -1 : 1) * (0.6 + rnd() * 0.9), l = 4 + rnd() * 13, mx = x1 + (rnd() - 0.5) * 3, my = y1 + (rnd() - 0.5) * 3;
+          g.strokeStyle = `rgba(240,248,255,${0.35 + rnd() * 0.35})`; g.lineWidth = 0.55;
+          g.beginPath(); g.moveTo(mx, my); g.lineTo(mx + Math.cos(b) * l * 0.5 + (rnd() - 0.5) * 2, my + Math.sin(b) * l * 0.5); g.lineTo(mx + Math.cos(b) * l, my + Math.sin(b) * l); g.stroke();
+        }
+        if (rnd() < 0.14) { g.fillStyle = 'rgba(255,255,255,0.95)'; g.fillRect(x1 - 1 + (rnd() - 0.5) * 4, y1 - 1 + (rnd() - 0.5) * 4, 1.5 + rnd() * 1.5, 1.5 + rnd() * 1.5); }
+      }
     };
     // a crack: wandering polyline, tapering, sometimes forking
     const rays = [];
@@ -508,6 +523,7 @@ export function createHud({ touch = false } = {}) {
       // taper: draw in a few chunks getting thinner
       const n = pts.length, chunks = 4;
       for (let k = 0; k < chunks; k++) stroke(pts.slice(Math.floor((k * n) / chunks), Math.floor(((k + 1) * n) / chunks) + 1), Math.max(0.5, w * (1 - k / chunks)));
+      detail(pts);
       return pts;
     };
     const nr = 13 + Math.floor(rnd() * 7);
@@ -603,6 +619,11 @@ export function createHud({ touch = false } = {}) {
     armorModel(model, hitbox) { if (root.style.display !== 'none') xray = new XRay($('.armor canvas'), model, hitbox); },
     armor(a, t = performance.now() / 1000, dt = 1 / 60) {
       xray?.update(a, t);
+      const now = performance.now() / 1000;
+      for (let k = cracks.length - 1; k >= 0; k--) {
+        const age = now - cracks[k].t0;
+        if (age > 7.5) { cracks[k].w.remove(); cracks.splice(k, 1); } else if (age > 6) cracks[k].w.style.opacity = String(1 - (age - 6) / 1.5);
+      }
       const hp = Math.ceil(a.core * 100);
       if (hp !== hpShown) {
         hpShown = hp;
@@ -643,7 +664,8 @@ export function createHud({ touch = false } = {}) {
       if (state === 'far') tag.textContent = `OUT OF RANGE ${String(Math.round(dist)).padStart(3, '0')}M`;
     },
     hurt(amount) { vigT = Math.min(0.9, vigT + 0.18 + amount * 4); },
-    // cracked glass when HP crosses a threshold; cleared on a new race
+    // cracked glass on a solid chunk of damage while hurt (race decides when); at most 3
+    // on screen, each fading out after ~6 s; cleared on a new race
     crack() {
       const w = document.createElement('div'), c = crackCanvas(1 + Math.floor(Math.random() * 1e6));
       w.className = 'crack';
@@ -652,8 +674,10 @@ export function createHud({ touch = false } = {}) {
       c.style.transform = `translate(-50%, -50%) rotate(${Math.random() * 360}deg)`;
       w.append(c);
       glass.append(w);
+      cracks.push({ w, t0: performance.now() / 1000 });
+      while (cracks.length > 3) cracks.shift().w.remove();
     },
-    clearCracks() { glass.innerHTML = ''; vigT = 0; },
+    clearCracks() { glass.innerHTML = ''; cracks.length = 0; vigT = 0; },
     hitmarker(kind = 'hit') {
       hm.className = 'hm';
       void hm.offsetWidth;

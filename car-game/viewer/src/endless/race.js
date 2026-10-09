@@ -333,7 +333,11 @@ export class Race {
     if (target === this.player) {
       this.hud.hurt(dmg);
       this.car.hit(crit ? 6 : 1.5);
-      for (const th of [0.5, 0.25, 0.1]) if (hb > th && a.core <= th) this.hud.crack();
+      // the screen cracks on solid chunks of hull damage once HP is under 75
+      if (a.core < 0.75) {
+        this.crackAcc = (this.crackAcc ?? 0) + (hb - a.core);
+        if (this.crackAcc >= 0.05 && this.t - (this.crackT ?? -9) > 1.2) { this.hud.crack(); this.crackAcc = 0; this.crackT = this.t; }
+      }
     }
     if (a.wrecked) this.detonate(target, cause);
   }
