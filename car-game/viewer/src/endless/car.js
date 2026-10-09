@@ -107,7 +107,7 @@ export class CarController {
       // over ~0.35 s once you're off the brake and pointing roughly where you're going.
       const slipNow = Math.abs(Math.atan2(vl, Math.abs(vf)));
       const declutch = (inp.brake > 0 && vf > 6 && Math.abs(this.steerS) > 0.3) || (slipNow > 1.0 && Math.hypot(vf, vl) > 6);
-      this.clutch = (this.clutch ?? 1) + ((declutch ? 0 : 1) - (this.clutch ?? 1)) * Math.min(1, dt * (declutch ? 10 : 3));
+      this.clutch = (this.clutch ?? 1) + ((declutch ? 0 : 1) - (this.clutch ?? 1)) * Math.min(1, dt * (declutch ? 5 : 3));
       const cl = this.clutch;
       if (inp.throttle > 0 && vf < want) {
         const a = (this.boosting ? 20 : 11) * inp.throttle * cl * Math.max(0.18, 1 - (Math.max(0, vf) / want) ** 2);
@@ -124,30 +124,35 @@ export class CarController {
       if (brakeEdge && Math.abs(vf) < 1.5) this.revOK = true;
       const brake = inp.brake; // S without a turn key is always plain braking
       const braking = brake > 0 && vf > 6;
+      // how far into a drift the angle is: 0 below ~3 deg off the travel direction, 1 by
+      // ~20 deg. Braking force, grip loss and speed scrub all blend on this, so a hard turn
+      // eases into a slide instead of snapping into one
+      const sm = (a, b, x) => { const u = Math.max(0, Math.min(1, (x - a) / (b - a))); return u * u * (3 - 2 * u); };
+      const driftK = brake > 0 && vf > 6 ? sm(0.05, 0.35, slipNow) * sm(0.15, 0.6, Math.abs(inp.steer)) : 0;
       // Drift: S + steer kicks the tail out; once sliding, holding the steer with the
       // throttle down keeps it going as a power slide (no need to keep braking), and it
       // ends when you straighten up or the speed is gone.
       const sliding = this.drift > 0.3 && Math.abs(this.steerS) > 0.35 && inp.throttle > 0 && vf > 8;
-      let driftWant = braking ? Math.min(1, Math.abs(this.steerS) * 1.3) * Math.min(1, (vf - 6) / 14)
+      let driftWant = braking ? Math.min(1, Math.abs(this.steerS) * 1.3) * Math.min(1, (vf - 6) / 14) * (0.4 + 0.6 * driftK)
         : sliding ? Math.min(0.85, Math.abs(this.steerS) * 1.1) * Math.min(1, (vf - 8) / 12) : 0;
       // any time the car is well sideways at speed, forwards or backwards, the tyres are
       // sliding: grip loosens with the slip angle, so a backwards slide can be steered
       // back to straight (or past 90 deg into forward driving) as fluidly as a forward one
       const slipA = Math.abs(Math.atan2(vl, Math.abs(vf))), spdA = Math.hypot(vf, vl);
       if (spdA > 8 && slipA > 0.3) driftWant = Math.max(driftWant, Math.min(0.85, (slipA - 0.3) * 1.4) * Math.min(1, (spdA - 8) / 10));
-      this.drift += (driftWant - this.drift) * Math.min(1, dt * (driftWant > this.drift ? 4.5 : 1.6));
+      this.drift += (driftWant - this.drift) * Math.min(1, dt * (driftWant > this.drift ? 2.4 : 1.6));
       this.driftMode = this.drift > 0.35;
       if (inp.brake > 0 && vf < -3) {
         // already rolling backwards (after a 180): S is full reverse, up to half the normal
         // top speed; faster than that it just keeps the momentum it has
         if (vf > -REV_V) vf = Math.max(-REV_V, vf - 9 * (0.3 + 0.7 * cl) * dt);
       } else if (brake > 0) {
-        // A drift is: brake held + a turn key held + the car already pointing more than ~8
-        // deg off where it's travelling. Then the brake only throws the tail, it doesn't slow
-        // the car. Anything else is ordinary braking: hard at speed, softer as it slows.
-        this.drifting = Math.abs(inp.steer) > 0.3 && slipNow > 0.14 && vf > 6;
-        if (this.drifting) { /* no braking force: momentum carries the slide */ }
-        else if (vf > 0.5) vf -= (7 + 13 * Math.min(1, vf / 22)) * dt * brake;
+        // A drift is: brake held + a turn key held + the car pointing off where it is
+        // travelling (driftK). The further off, the less the brake slows the car and the
+        // more it throws the tail. Straight or nearly so: ordinary braking.
+        // The braking force fades out as driftK builds, rather than switching off.
+        this.drifting = driftK > 0.5;
+        if (vf > 0.5) vf -= (7 + 13 * Math.min(1, vf / 22)) * dt * brake * (1 - driftK);
         else if (this.revOK || (this.stopT += dt) > 0.3) vf = Math.max(-REV_V, vf - 9 * dt * brake); // stopped: a beat, then it backs up on its own
         else vf = Math.max(0, vf - 7 * dt);
       }
@@ -166,7 +171,8 @@ export class CarController {
         // speed lost to the tyres scrubbing sideways: small, growing with the slip angle;
         // even fully sideways a drift only bleeds ~10% of its speed per second
         const sb = Math.abs(Math.sin(beta));
-        const scrub = Math.exp(-dt * (this.drift > 0.3 ? 0.03 + 0.07 * sb ** 1.5 : 0.08 * sb) * (spd > 12 ? 1 : 2));
+        const dk = sm(0.15, 0.5, this.drift);
+        const scrub = Math.exp(-dt * ((0.03 + 0.07 * sb ** 1.5) * dk + 0.08 * sb * (1 - dk)) * (spd > 12 ? 1 : 2));
         const s2 = spd * scrub;
         vf = fwd * s2 * Math.cos(beta);
         vl = s2 * Math.sin(beta);
