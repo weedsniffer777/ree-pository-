@@ -38,7 +38,7 @@ const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'h
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = matchMedia('(pointer: coarse)').matches ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap; // phones: the cheaper filter
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.12;
 renderer.info.autoReset = false;
@@ -70,7 +70,7 @@ const SUN_DIR = new THREE.Vector3(70, 85, 45).normalize();
 sun.castShadow = true;
 // One big shadow box (instead of a tight one that makes shadows pop in at ~40 m), pushed
 // ahead of the car and snapped to whole shadow texels so edges don't crawl as you drive.
-const SHADOW = matchMedia('(pointer: coarse)').matches ? { size: 3072, half: 95 } : { size: 4096, half: 130 };
+const SHADOW = matchMedia('(pointer: coarse)').matches ? { size: 2048, half: 75 } : { size: 4096, half: 130 }; // phones: ~the same sharpness per metre, a quarter fewer pixels
 sun.shadow.mapSize.set(SHADOW.size, SHADOW.size);
 Object.assign(sun.shadow.camera, { left: -SHADOW.half, right: SHADOW.half, top: SHADOW.half, bottom: -SHADOW.half, near: 1, far: 500 });
 sun.shadow.bias = -0.0004;

@@ -92,3 +92,16 @@ export function chunkWorld(group, size = 120) {
     for (const p of parts) group.add(p);
   }
 }
+
+// Small props don't cast shadows (bushes, rocks, cones, posts): their shadows are barely
+// visible but every caster is drawn again into the shadow map. Big things keep theirs.
+export function trimShadowCasters(group, minRadius = 1.6) {
+  const M = new THREE.Matrix4(), sc = new THREE.Vector3(), q = new THREE.Quaternion(), p = new THREE.Vector3();
+  group.traverse((o) => {
+    if (!o.isMesh || !o.castShadow) return;
+    if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+    let scale = Math.max(o.scale.x, o.scale.y, o.scale.z);
+    if (o.isInstancedMesh && o.count) { o.getMatrixAt(0, M); M.decompose(p, q, sc); scale *= Math.max(sc.x, sc.y, sc.z); }
+    if (o.geometry.boundingSphere.radius * scale < minRadius) o.castShadow = false;
+  });
+}
