@@ -76,19 +76,19 @@ const CSS = `
 #hud .armor .hp { text-align: center; font: 900 17px/1 var(--display); letter-spacing: 0.04em; font-variant-numeric: tabular-nums; text-shadow: 0 2px 0 rgba(0,0,0,0.6); }
 #hud .armor .hp small { font-size: 11px; color: var(--dim); }
 #hud .armor .hp.low b { color: #ff4a2a; }
-/* lock-on, military fire-control style in phosphor green (reads on sand, concrete and
-   sky): dim reticle with mil ticks; a lock is bright corner brackets + LOCK and range */
-#hud { --lock: #5dff7a; --ret: rgba(150,255,170,0.8); --mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace; }
-#hud .ret { position: absolute; left: 0; top: 0; border-radius: 50%; border: 1.5px solid rgba(120,255,150,0.5); box-shadow: 0 0 0 1px rgba(0,0,0,0.35), inset 0 0 0 1px rgba(0,0,0,0.2); transform: translate(-50%, -50%); }
-#hud .ret b { position: absolute; background: var(--ret); box-shadow: 0 0 0 1px rgba(0,0,0,0.45); }
+/* lock-on, military fire-control style: white reticle with mil ticks; a lock is phosphor
+   green corner brackets + LOCK and range. No outlines, just a soft glow on the lock. */
+#hud { --lock: #5dff7a; --ret: rgba(255,255,255,0.9); --mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace; }
+#hud .ret { position: absolute; left: 0; top: 0; border-radius: 50%; border: 1.5px solid rgba(255,255,255,0.6); transform: translate(-50%, -50%); }
+#hud .ret b { position: absolute; background: var(--ret); }
 #hud .ret b:nth-of-type(1) { left: 50%; top: -1px; width: 1.5px; height: 12px; margin-left: -0.75px; }
 #hud .ret b:nth-of-type(2) { left: 50%; bottom: -1px; width: 1.5px; height: 12px; margin-left: -0.75px; }
 #hud .ret b:nth-of-type(3) { top: 50%; left: -1px; height: 1.5px; width: 12px; margin-top: -0.75px; }
 #hud .ret b:nth-of-type(4) { top: 50%; right: -1px; height: 1.5px; width: 12px; margin-top: -0.75px; }
-#hud .ret i { position: absolute; left: 50%; top: 50%; width: 3px; height: 3px; margin: -1.5px; background: var(--ret); box-shadow: 0 0 0 1px rgba(0,0,0,0.45); }
-#hud .ret.on { border-color: rgba(93,255,122,0.75); }
-#hud .ret.on b, #hud .ret.on i { background: var(--lock); }
-#hud .lockbox { position: absolute; left: 0; top: 0; transform: translate(-50%, -50%); filter: drop-shadow(0 0 1px rgba(0,0,0,0.9)) drop-shadow(0 0 1px rgba(0,0,0,0.9)) drop-shadow(0 0 6px rgba(93,255,122,0.35));
+#hud .ret i { position: absolute; left: 50%; top: 50%; width: 3px; height: 3px; margin: -1.5px; background: var(--ret); }
+#hud .ret.on { border-color: rgba(255,255,255,0.85); }
+#hud .ret.on b, #hud .ret.on i { background: #fff; }
+#hud .lockbox { position: absolute; left: 0; top: 0; transform: translate(-50%, -50%); filter: drop-shadow(0 0 5px rgba(93,255,122,0.45));
   --c: var(--lock); --l: 30%; --w: 2px;
   background:
     linear-gradient(var(--c), var(--c)) top left / var(--l) var(--w) no-repeat, linear-gradient(var(--c), var(--c)) top left / var(--w) var(--l) no-repeat,
@@ -96,7 +96,7 @@ const CSS = `
     linear-gradient(var(--c), var(--c)) bottom left / var(--l) var(--w) no-repeat, linear-gradient(var(--c), var(--c)) bottom left / var(--w) var(--l) no-repeat,
     linear-gradient(var(--c), var(--c)) bottom right / var(--l) var(--w) no-repeat, linear-gradient(var(--c), var(--c)) bottom right / var(--w) var(--l) no-repeat; }
 #hud .lockbox i { position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px; background: var(--lock); }
-#hud .lockbox span { position: absolute; top: calc(100% + 5px); left: 50%; transform: translateX(-50%); color: var(--lock); font: 700 11px/1 var(--mono); letter-spacing: 0.14em; white-space: nowrap; text-shadow: 0 0 2px #000, 0 0 2px #000, 0 1px 0 #000; }
+#hud .lockbox span { position: absolute; top: calc(100% + 5px); left: 50%; transform: translateX(-50%); color: var(--lock); font: 700 11px/1 var(--mono); letter-spacing: 0.14em; white-space: nowrap; text-shadow: 0 0 6px rgba(93,255,122,0.5); }
 #hud .lockbox.new { animation: lockIn 0.32s steps(1) both; }
 @keyframes lockIn { 0% { opacity: 1; transform: translate(-50%, -50%) scale(1.6); } 25% { opacity: 0; } 50% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 75% { opacity: 0; } 100% { opacity: 1; } }
 /* white flash on kills / crits */
