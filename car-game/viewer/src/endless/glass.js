@@ -136,13 +136,22 @@ export class Glass {
         d.fillStyle = `rgb(${Math.round(128 + cell.dx * 70 * A)},${Math.round(128 + cell.dy * 70 * A)},${Math.round(cell.frost * 255 * A)})`;
         poly(d, cell.poly); d.fill();
         if (cell.deep) {
-          // tilted shard: a faint tint over it and a lit bevel on the edge facing up-left
+          // tilted shard: a tint, an inner shadow round its rim, a thick lit bevel on the
+          // edge toward the light and a thick dark one opposite (swapped when pushed in)
           poly(l, cell.poly);
-          l.fillStyle = cell.out > 0 ? `rgba(225,235,245,${0.13 * A})` : `rgba(8,10,14,${0.16 * A})`;
+          l.fillStyle = cell.out > 0 ? `rgba(225,235,245,${0.12 * A})` : `rgba(8,10,14,${0.16 * A})`;
           l.fill();
-          const [p0, p1] = cell.poly[0][1] < cell.poly[3][1] ? [cell.poly[0], cell.poly[1]] : [cell.poly[3], cell.poly[2]];
-          l.strokeStyle = `rgba(255,255,255,${0.55 * A})`; l.lineWidth = 1.6;
-          l.beginPath(); l.moveTo(p0[0] - 1, p0[1] - 1); l.lineTo(p1[0] - 1, p1[1] - 1); l.stroke();
+          l.save(); poly(l, cell.poly); l.clip();
+          poly(l, cell.poly); l.strokeStyle = `rgba(0,0,0,${0.32 * A})`; l.lineWidth = 9; l.stroke();
+          l.restore();
+          const P = cell.poly, top = P[0][1] + P[1][1] < P[3][1] + P[2][1];
+          const lit = top ? [P[0], P[1]] : [P[3], P[2]], dark = top ? [P[3], P[2]] : [P[0], P[1]];
+          const [hi, lo] = cell.out > 0 ? [lit, dark] : [dark, lit];
+          l.lineCap = 'round';
+          l.strokeStyle = `rgba(255,255,255,${0.75 * A})`; l.lineWidth = 3;
+          l.beginPath(); l.moveTo(hi[0][0], hi[0][1]); l.lineTo(hi[1][0], hi[1][1]); l.stroke();
+          l.strokeStyle = `rgba(0,0,0,${0.55 * A})`; l.lineWidth = 4.5;
+          l.beginPath(); l.moveTo(lo[0][0] + 1.5, lo[0][1] + 2); l.lineTo(lo[1][0] + 1.5, lo[1][1] + 2); l.stroke();
         }
       }
       // the hole: jagged rim with the glass's thickness catching the light
@@ -152,6 +161,8 @@ export class Glass {
         l.save(); l.translate(1.3, 1.6); poly(l, rim); l.strokeStyle = `rgba(10,12,14,${0.55 * A})`; l.lineWidth = 1.6; l.stroke(); l.restore();
         poly(l, rim); l.strokeStyle = `rgba(255,255,255,${0.9 * A})`; l.lineWidth = 1; l.stroke();
       }
+      // nothing is drawn inside the knocked-out centre
+      const clip = (pts) => pts.filter(([x, y]) => Math.hypot(x - c.cx, y - c.cy) >= c.holeR * 1.04);
       // dark crack edges fade out as the cracks run away from the strike
       const fadeAt = (pts) => { const [x, y] = pts[Math.floor(pts.length / 2)]; return Math.max(0, 1 - Math.hypot(x - c.cx, y - c.cy) / (c.R * 0.75)); };
       const line = (pts, w) => {
@@ -162,13 +173,12 @@ export class Glass {
       };
       for (const ray of c.rays) {
         // cracks start at the hole's rim, not at a point in the middle
-        const from = ray.pts.findIndex(([x, y]) => Math.hypot(x - c.cx, y - c.cy) >= c.holeR);
-        if (from < 0) continue;
-        const pts = ray.pts.slice(Math.max(0, from - 1)), n = pts.length;
+        const pts = clip(ray.pts), n = pts.length;
+        if (n < 2) continue;
         for (let k = 0; k < 4; k++) line(pts.slice(Math.floor((k * n) / 4), Math.floor(((k + 1) * n) / 4) + 1), Math.max(0.5, 2.2 * (1 - k / 4)));
-        for (const b of ray.branches) line(b, 0.8);
+        for (const b of ray.branches) { const bp = clip(b); if (bp.length > 1) line(bp, 0.8); }
       }
-      for (const wb of c.webs) line(wb.seg, wb.w);
+      for (const wb of c.webs) { const wp = clip(wb.seg); if (wp.length > 1) line(wp, wb.w); }
       for (const [x, y, s, r] of c.chips) { l.fillStyle = `rgba(255,255,255,${0.35 * A})`; l.beginPath(); for (let q = 0; q < 3; q++) l.lineTo(x + Math.cos(r + q * 2.1) * s, y + Math.sin(r + q * 2.1) * s); l.fill(); }
     }
     this.tDisp.needsUpdate = this.tLines.needsUpdate = true;

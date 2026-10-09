@@ -132,8 +132,13 @@ export class CarController {
       // throttle down keeps it going as a power slide (no need to keep braking), and it
       // ends when you straighten up or the speed is gone.
       const sliding = this.drift > 0.3 && Math.abs(this.steerS) > 0.35 && inp.throttle > 0 && vf > 8;
-      const driftWant = braking ? Math.min(1, Math.abs(this.steerS) * 1.3) * Math.min(1, (vf - 6) / 14)
+      let driftWant = braking ? Math.min(1, Math.abs(this.steerS) * 1.3) * Math.min(1, (vf - 6) / 14)
         : sliding ? Math.min(0.85, Math.abs(this.steerS) * 1.1) * Math.min(1, (vf - 8) / 12) : 0;
+      // any time the car is well sideways at speed, forwards or backwards, the tyres are
+      // sliding: grip loosens with the slip angle, so a backwards slide can be steered
+      // back to straight (or past 90 deg into forward driving) as fluidly as a forward one
+      const slipA = Math.abs(Math.atan2(vl, Math.abs(vf))), spdA = Math.hypot(vf, vl);
+      if (spdA > 8 && slipA > 0.3) driftWant = Math.max(driftWant, Math.min(0.85, (slipA - 0.3) * 1.4) * Math.min(1, (spdA - 8) / 10));
       this.drift += (driftWant - this.drift) * Math.min(1, dt * (driftWant > this.drift ? 4.5 : 1.6));
       this.driftMode = this.drift > 0.35;
       if (inp.brake > 0 && vf < -3) {
@@ -169,7 +174,7 @@ export class CarController {
       const sp = Math.abs(vf);
       // turn rate falls off with speed (a squared term so top speed and boost are clearly
       // heavier: ~1.8 rad/s at 36 km/h, ~0.6 at 165, ~0.5 boosting); drifting adds rotation back
-      this.yawRate = -this.steerS * 2.4 * Math.min(1, sp / 4) / (1 + sp / 30 + (sp / 40) ** 2) * (vf < -0.1 ? -1 : 1) * (1 + this.drift * (0.6 + Math.max(0, Math.abs(this.steerS) - 0.7) * 2.2)); // hard lock in a drift whips the car round
+      this.yawRate = -this.steerS * 2.4 * Math.min(1, sp / 4) / (1 + sp / 30 + (sp / 40) ** 2) * THREE.MathUtils.clamp(vf / 2.5, -1, 1) * (1 + this.drift * (0.6 + Math.max(0, Math.abs(this.steerS) - 0.7) * 2.2)); // hard lock in a drift whips the car round
     } else {
       this.yawRate *= Math.exp(-dt * 2);
     }
