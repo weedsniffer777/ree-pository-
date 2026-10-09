@@ -1,4 +1,4 @@
-import { MAPS, currentMap, switchMap } from './maps.js';
+import { LEVELS, currentLevel, switchLevel } from './maps.js';
 
 // Dev kit: a small button top-right that opens a menu with the model viewer (the garage
 // page in an overlay), tutorial replay, stats, and a full data reset.
@@ -31,7 +31,7 @@ export function createDevKit({ viewerUrl, onStats, onOpenChange }) {
   el.id = 'devkit';
   el.innerHTML = `<button class="open">Dev kit</button>
     <div class="menu">
-      <div class="grp">Maps</div>${MAPS.map((m) => `<button data-map="${m.id}" class="${m.id === currentMap().id ? 'cur' : ''}">${m.name}</button>`).join('')}
+      <div class="grp">Levels</div>${LEVELS.map((l) => `<button data-level="${l.n}" class="${l.n === currentLevel().n ? 'cur' : ''}">${l.n} · ${l.name}</button>`).join('')}
       <div class="grp">Tools</div>
       <button data-a="viewer">Model viewer</button>
       <button data-a="stats">Toggle stats</button>
@@ -67,5 +67,5 @@ export function createDevKit({ viewerUrl, onStats, onOpenChange }) {
       location.reload();
     },
   };
-  el.querySelectorAll('.menu button').forEach((b) => b.addEventListener('click', () => (b.dataset.map ? switchMap(b.dataset.map) : actions[b.dataset.a]())));
+  el.querySelectorAll('.menu button').forEach((b) => b.addEventListener('click', () => (b.dataset.level ? switchLevel(Number(b.dataset.level)) : actions[b.dataset.a]())));
 }

@@ -51,6 +51,20 @@ export const DMG = {
 // ---------------------------------------------------------------- armor
 const ZONES = ['front', 'back', 'left', 'right'];
 const HULL_TAKES = 1.0; // damage past the armor hits the hull at this rate (was 1.6: it melted too fast)
+// Critical hits: extra damage (x mult) and a blast. Every source has its own rate:
+//   gun: per bullet. dozer / drill (spiked wheels): held contact rolls once per `tick`, and a
+//   crit adds `burst`. impact: one-off collisions, the chance ramps from 0 at `from` m/s of
+//   closing speed to `max` at `full`. wall: a car ground into a wall rolls per tick, ramping
+//   the same way with its speed along the wall (and wall slams use the impact ramp).
+export const CRIT = {
+  mult: 2.5, tick: 0.25,
+  gun: 0.05,
+  dozer: 0.1, drill: 0.1, burst: 0.07,
+  impact: { from: 12, full: 30, max: 0.35 },
+  wall: { from: 26.8, full: 45, max: 0.3 },
+};
+const ramp = (r, v) => r.max * Math.max(0, Math.min(1, (v - r.from) / (r.full - r.from)));
+const HELD = new Set(['dozer', 'drill']); // continuous ram parts
 const STAGES = [[1, 0.66], [2, 0.33], [3, 0]]; // armor chunk stage, and the side's armor level it comes off at
 export class Armor {
   constructor() { this.reset(); }
@@ -328,7 +342,7 @@ export class Race {
   // Armor soaks a hit on its side until stripped; past that the hull HP (core) takes it.
   // Player hits drive the feedback: hitmarker, combo count, CRITICAL when a side breaks or
   // HP crosses a third, DESTROYED with the kill tally, small blasts on crits.
-  damage(target, zone, dmg, attacker = null, point = null, cause = 'gun', dir = null) {
+  damage(target, zone, dmg, attacker = null, point = null, cause = 'gun', dir = null, critChance = null) {
     const a = target.armor;
     if (a.wrecked || this.state === 'done' && target === this.player) return;
     // (bullet holes on the bodywork are switched off for now: this.holes.add(...))
@@ -340,16 +354,19 @@ export class Race {
         const g = target.mem.grudge.get(attacker) ?? { amount: 0, t: 0, ram: false };
         g.amount = Math.min(1.5, g.amount * Math.max(0, 1 - (this.t - g.t) / AI.memory) + dmg * 8 + (cause === 'ram' ? 0.5 : 0));
         g.t = this.t;
-        g.ram = g.ram || cause === 'ram' || cause === 'grind';
+        g.ram = g.ram || cause === 'ram' || HELD.has(cause);
         target.mem.grudge.set(attacker, g);
         target.rage = Math.min(1, (target.rage ?? 0) + dmg * AI.rage.hit + (cause === 'ram' ? AI.rage.ram : 0));
       }
     }
     // critical hits: a share of gun and ram hits land somewhere that matters (anyone can
     // take one, you included), for extra damage and a blast; wall friction never crits
-    const lucky = cause === 'gun' ? 0.05 : cause === 'ram' || cause === 'crash' ? 0.12 : 0;
-    const critRoll = Math.random() < lucky;
-    if (critRoll) dmg *= 2.5;
+    const chance = critChance ?? CRIT[cause] ?? 0;
+    let critRoll = false;
+    if (HELD.has(cause) || cause === 'wall') { // continuous: one roll per tick, a crit lands a burst
+      const tk = (target.critTick ??= {});
+      if (this.t - (tk[cause] ?? -9) >= CRIT.tick) { tk[cause] = this.t; critRoll = Math.random() < chance; if (critRoll) dmg += CRIT.burst; }
+    } else if (Math.random() < chance) { critRoll = true; dmg *= CRIT.mult; }
     a.hit(zone, dmg);
     if (attacker === this.player && target !== this.player) { this.dealt[zone] += (zb - a.z[zone]) * 100; this.dealt.core += (hb - a.core) * 100; }
     if (target === this.player) {
@@ -375,7 +392,7 @@ export class Race {
     if (attacker === this.player && target !== this.player) {
       // grinding (dozer or spikes held against a car) is continuous: no combo, and the
       // hitmarker only ticks a few times a second
-      const grind = cause === 'grind', cb = this.combo;
+      const grind = HELD.has(cause), cb = this.combo;
       if (cause === 'gun') { cb.n = this.raceT - cb.t < 0.75 ? cb.n + 1 : 1; cb.t = this.raceT; }
       if (crit) { this.hitstop = Math.max(this.hitstop, 0.07); this.hud.flash(0.16); }
       if (a.wrecked) {
@@ -383,7 +400,7 @@ export class Race {
         this.hud.flash(0.6);
         this.kills++;
         this.hud.hitmarker('kill');
-        const word = cause === 'ram' || cause === 'grind' || cause === 'crash' ? (Math.random() < 0.5 ? 'RAMMED' : 'CRUSHED') : 'DESTROYED';
+        const word = cause === 'ram' || HELD.has(cause) || cause === 'crash' ? (Math.random() < 0.5 ? 'RAMMED' : 'CRUSHED') : 'DESTROYED';
         this.hud.popup(`${word}<small>x${this.kills}</small>`, 'kill');
         this.car.addBoost(0.35);
       } else {
@@ -486,7 +503,7 @@ export class Race {
     car.onImpact = (v, nx, nz) => {
       if (v < DMG.wallImpactFrom || this.state !== 'race') return;
       const f = [Math.sin(car.yaw), Math.cos(car.yaw)], lz = -nx * f[0] - nz * f[1], lx = -nx * -f[1] - nz * f[0];
-      this.damage(who(), Armor.zoneOf(lx, lz, 1, 1), (v - DMG.wallImpactFrom) * DMG.wallImpactPer, null, null, 'wall');
+      this.damage(who(), Armor.zoneOf(lx, lz, 1, 1), (v - DMG.wallImpactFrom) * DMG.wallImpactPer, null, null, 'wallhit', null, ramp(CRIT.impact, v));
     };
   }
   // scraping or pinned against the wall this frame: contact damage on that side
@@ -498,7 +515,7 @@ export class Race {
       const f = [Math.sin(car.yaw), Math.cos(car.yaw)], lz = sc.nx * f[0] + sc.nz * f[1], lx = sc.nx * -f[1] + sc.nz * f[0];
       const fade = Math.max(0, Math.min(1, (sc.v - DMG.scrapeFrom) / (DMG.scrapeFull - DMG.scrapeFrom)));
       const spark = Math.max(0, Math.min(1, (sc.v - 3) / 7)); // the sparks still fly at any real speed
-      if (fade > 0) this.damage(ref, Armor.zoneOf(lx, lz, 1, 1), (DMG.wallScrape + sc.v * DMG.wallScrapeV) * fade * dt, null, null, 'wall');
+      if (fade > 0) this.damage(ref, Armor.zoneOf(lx, lz, 1, 1), (DMG.wallScrape + sc.v * DMG.wallScrapeV) * fade * dt, null, null, 'wall', null, ramp(CRIT.wall, sc.v));
       // a continuous stream along the wall while scraping (none when barely moving)
       const n = Math.floor(sc.v * dt * 18 * spark + Math.random() * spark);
       for (let q = 0; q < n; q++) {
@@ -539,15 +556,15 @@ export class Race {
       const tx = -nz, tz = nx, vt = (ca.vx - cc.vx) * tx + (ca.vz - cc.vz) * tz;
       if (Math.abs(vt) > 3 && (zA === 'left' || zA === 'right') && (zC === 'left' || zC === 'right')) {
         const g = Math.min(1, Math.abs(vt) / 15) * DMG.spikes * dt;
-        if (this.hasSpikes(A.ref)) this.damage(C.ref, zC, g, A.ref, null, 'grind');
-        if (this.hasSpikes(C.ref)) this.damage(A.ref, zA, g, C.ref, null, 'grind');
+        if (this.hasSpikes(A.ref)) this.damage(C.ref, zC, g, A.ref, null, 'drill');
+        if (this.hasSpikes(C.ref)) this.damage(A.ref, zA, g, C.ref, null, 'drill');
         // continuous shower while they grind
         const n = Math.floor(Math.abs(vt) * dt * 22 + Math.random());
         this.fx.lines.burst(px, (A.y + C.y) / 2 + 0.35, pz, (ca.vx + cc.vx) / 2, 1, (ca.vz + cc.vz) / 2, n, 9, 3);
       }
       // dozer blade pressed into a car: contact damage while it's held there
-      if (zA === 'front' && this.hasRam(A.ref)) this.damage(C.ref, zC, DMG.dozer * dt, A.ref, null, 'grind');
-      if (zC === 'front' && this.hasRam(C.ref)) this.damage(A.ref, zA, DMG.dozer * dt, C.ref, null, 'grind');
+      if (zA === 'front' && this.hasRam(A.ref)) this.damage(C.ref, zC, DMG.dozer * dt, A.ref, null, 'dozer');
+      if (zC === 'front' && this.hasRam(C.ref)) this.damage(A.ref, zA, DMG.dozer * dt, C.ref, null, 'dozer');
       const vrel = (ca.vx - cc.vx) * nx + (ca.vz - cc.vz) * nz;
       if (vrel >= 0) continue;
       if (-vrel > 2.5) this.fx.lines.burst(px, (A.y + C.y) / 2 + 0.45, pz, (ca.vx + cc.vx) / 2, 1.5, (ca.vz + cc.vz) / 2, Math.min(40, Math.round(-vrel * 3)), 10 + -vrel * 0.6, 5);
@@ -563,8 +580,9 @@ export class Race {
         const base = (-vrel - DMG.impactFrom) * DMG.impactPer;
         const ramA = zA === 'front' && this.hasRam(A.ref), ramC = zC === 'front' && this.hasRam(C.ref);
         // an intact ram adds to the impact it deals and soaks part of its own
-        this.damage(A.ref, zA, base * (ramC ? DMG.ramBonus : 1) * (ramA ? DMG.ramSelf : 1), C.ref, null, zC === 'front' ? 'ram' : 'crash');
-        this.damage(C.ref, zC, base * (ramA ? DMG.ramBonus : 1) * (ramC ? DMG.ramSelf : 1), A.ref, null, zA === 'front' ? 'ram' : 'crash');
+        const cc2 = ramp(CRIT.impact, -vrel); // only a fast hit can crit
+        this.damage(A.ref, zA, base * (ramC ? DMG.ramBonus : 1) * (ramA ? DMG.ramSelf : 1), C.ref, null, zC === 'front' ? 'ram' : 'crash', null, cc2);
+        this.damage(C.ref, zC, base * (ramA ? DMG.ramBonus : 1) * (ramC ? DMG.ramSelf : 1), A.ref, null, zA === 'front' ? 'ram' : 'crash', null, cc2);
         if (A.ref.ai) A.ref.hitT = this.t; if (C.ref.ai) C.ref.hitT = this.t;
       }
     }
