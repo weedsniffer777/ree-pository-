@@ -136,22 +136,16 @@ export class Glass {
         d.fillStyle = `rgb(${Math.round(128 + cell.dx * 70 * A)},${Math.round(128 + cell.dy * 70 * A)},${Math.round(cell.frost * 255 * A)})`;
         poly(d, cell.poly); d.fill();
         if (cell.deep) {
-          // tilted shard: a tint, an inner shadow round its rim, a thick lit bevel on the
-          // edge toward the light and a thick dark one opposite (swapped when pushed in)
+          // tilted shard: a faint pale sheen and one lit bevel on the edge toward the light
+          // (no dark shadows; the shift in the view behind it carries the depth)
           poly(l, cell.poly);
-          l.fillStyle = cell.out > 0 ? `rgba(225,235,245,${0.12 * A})` : `rgba(8,10,14,${0.16 * A})`;
+          l.fillStyle = `rgba(225,235,245,${0.08 * A})`;
           l.fill();
-          l.save(); poly(l, cell.poly); l.clip();
-          poly(l, cell.poly); l.strokeStyle = `rgba(0,0,0,${0.32 * A})`; l.lineWidth = 9; l.stroke();
-          l.restore();
           const P = cell.poly, top = P[0][1] + P[1][1] < P[3][1] + P[2][1];
-          const lit = top ? [P[0], P[1]] : [P[3], P[2]], dark = top ? [P[3], P[2]] : [P[0], P[1]];
-          const [hi, lo] = cell.out > 0 ? [lit, dark] : [dark, lit];
+          const hi = (top ? [P[0], P[1]] : [P[3], P[2]]);
           l.lineCap = 'round';
           l.strokeStyle = `rgba(255,255,255,${0.75 * A})`; l.lineWidth = 3;
           l.beginPath(); l.moveTo(hi[0][0], hi[0][1]); l.lineTo(hi[1][0], hi[1][1]); l.stroke();
-          l.strokeStyle = `rgba(0,0,0,${0.55 * A})`; l.lineWidth = 4.5;
-          l.beginPath(); l.moveTo(lo[0][0] + 1.5, lo[0][1] + 2); l.lineTo(lo[1][0] + 1.5, lo[1][1] + 2); l.stroke();
         }
       }
       // the hole: jagged rim with the glass's thickness catching the light
