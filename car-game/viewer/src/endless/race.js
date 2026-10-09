@@ -393,7 +393,7 @@ export class Race {
           const rc = (this.ramCombo ??= { n: 0, t: -9 });
           rc.n = this.raceT - rc.t < 1.5 ? rc.n + 1 : 1;
           rc.t = this.raceT;
-          this.hud.popup(rc.n >= 2 ? `x${rc.n} RAMMED` : 'RAMMED', 'combo');
+          this.hud.popup(rc.n >= 2 ? `x${rc.n} RAMMED` : 'RAMMED', 'ramcombo');
         }
         else if (!grind && cb.n >= 2) this.hud.popup(`x${cb.n} HIT`, 'combo');
       }

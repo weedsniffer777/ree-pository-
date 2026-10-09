@@ -761,9 +761,23 @@ export function createHud({ touch = false } = {}) {
     },
     // kind: 'combo' (replaces the running combo line), 'crit', 'kill'
     popup(html, kind = '') {
-      if (kind === 'combo') {
-        const old = pops.querySelector('.combo');
-        if (old) old.remove();
+      // the two combo counters (gun hits, rams) each update in place, so when both are
+      // running they stay one above the other instead of swapping
+      if (kind === 'combo' || kind === 'ramcombo') {
+        let el = pops.querySelector(`[data-k="${kind}"]`);
+        if (el) {
+          el.innerHTML = html;
+          el.style.animation = 'none'; void el.offsetWidth; el.style.animation = '';
+        } else {
+          el = document.createElement('div');
+          el.className = 'pop combo';
+          el.dataset.k = kind;
+          el.innerHTML = html;
+          pops.prepend(el);
+        }
+        clearTimeout(el.dieT);
+        el.dieT = setTimeout(() => el.remove(), 1600);
+        return;
       }
       const el = document.createElement('div');
       el.className = `pop ${kind}`;
