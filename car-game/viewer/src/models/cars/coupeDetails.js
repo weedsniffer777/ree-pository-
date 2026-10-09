@@ -38,9 +38,14 @@ export function addDetails(car, { skinMats, dloRear }) {
     plate({ z0: 2.1, z1: 0.98, sample: topS(0.87, 0.3, 7), side: s, steps: 4 }, 'front'); // hood
   }
   plate({ z0: -1.93, z1: -2.16, sample: topS(0.82, -0.82, 9), side: 1 }, 'back'); // trunk lid
-  // one angular armored brow running straight across the nose, over lamps and grille
+  // angular brows over the headlights, and a centre piece bridging them over the grille
+  for (const s of [-1, 1]) {
+    const brow = box(0.44, 0.04, 0.16, metal, { pos: [s * 0.62, 0.6, 2.25], rot: [0.55, 0, s * 0.06] });
+    brow.userData.zone = 'front';
+    armor.add(brow);
+  }
   {
-    const brow = box(1.5, 0.04, 0.16, metal, { pos: [0, 0.6, 2.25], rot: [0.55, 0, 0] });
+    const brow = box(0.82, 0.04, 0.16, metal, { pos: [0, 0.6, 2.25], rot: [0.55, 0, 0] });
     brow.userData.zone = 'front';
     armor.add(brow);
   }
