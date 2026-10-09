@@ -120,8 +120,8 @@ html, body, #hud, #hud * { -webkit-user-select: none; user-select: none; -webkit
 /* white flash on kills / crits */
 #hud .flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
 /* hits: centre hitmarker, combo / critical / destroyed popups, damage vignette, cracked glass */
-#hud .hm { position: absolute; left: 50%; top: 44%; width: 44px; height: 44px; margin: -22px 0 0 -22px; opacity: 0; }
-#hud .hm i { position: absolute; left: 50%; top: 50%; width: 15px; height: 4px; margin: -2px 0 0 -7.5px; background: #fff; box-shadow: 0 0 0 1.5px rgba(0,0,0,0.6); }
+#hud .hm { position: absolute; left: 50%; top: 44%; width: 44px; height: 44px; margin: -22px 0 0 -22px; opacity: 0; filter: drop-shadow(0 0 1px rgba(0,0,0,0.8)) drop-shadow(0 0 1px rgba(0,0,0,0.6)); } /* one outline round the whole mark */
+#hud .hm i { position: absolute; left: 50%; top: 50%; width: 15px; height: 4px; margin: -2px 0 0 -7.5px; background: #fff; }
 #hud .hm i:nth-child(1) { transform: rotate(45deg) translateX(-13px); } #hud .hm i:nth-child(2) { transform: rotate(135deg) translateX(-13px); }
 #hud .hm i:nth-child(3) { transform: rotate(225deg) translateX(-13px); } #hud .hm i:nth-child(4) { transform: rotate(315deg) translateX(-13px); }
 #hud .hm.crit i { background: var(--rust); width: 20px; } #hud .hm.kill i { background: var(--red); width: 26px; height: 6px; }

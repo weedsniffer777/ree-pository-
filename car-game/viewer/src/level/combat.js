@@ -198,7 +198,6 @@ export class Guns {
 
   sparkAt(p) {
     for (let k = 0; k < 14; k++) this.sparks.emit(p.x, p.y, p.z, (Math.random() - 0.5) * 14, 1 + Math.random() * 7, (Math.random() - 0.5) * 14, 0.11 + Math.random() * 0.06, 0.2 + Math.random() * 0.3, 1.0, 0.8 + Math.random() * 0.2, 0.35);
-    this.sparks.emit(p.x, p.y, p.z, 0, 0, 0, 0.9, 0.07, 1.0, 0.9, 0.6); // white-hot flash at the strike
     this.dust.emit(p.x, p.y, p.z, 0, 1, 0, 0.6, 0.7, 0.3, 0.29, 0.28);
   }
 

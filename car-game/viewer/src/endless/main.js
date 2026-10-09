@@ -19,7 +19,7 @@ import { Pursuer, areaOf } from './pursuer.js';
 import { Skids } from './skids.js';
 import { SpeedLines } from './speedlines.js';
 import { Race } from './race.js';
-import { Booms, Bits } from './boom.js';
+import { Booms, Bits, LineSparks } from './boom.js';
 import { bakeCar } from './carparts.js';
 import { Glass } from './glass.js';
 import { nearest, wAt, RAIL_LAT } from './route.js';
@@ -104,7 +104,8 @@ scene.add(dust.points);
 const embers = new Dust(400, { additive: true, fade: 0.8 });
 scene.add(embers.points);
 const tracers = new Tracers(scene);
-const guns = new Guns(model, scene, { tracers, dust, sparks: embers, height: terrainHeight });
+const lineSparks = new LineSparks(scene); // hits, ricochets, scrapes, collisions (embers stay for fire)
+const guns = new Guns(model, scene, { tracers, dust, sparks: lineSparks, height: terrainHeight });
 // Highway: every round that lands charges boost a little. Races: only hits on cars do.
 const gunImpact = guns.impact.bind(guns);
 guns.heatCfg = { perShot: 0.017, cool: 0.42, resume: 0.3 }; // ~4 s of fire to overheat
@@ -132,7 +133,7 @@ const isPaused = () => devOpen || userPaused;
 createDevKit({ viewerUrl: import.meta.env.DEV ? 'index.html' : 'garage.html', onStats: () => hud.toggleDebug(), onOpenChange: (on) => { devOpen = on; keys.clear(); } });
 hud.onPause = (on) => { userPaused = on; keys.clear(); };
 // explosions, wreck debris, and the brass + belt links thrown out of the guns
-const booms = new Booms(scene, { dust, sparks: embers, sun: SUN_DIR });
+const booms = new Booms(scene, { dust, sparks: lineSparks, sun: SUN_DIR });
 const debris = new Bits(scene, new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ roughness: 0.75, metalness: 0.45 }), { max: 220, height: terrainHeight, shadow: true });
 const casings = new Bits(scene, new THREE.CylinderGeometry(0.022, 0.022, 0.11, 6), new THREE.MeshStandardMaterial({ color: 0xc8963a, roughness: 0.35, metalness: 0.9 }), { max: 140, height: terrainHeight, bounce: 0.45 });
 const links = new Bits(scene, new THREE.BoxGeometry(0.075, 0.022, 0.05), new THREE.MeshStandardMaterial({ color: 0x2a2b2c, roughness: 0.5, metalness: 0.8 }), { max: 140, height: terrainHeight, bounce: 0.3 });
@@ -158,7 +159,7 @@ if (LOOP.on && LOOP.walls === 'both') {
   };
 }
 const race = LOOP.on && params.get('race') !== '0'
-  ? new Race({ scene, model, car, hud, booms, debris, fx: { tracers, dust, sparks: embers, height: terrainHeight }, gunsHitHook: (test, onHit) => { guns.hitTest = test; guns.onTargetHit = onHit; } })
+  ? new Race({ scene, model, car, hud, booms, debris, fx: { tracers, dust, sparks: embers, lines: lineSparks, height: terrainHeight }, gunsHitHook: (test, onHit) => { guns.hitTest = test; guns.onTargetHit = onHit; } })
   : null;
 if (race) for (const r of race.rivals) r.guns.blockTest = guns.blockTest;
 if (LOOP.on) hud.map(world, S, LOOP.n, I_START);
@@ -513,6 +514,7 @@ function frame(now) {
     }
   }
   embers.update(dt);
+  lineSparks.update(dt);
   dust.update(dt);
   world.update(car.n.i);
   world.tick(dt);

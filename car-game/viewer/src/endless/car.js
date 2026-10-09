@@ -122,8 +122,7 @@ export class CarController {
       this.prevBrake = inp.brake > 0;
       if (!inp.brake) { this.brakeLatch = false; this.stopT = 0; this.revOK = false; }
       if (brakeEdge && Math.abs(vf) < 1.5) this.revOK = true;
-      if (this.drift > 0.3 && inp.brake > 0 && Math.abs(inp.steer) < 0.15) this.brakeLatch = true;
-      const brake = this.brakeLatch ? 0 : inp.brake;
+      const brake = inp.brake; // S without a turn key is always plain braking
       const braking = brake > 0 && vf > 6;
       // Drift: S + steer kicks the tail out; once sliding, holding the steer with the
       // throttle down keeps it going as a power slide (no need to keep braking), and it
@@ -143,9 +142,12 @@ export class CarController {
         // top speed; faster than that it just keeps the momentum it has
         if (vf > -REV_V) vf = Math.max(-REV_V, vf - 9 * (0.3 + 0.7 * cl) * dt);
       } else if (brake > 0) {
-        // brakes bite hard at speed and progressively softer as the car slows (no snap
-        // stop); in a committed drift the brake mostly unloads the rear instead
-        if (vf > 0.5) vf -= (7 + 13 * Math.min(1, vf / 22)) * (1 - this.drift * (inp.throttle > 0 ? 0.92 : 0.8)) * dt * brake;
+        // A drift is: brake held + a turn key held + the car already pointing more than ~8
+        // deg off where it's travelling. Then the brake only throws the tail, it doesn't slow
+        // the car. Anything else is ordinary braking: hard at speed, softer as it slows.
+        this.drifting = Math.abs(inp.steer) > 0.3 && slipNow > 0.14 && vf > 6;
+        if (this.drifting) { /* no braking force: momentum carries the slide */ }
+        else if (vf > 0.5) vf -= (7 + 13 * Math.min(1, vf / 22)) * dt * brake;
         else if (this.revOK || (this.stopT += dt) > 0.3) vf = Math.max(-REV_V, vf - 9 * dt * brake); // stopped: a beat, then it backs up on its own
         else vf = Math.max(0, vf - 7 * dt);
       }
@@ -161,7 +163,10 @@ export class CarController {
         const fwd = vf >= 0 ? 1 : -1;
         let beta = Math.atan2(vl, Math.abs(vf)); // slip angle
         beta *= Math.exp(-grip * dt);
-        const scrub = Math.exp(-dt * (0.08 + 0.22 * this.drift) * Math.abs(Math.sin(beta)) * (spd > 12 ? 1 : 2));
+        // speed lost to the tyres scrubbing sideways: small, growing with the slip angle;
+        // even fully sideways a drift only bleeds ~10% of its speed per second
+        const sb = Math.abs(Math.sin(beta));
+        const scrub = Math.exp(-dt * (this.drift > 0.3 ? 0.03 + 0.07 * sb ** 1.5 : 0.08 * sb) * (spd > 12 ? 1 : 2));
         const s2 = spd * scrub;
         vf = fwd * s2 * Math.cos(beta);
         vl = s2 * Math.sin(beta);
@@ -171,17 +176,32 @@ export class CarController {
       // rotates the car either way until it swings back past 90 deg into forward driving.
       // Backing up from a standstill is ordinary reverse.
       const spdNow = Math.hypot(vf, vl);
+      // S-gated 180s: hold S with hard steer at speed and the car is whipped round until it
+      // travels backwards; keep S held and it drives backwards under control; let S go and
+      // it swings back round to forwards (steer picks the way, else the way it came round).
       if (vf < -1 && (this.lastVf ?? 0) > 1 && spdNow > 8) this.spun = true;
       if (vf > 1 || spdNow < 3) this.spun = false;
       this.lastVf = vf;
-      if (this.spun) { this.drift = Math.max(this.drift, 0.7); this.clutch = Math.min(this.clutch, 0.2); }
+      const holdS = inp.brake > 0;
+      this.whipT = !this.spun && holdS && Math.abs(this.steerS) > 0.5 && spdNow > 10 ? (this.whipT ?? 0) + dt : 0;
+      this.whip = this.whipT > 0.3; // a short S tap with steer is still an ordinary drift
+      if (this.whip) this.whipDir = Math.sign(this.steerS);
+      if (this.spun) {
+        if (holdS) this.drift = Math.min(this.drift, 0.35); // reversing on purpose: grip back
+        else { this.drift = Math.max(this.drift, 0.75); this.clutch = Math.min(this.clutch, 0.2); }
+      }
       this.wheelspin = inp.throttle > 0 ? Math.max(Math.abs(this.yawRate) > 0.9 ? 1 : 0, 1 - Math.abs(vf) / 7) : 0;
       this.skid = Math.max(Math.min(1, (Math.abs(vl) - 2) / 4), braking && this.drift < 0.3 ? 0.75 : 0, this.wheelspin > 0.5 && Math.abs(vf) < 12 ? 0.8 : 0);
       const sp = Math.abs(vf);
       // turn rate falls off with speed (a squared term so top speed and boost are clearly
       // heavier: ~1.8 rad/s at 36 km/h, ~0.6 at 165, ~0.5 boosting); drifting adds rotation back
       this.yawRate = -this.steerS * 2.4 * Math.min(1, sp / 4) / (1 + sp / 30 + (sp / 40) ** 2) * THREE.MathUtils.clamp(vf / 2.5, -1, 1) * (1 + this.drift * (0.6 + Math.max(0, Math.abs(this.steerS) - 0.7) * 2.2)); // hard lock in a drift whips the car round
-      if (this.spun) this.yawRate = -this.steerS * 2.1 * Math.min(1, Math.hypot(vf, vl) / 6); // free rotation while spun
+      const spdY = Math.hypot(vf, vl);
+      if (this.whip) this.yawRate = -this.whipDir * 3.4 * Math.min(1, spdY / 14); // assisted swing round
+      else if (this.spun && !(inp.brake > 0)) { // S released: swing back to forwards
+        const dir = Math.abs(this.steerS) > 0.2 ? Math.sign(this.steerS) : this.whipDir || 1;
+        this.yawRate = -dir * 2.8 * Math.min(1, spdY / 6);
+      }
     } else {
       this.yawRate *= Math.exp(-dt * 2);
     }

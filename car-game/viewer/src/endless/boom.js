@@ -236,3 +236,63 @@ export class Bits {
     this.mesh.instanceMatrix.needsUpdate = true;
   }
 }
+
+// Line sparks: hot streaks, not puffs. Each is a short segment from where it is back along
+// its velocity (faster = longer), white-yellow cooling to orange as it dies, falling under
+// gravity, drawn additively so they glow. emit() keeps the Dust signature (size ignored).
+export class LineSparks {
+  constructor(scene, max = 900) {
+    this.max = max;
+    this.pos = new Float32Array(max * 6);
+    this.col = new Float32Array(max * 6);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute('color', new THREE.BufferAttribute(this.col, 3).setUsage(THREE.DynamicDrawUsage));
+    this.geo = g;
+    this.lines = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+    this.lines.frustumCulled = false;
+    this.lines.renderOrder = 4;
+    scene.add(this.lines);
+    this.p = new Float32Array(max * 3);
+    this.v = new Float32Array(max * 3);
+    this.life = new Float32Array(max);
+    this.t = new Float32Array(max);
+    this.next = 0;
+  }
+  emit(x, y, z, vx, vy, vz, size, life) {
+    const k = this.next;
+    this.next = (this.next + 1) % this.max;
+    this.p.set([x, y, z], k * 3);
+    this.v.set([vx, vy, vz], k * 3);
+    this.life[k] = Math.max(0.12, life);
+    this.t[k] = 0;
+  }
+  // a spray from a point: n streaks around `dir` (vx,vy,vz base velocity) with scatter
+  burst(x, y, z, bx, by, bz, n, scatter = 8, up = 3) {
+    for (let k = 0; k < n; k++) this.emit(x, y, z, bx + (Math.random() - 0.5) * scatter, by + Math.random() * up, bz + (Math.random() - 0.5) * scatter, 0, 0.18 + Math.random() * 0.35);
+  }
+  update(dt) {
+    const P = this.p, V = this.v, pos = this.pos, col = this.col;
+    for (let k = 0; k < this.max; k++) {
+      const o = k * 6;
+      if (this.life[k] <= 0) { pos[o + 3] = pos[o]; pos[o + 4] = pos[o + 1]; pos[o + 5] = pos[o + 2]; col.fill(0, o, o + 6); continue; }
+      this.t[k] += dt;
+      const u = this.t[k] / this.life[k];
+      if (u >= 1) { this.life[k] = 0; col.fill(0, o, o + 6); continue; }
+      const i = k * 3;
+      V[i + 1] -= 18 * dt;
+      const drag = Math.exp(-dt * 1.5);
+      V[i] *= drag; V[i + 2] *= drag;
+      P[i] += V[i] * dt; P[i + 1] += V[i + 1] * dt; P[i + 2] += V[i + 2] * dt;
+      const L = 0.03; // streak = 30 ms of travel
+      pos[o] = P[i]; pos[o + 1] = P[i + 1]; pos[o + 2] = P[i + 2];
+      pos[o + 3] = P[i] - V[i] * L; pos[o + 4] = P[i + 1] - V[i + 1] * L; pos[o + 5] = P[i + 2] - V[i + 2] * L;
+      const b = (1 - u) ** 1.3 * 1.6; // glow fades as it cools
+      const r = b, g = b * (0.95 - u * 0.55), bl = b * (0.7 - u * 0.65);
+      col[o] = r; col[o + 1] = g; col[o + 2] = Math.max(0, bl);
+      col[o + 3] = r * 0.5; col[o + 4] = g * 0.35; col[o + 5] = Math.max(0, bl) * 0.2; // tail dimmer and redder
+    }
+    this.geo.attributes.position.needsUpdate = true;
+    this.geo.attributes.color.needsUpdate = true;
+  }
+}

@@ -41,8 +41,9 @@ export const DMG = {
   ramSelf: 0.5, // ... and what it takes itself
   spikes: 0.15, // per second, scraping alongside at speed
   dozer: 0.12, // per second, blade pressed into a car
-  wallScrape: 0.05, // per second against a wall, plus ...
-  wallScrapeV: 0.004, // ... this per m/s of sliding along it
+  wallScrape: 0.03, // per second against a wall, plus ...
+  wallScrapeV: 0.0025, // ... this per m/s of sliding along it; fades to 0 below scrapeFrom
+  scrapeFrom: 3, scrapeFull: 10, // m/s
   wallImpactFrom: 7, wallImpactPer: 0.018, // slamming a wall
 };
 
@@ -158,9 +159,10 @@ class Rival {
     this.rig = this.car.rig;
     scene.add(this.rig);
     this.armor = new Armor();
-    this.personality = slot % 2 ? 'fighter' : 'racer';
-    this.skill = 0.86 + (slot / ROSTER.length) * 0.05 + Math.random() * 0.03; // easy: well under the player's top speed
-    this.guns = new Guns(model, scene, { ...fx, light: false, color: 0xffa21c, rate: 5, spread: 3.2 });
+    this.personality = slot % 2 ? 'killer' : 'racer';
+    // easy: well under the player's top speed; racers drive faster lines than killers
+    this.skill = 0.86 + (slot / ROSTER.length) * 0.05 + Math.random() * 0.03 + (this.personality === 'racer' ? 0.05 : 0);
+    this.guns = new Guns(model, scene, { ...fx, sparks: fx.lines, light: false, color: 0xffa21c, rate: 6.5, spread: 2.2 });
     this.guns.owner = this;
     this.burst = 0;
     this.cool = 2 + Math.random() * 3;
@@ -178,7 +180,7 @@ class Rival {
     Object.assign(this, { prog, pI: i, latT: lat, laneT: lat, finished: false, finishT: 0, deadT: 0, smokeAcc: 0, stuckT: 0, hitT: -9, air: null, target: null, behaviour: 'race', thinkT: Math.random() * AI.thinkEvery });
     this.mem = { grudge: new Map(), crossed: new Map(), side: new Map() };
     this.plan = { lat, speed: v, fire: null, boost: false };
-    this.car.boost = 0.5;
+    this.car.boost = 1; // full tank, same as the player
     this.armor.reset();
     wear(this.mats, this.armor);
     this.sync(0);
@@ -220,7 +222,7 @@ export class Race {
     for (let s = 1; s < ROSTER.length; s++) this.rivals.push(new Rival(s, model, scene, fx, car.colliders));
     for (const r of this.rivals) this.wallHits(r.car, () => r);
     const hitTest = (o, d, range, shooter) => this.rayHit(o, d, range, shooter);
-    for (const r of this.rivals) { r.guns.hitTest = hitTest; r.guns.onTargetHit = (h) => this.damage(h.target, h.zone, 0.022, r, h.point, 'gun', h.dir); }
+    for (const r of this.rivals) { r.guns.hitTest = hitTest; r.guns.onTargetHit = (h) => this.damage(h.target, h.zone, 0.028, r, h.point, 'gun', h.dir); }
     gunsHitHook(hitTest, (h) => { this.damage(h.target, h.zone, 0.05, this.player, h.point, 'gun', h.dir); car.addBoost(0.012); });
     hud.armorModel(rivalTemplate(model).model, this.hb);
     this.reset();
@@ -376,8 +378,18 @@ export class Race {
     const f = [Math.sin(yaw), Math.cos(yaw)], out = { front: f, back: [-f[0], -f[1]], left: [f[1], -f[0]], right: [-f[1], f[0]] }[zone];
     for (const part of parts) {
       if (part.userData.part !== zone) continue;
-      const kick = new THREE.Vector3(out[0] * (2 + Math.random() * 3), 2 + Math.random() * 3, out[1] * (2 + Math.random() * 3));
-      this.wreckage.detach(part, vel.clone().multiplyScalar(0.9), kick);
+      // thrown clear and tumbling so you see the plating go
+      const kick = new THREE.Vector3(out[0] * (4 + Math.random() * 4), 3.5 + Math.random() * 3, out[1] * (4 + Math.random() * 4));
+      this.wreckage.detach(part, vel.clone().multiplyScalar(0.85), kick);
+    }
+    // a burst of sparks and torn fragments off that side
+    const c = target === this.player ? this.car : target.car, px = c.x + out[0] * 1.1, pz = c.z + out[1] * (zone === 'front' || zone === 'back' ? 2.2 : 1.1);
+    this.fx.lines.burst(px, c.y + 0.6, pz, c.vx * 0.8 + out[0] * 6, 2, c.vz * 0.8 + out[1] * 6, 40, 12, 6);
+    const tmp = new THREE.Vector3(), tv = new THREE.Vector3();
+    for (let k = 0; k < 7; k++) {
+      tmp.set(px + (Math.random() - 0.5), c.y + 0.5 + Math.random() * 0.4, pz + (Math.random() - 0.5));
+      tv.set(c.vx * 0.8 + out[0] * (3 + Math.random() * 5) + (Math.random() - 0.5) * 3, 3 + Math.random() * 5, c.vz * 0.8 + out[1] * (3 + Math.random() * 5) + (Math.random() - 0.5) * 3);
+      this.debris.spawn(tmp, tv, { size: [0.08 + Math.random() * 0.25, 0.02 + Math.random() * 0.04, 0.08 + Math.random() * 0.25], life: 3 + Math.random() * 2, spin: 18, color: [0x2b2d2f, 0x3a3d40, 0x1c1c1c][k % 3] });
     }
   }
 
@@ -437,8 +449,14 @@ export class Race {
       car.scrape = null;
       if (!sc || ref.armor.wrecked || this.state !== 'race') continue;
       const f = [Math.sin(car.yaw), Math.cos(car.yaw)], lz = sc.nx * f[0] + sc.nz * f[1], lx = sc.nx * -f[1] + sc.nz * f[0];
-      this.damage(ref, Armor.zoneOf(lx, lz, 1, 1), (DMG.wallScrape + sc.v * DMG.wallScrapeV) * dt, null, null, 'wall');
-      if (sc.v > 4 && Math.random() < dt * 25) this.fx.sparks.emit(car.x + sc.nx * 1.1, car.y + 0.4, car.z + sc.nz * 1.1, car.vx * 0.6 + (Math.random() - 0.5) * 4, 1 + Math.random() * 3, car.vz * 0.6 + (Math.random() - 0.5) * 4, 0.1, 0.25, 1, 0.8, 0.4);
+      const fade = Math.max(0, Math.min(1, (sc.v - DMG.scrapeFrom) / (DMG.scrapeFull - DMG.scrapeFrom)));
+      if (fade > 0) this.damage(ref, Armor.zoneOf(lx, lz, 1, 1), (DMG.wallScrape + sc.v * DMG.wallScrapeV) * fade * dt, null, null, 'wall');
+      // a continuous stream along the wall while scraping (none when barely moving)
+      const n = Math.floor(sc.v * dt * 18 * fade + Math.random() * fade);
+      for (let q = 0; q < n; q++) {
+        const along = (Math.random() - 0.5) * 3.6, f2 = [Math.sin(car.yaw), Math.cos(car.yaw)];
+        this.fx.lines.emit(car.x + sc.nx * 1.0 + f2[0] * along, car.y + 0.3 + Math.random() * 0.4, car.z + sc.nz * 1.0 + f2[1] * along, car.vx * 0.75 - sc.nx * 2 + (Math.random() - 0.5) * 3, 0.5 + Math.random() * 2.5, car.vz * 0.75 - sc.nz * 2 + (Math.random() - 0.5) * 3, 0, 0.2 + Math.random() * 0.3);
+      }
     }
   }
 
@@ -475,13 +493,16 @@ export class Race {
         const g = Math.min(1, Math.abs(vt) / 15) * DMG.spikes * dt;
         if (this.hasSpikes(A.ref)) this.damage(C.ref, zC, g, A.ref, null, 'crash');
         if (this.hasSpikes(C.ref)) this.damage(A.ref, zA, g, C.ref, null, 'crash');
-        if (Math.random() < dt * 30) for (let k = 0; k < 3; k++) this.fx.sparks.emit(px, (A.y + C.y) / 2 + 0.4, pz, (Math.random() - 0.5) * 6 + (ca.vx + cc.vx) / 2, 1 + Math.random() * 3, (Math.random() - 0.5) * 6 + (ca.vz + cc.vz) / 2, 0.1, 0.25, 1, 0.8, 0.4);
+        // continuous shower while they grind
+        const n = Math.floor(Math.abs(vt) * dt * 22 + Math.random());
+        this.fx.lines.burst(px, (A.y + C.y) / 2 + 0.35, pz, (ca.vx + cc.vx) / 2, 1, (ca.vz + cc.vz) / 2, n, 9, 3);
       }
       // dozer blade pressed into a car: contact damage while it's held there
       if (zA === 'front' && this.hasRam(A.ref)) this.damage(C.ref, zC, DMG.dozer * dt, A.ref, null, 'ram');
       if (zC === 'front' && this.hasRam(C.ref)) this.damage(A.ref, zA, DMG.dozer * dt, C.ref, null, 'ram');
       const vrel = (ca.vx - cc.vx) * nx + (ca.vz - cc.vz) * nz;
       if (vrel >= 0) continue;
+      if (-vrel > 2.5) this.fx.lines.burst(px, (A.y + C.y) / 2 + 0.45, pz, (ca.vx + cc.vx) / 2, 1.5, (ca.vz + cc.vz) / 2, Math.min(40, Math.round(-vrel * 3)), 10 + -vrel * 0.6, 5);
       const j = -(A.ref.armor.wrecked || C.ref.armor.wrecked ? 1 : 1.3) * vrel / 2; // wrecks: dead stop, no rebound
       ca.vx += nx * j; ca.vz += nz * j;
       cc.vx -= nx * j; cc.vz -= nz * j;
@@ -589,7 +610,10 @@ export class Race {
     const firing = r.burst > 0;
     if (firing) { r.burst -= dt; if (r.burst <= 0) r.cool = (r.personality === 'racer' ? 3.2 : 2) + Math.random() * 2.5; }
     r.aim = r.aim ?? new THREE.Vector3();
-    if (shoot) r.aim.set(shoot.x, shoot.y + 0.8, shoot.z);
+    if (shoot) { // lead the target like the player's lock does
+      const lead = Math.hypot(shoot.x - r.x, shoot.z - r.z) / 420, sv = shoot.ref === this.player ? this.car : shoot.ref.car;
+      r.aim.set(shoot.x + sv.vx * lead, shoot.y + 0.8, shoot.z + sv.vz * lead);
+    }
     r.guns.update(dt, firing && !!shoot, r, shoot ? r.aim : null);
   }
 

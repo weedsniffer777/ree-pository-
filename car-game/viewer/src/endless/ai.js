@@ -26,7 +26,7 @@ export const AI = {
   target: {
     near: 1.0, // closeness, fading out by `range`
     range: 70, // metres
-    player: 0.45, // extra pull toward the player
+    player: 0.2, // extra pull toward the player (low: they fight each other too)
     grudge: 1.6, // shot or rammed me recently (scaled by how hard)
     crossed: 0.8, // cut across in front of me
     weak: 0.5, // low hull HP: finish it off
@@ -35,13 +35,17 @@ export const AI = {
 
   // per-personality multipliers on each behaviour's score, plus traits
   personalities: {
-    fighter: {
-      race: 0.6, hunt: 1.1, ram: 1.1, pit: 1.0, tail: 0.9, evade: 0.6, flee: 0.4,
-      aggression: 1.0, caution: 0.4, accuracy: 1.0, boostUse: 0.7,
+    // killers: ram by default, run people down, burn boost to reposition
+    killer: {
+      race: 0.45, hunt: 1.0, ram: 1.4, pit: 1.1, tail: 0.7, evade: 0.5, flee: 0.3,
+      aggression: 1.0, caution: 0.35, accuracy: 1.0, boostUse: 1.0, provoked: 1,
     },
+    // racers: anything to stay fast; leave others alone until engaged, then evade, ram
+    // back, or drop in behind to shoot. `provoked` scales their fighting when nobody has
+    // engaged them (shot, rammed or tailed them recently)
     racer: {
-      race: 1.1, hunt: 0.55, ram: 0.35, pit: 0.3, tail: 0.5, evade: 1.1, flee: 1.0,
-      aggression: 0.45, caution: 1.0, accuracy: 0.7, boostUse: 1.0,
+      race: 1.25, hunt: 0.8, ram: 0.9, pit: 0.5, tail: 1.1, evade: 1.2, flee: 0.8,
+      aggression: 0.8, caution: 1.0, accuracy: 0.85, boostUse: 1.0, provoked: 0.15,
     },
   },
 };
@@ -97,7 +101,7 @@ export const BEHAVIOURS = {
       plan.lat = t.lat + Math.sin(ctx.t * 0.7 + r.slot) * 1.2; // a little offset keeps out of its wake
       plan.speed = Math.max(ctx.line * 0.9, t.v + 3);
       plan.fire = t;
-      plan.boost = gap(ctx.me, t) > 25;
+      plan.boost = gap(ctx.me, t) > (r.personality === 'killer' ? 12 : 25);
     },
   },
   // close in hard and hit it; much likelier if it rammed me first
@@ -177,10 +181,13 @@ export const BEHAVIOURS = {
 export function think(r, ctx, plan) {
   const P = AI.personalities[r.personality];
   ctx.target = r.target = pickTarget(r, ctx);
+  // engaged: someone shot, rammed or is tailing me lately
+  const g = ctx.target && r.mem.grudge.get(ctx.target.ref);
+  const engaged = ctx.shotAt < 4 || !!ctx.threat || (g && ctx.t - g.t < AI.memory);
   let bestName = 'race', bestScore = -1;
   for (const [name, b] of Object.entries(BEHAVIOURS)) {
     let s = b.score(r, ctx) * (P[name] ?? 1);
-    if (name === 'hunt' || name === 'ram' || name === 'pit') s *= P.aggression;
+    if (name === 'hunt' || name === 'ram' || name === 'pit') s *= P.aggression * (engaged ? 1 : P.provoked);
     if (name === 'evade' || name === 'flee') s *= P.caution;
     if (name === r.behaviour) s += AI.stickiness;
     if (s > bestScore) { bestScore = s; bestName = name; }
