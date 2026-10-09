@@ -387,9 +387,10 @@ export class Race {
         this.hud.popup(`${word}<small>x${this.kills}</small>`, 'kill');
         this.car.addBoost(0.35);
       } else {
-        if (!grind || crit || this.t - (this.grindT ?? -9) > 0.25) { this.hud.hitmarker(crit ? 'crit' : 'hit'); if (grind) this.grindT = this.t; }
+        const tick = grind && this.t - (this.grindT ?? -9) > 0.25; // held contact: a ram hit every quarter second
+        if (!grind || crit || tick) { this.hud.hitmarker(crit ? 'crit' : 'hit'); if (tick) this.grindT = this.t; }
         if (crit) this.hud.popup(broke ? 'ARMOR BROKEN' : 'CRITICAL', 'crit');
-        if (cause === 'ram' || cause === 'crash') { // rams count up on their own, like gun hits
+        if (cause === 'ram' || cause === 'crash' || tick) { // rams count up on their own, like gun hits, and keep counting while held
           const rc = (this.ramCombo ??= { n: 0, t: -9 });
           rc.n = this.raceT - rc.t < 1.5 ? rc.n + 1 : 1;
           rc.t = this.raceT;
