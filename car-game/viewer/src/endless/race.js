@@ -50,6 +50,7 @@ export const DMG = {
 
 // ---------------------------------------------------------------- armor
 const ZONES = ['front', 'back', 'left', 'right'];
+const HULL_TAKES = 1.0; // damage past the armor hits the hull at this rate (was 1.6: it melted too fast)
 const STAGES = [[1, 0.66], [2, 0.33], [3, 0]]; // armor chunk stage, and the side's armor level it comes off at
 export class Armor {
   constructor() { this.reset(); }
@@ -64,7 +65,7 @@ export class Armor {
     this.flash[zone] = 0.25;
     const a = this.z[zone], left = Math.max(0, dmg - a);
     this.z[zone] = Math.max(0, a - dmg);
-    if (left > 0) this.core -= left * 1.6;
+    if (left > 0) this.core -= left * HULL_TAKES;
     if (this.core <= 0) { this.core = 0; this.wrecked = true; }
   }
   get worst() { return Math.min(...ZONES.map((k) => this.z[k])); }
@@ -265,6 +266,8 @@ export class Race {
     for (const r of this.rivals) { unchar(r.model); r.model.position.set(0, 0, 0); r.model.rotation.set(0, 0, 0); }
     this.kills = 0;
     this.dealt = { front: 0, back: 0, left: 0, right: 0, core: 0 }; // HP the player put into each part of the enemies
+    this.killedBy = null;
+    this.taken = { front: 0, back: 0, left: 0, right: 0, core: 0, weapons: 0, collision: 0 }; // HP the player lost, by part and by what did it
     this.combo = { n: 0, t: -9 };
     this.hud.clearCracks();
     Object.assign(this, { state: 'race', t: 0, raceT: 0, lapStart: 0, lapsDone: 0, bestLap: 0, lastLap: 0, pFinish: 0, shown: false, endE: 0, endShot: null, finalKill: null, parked: false, placed: false, closing: false, skipping: false });
@@ -349,6 +352,18 @@ export class Race {
     if (critRoll) dmg *= 2.5;
     a.hit(zone, dmg);
     if (attacker === this.player && target !== this.player) { this.dealt[zone] += (zb - a.z[zone]) * 100; this.dealt.core += (hb - a.core) * 100; }
+    if (target === this.player) {
+      const t = this.taken, lost = (zb - a.z[zone]) * 100 + (hb - a.core) * 100;
+      t[zone] += (zb - a.z[zone]) * 100; t.core += (hb - a.core) * 100;
+      t[cause === 'gun' ? 'weapons' : 'collision'] += lost;
+      // how you went, for the results: "Blown up by Orange", "Rammed by Teal"...
+      if (a.wrecked && !this.killedBy) {
+        const pick = (w) => w[Math.floor(Math.random() * w.length)];
+        this.killedBy = attacker && attacker !== target
+          ? `${pick(cause === 'gun' ? ['Killed', 'Blown up'] : ['Rammed', 'Crushed'])} by ${attacker.name}`
+          : 'Crushed against the wall';
+      }
+    }
     wear(target.mats, a);
     const broke = zb > 0 && a.z[zone] === 0, tier = (h) => (h > 0.66 ? 0 : h > 0.33 ? 1 : 2);
     const crit = critRoll || broke || tier(a.core) > tier(hb);
@@ -796,12 +811,13 @@ export class Race {
     this.hud.results({
       header: dead ? 'DESTROYED' : 'RACE RESULTS',
       badge: dead ? '✕' : ord(me),
-      sub: dead ? `Wrecked on lap ${this.playerLap}` : this.why === 'annihilation' ? `Last car running · ${this.kills} destroyed` : me === 1 ? 'Winner' : me <= 3 ? 'Podium finish' : 'Finished',
+      sub: dead ? this.killedBy ?? 'Destroyed' : this.why === 'annihilation' ? `Last car running · ${this.kills} destroyed` : me === 1 ? 'Winner' : me <= 3 ? 'Podium finish' : 'Finished',
       time: fmt(this.why === 'finished' ? this.pFinish : this.endT),
       win, dead,
-      rows: this.order.map((r, k) => ({ pos: k + 1, name: r.name, you: !!r.you, out: r.armor.wrecked, color: r.hex, car: 'Starter Coupe', time: r.armor.wrecked ? 'WRECKED' : r.finished ? fmt(r.finishT) : r.you && this.why === 'annihilation' ? fmt(this.endT) : '—' })),
+      rows: this.order.map((r, k) => ({ pos: k + 1, name: r.name, you: !!r.you, out: r.armor.wrecked, color: r.hex, car: 'Starter Coupe', time: r.armor.wrecked ? 'DESTROYED' : r.finished ? fmt(r.finishT) : r.you && this.why === 'annihilation' ? fmt(this.endT) : '—' })),
       kills: this.kills,
-      dealt: d,
+      taken: this.taken,
+      dealt: dmg,
       score,
       onNext: () => this.again(),
     });

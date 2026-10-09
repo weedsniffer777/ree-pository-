@@ -35,7 +35,10 @@ html, body, #hud, #hud * { -webkit-user-select: none; user-select: none; -webkit
 #hud .lap .n { font: 900 19px/1 var(--display); letter-spacing: 0.06em; }
 #hud .lap .t { font: 800 15px/1 var(--sign); font-variant-numeric: tabular-nums; }
 #hud .lap .b { font: 700 11px/1 var(--sign); font-variant-numeric: tabular-nums; color: var(--dim); }
-#hud .board { display: grid; gap: 2px; }
+#hud .board { display: grid; gap: 1px; width: 180px; }
+#hud .board .row { height: 17px; font-size: 10px; padding: 0 8px 0 6px; grid-template-columns: 18px 1fr auto; }
+#hud .board .row i { font-size: 12px; }
+#hud .board .row em { font-size: 9px; }
 #hud .row { display: grid; grid-template-columns: 22px 1fr auto; align-items: center; height: 22px; padding: 0 10px 0 8px; background: rgba(14,15,17,0.55); font: 800 12px/1 var(--sign); letter-spacing: 0.06em; text-transform: uppercase; }
 #hud .row i { font: 900 15px/1 var(--display); font-style: normal; color: var(--dim); }
 #hud .row em { font-style: normal; font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
@@ -197,6 +200,9 @@ html, body, #hud, #hud * { -webkit-user-select: none; user-select: none; -webkit
 #hud .xr svg circle { fill: var(--white); }
 #hud .xr em { position: absolute; font: 800 9px/1.2 var(--sign); font-style: normal; letter-spacing: 0.16em; color: var(--dim); text-transform: uppercase; white-space: nowrap; }
 #hud .xr em b { display: block; font: 900 17px/1 var(--display); color: var(--white); letter-spacing: 0.02em; }
+#hud .split { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(236,230,217,0.14); }
+#hud .split p { margin: 0; display: grid; gap: 3px; font: 800 9px/1 var(--sign); letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim); }
+#hud .split b { font-size: 22px; line-height: 1; color: var(--white); }
 #hud .nums { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; align-content: start; }
 #hud .nums div { display: grid; gap: 4px; }
 #hud .nums b { font-size: 30px; line-height: 1; }
@@ -256,6 +262,7 @@ html, body, #hud, #hud * { -webkit-user-select: none; user-select: none; -webkit
   #hud .pos b { font-size: 40px; }
   #hud .pos span { font-size: 16px; }
   #hud .row { height: 17px; font-size: 10px; }
+  #hud .board { width: 150px; } #hud .board .row { height: 14px; font-size: 9px; } #hud .board .row i { font-size: 10px; }
   #hud .row i { font-size: 12px; }
   #hud .map { width: 112px; height: 112px; }
   #hud .armor { left: calc(var(--gx) + 118px); width: 88px; height: 152px; }
@@ -349,10 +356,10 @@ export function createHud({ touch = false } = {}) {
     <div class="place" hidden><b></b><span></span></div>
     <div class="results" hidden><div class="rbox">
       <div class="rhead panel"><div class="badge"></div><div class="rt"><h2></h2><div class="sub"></div></div><div class="rtime"><span class="lbl">Time</span><b class="num"></b></div></div>
-      <div class="rtable"><div class="th"><span>POS</span><span>PLAYER</span><span>CAR NAME</span><span style="text-align:right">TIME</span></div><div class="list"></div></div>
+      <div class="rtable"><div class="th"><span>POS</span><span>PLAYER</span><span>CAR</span><span style="text-align:right">TIME</span></div><div class="list"></div></div>
       <div class="rstats">
-        <div class="panel"><span class="lbl">Damage dealt</span><div class="xr"><canvas></canvas><svg></svg></div></div>
-        <div class="nums panel"><div><span class="lbl">Kills</span><b class="num k">0</b></div><div><span class="lbl">Damage</span><b class="num d">0</b></div><div class="score"><span class="lbl">Score</span><b class="num s">0</b></div><div class="brk"></div></div>
+        <div class="panel"><span class="lbl">Damage taken</span><div class="xr"><canvas></canvas><svg></svg></div><div class="split"><p><span>Weapons</span><b class="num w">0</b></p><p><span>Collision</span><b class="num c">0</b></p></div></div>
+        <div class="nums panel"><div><span class="lbl">Kills</span><b class="num k">0</b></div><div><span class="lbl">Damage dealt</span><b class="num d">0</b></div><div class="score"><span class="lbl">Score</span><b class="num s">0</b></div><div class="brk"></div></div>
       </div>
       <div class="rbtn"><button class="replay" disabled>REPLAY<small>SOON</small></button><button class="next">NEXT</button></div>
     </div></div>
@@ -794,7 +801,7 @@ export function createHud({ touch = false } = {}) {
       el.hidden = false;
     },
     // results: { header, badge, sub, time, win, dead, rows: [{ pos, name, you, color, car,
-    // time }], kills, dealt: { front, back, left, right, core } (HP), score: [[label, n]],
+    // time }], kills, dealt (HP), taken: { front, back, left, right, core, weapons, collision } (HP), score: [[label, n]],
     // onNext } or null
     results(r) {
       const el = $('.results');
@@ -809,9 +816,9 @@ export function createHud({ touch = false } = {}) {
       el.querySelector('.list').innerHTML = r.rows.map((x, k) => `<div class="row${x.you ? ' you' : ''}${x.out ? ' out' : ''}" style="animation-delay:${0.25 + k * 0.05}s"><i>${x.pos}</i><span><b style="background:${x.color}"></b>${x.name}</span><span class="cn">${x.car}</span><em>${x.time}</em></div>`).join('');
       el.querySelector('.next').onclick = () => { el.hidden = true; r.onNext(); };
       el.hidden = false;
-      // damage dealt, by the part of the enemy it went into: the car as an x-ray coloured
-      // by share of the total, with a pointer to each part
-      const d = r.dealt, tot = d.front + d.back + d.left + d.right + d.core, mx = Math.max(1, d.front, d.back, d.left, d.right, d.core);
+      // damage taken, by part of your car: the x-ray coloured by share of the total, with a
+      // pointer to each part, then split into weapons and collisions
+      const d = r.taken, tot = r.dealt, mx = Math.max(1, d.front, d.back, d.left, d.right, d.core);
       const cv = el.querySelector('.xr canvas');
       if (!xrRes && xrSrc) xrRes = new XRay(cv, xrSrc.model, xrSrc.hitbox);
       xrRes?.update({ z: { front: 1 - d.front / mx, back: 1 - d.back / mx, left: 1 - d.left / mx, right: 1 - d.right / mx }, core: 1 - d.core / mx });
@@ -829,10 +836,10 @@ export function createHud({ touch = false } = {}) {
       // numbers count up
       const sTot = r.score.reduce((a, [, n]) => a + n, 0);
       el.querySelector('.brk').innerHTML = r.score.map(([l, n]) => `<p><span>${l}</span><span>+${n}</span></p>`).join('');
-      const K = el.querySelector('.k'), D = el.querySelector('.d'), Sc = el.querySelector('.s'), t0 = performance.now();
+      const K = el.querySelector('.k'), D = el.querySelector('.d'), Sc = el.querySelector('.s'), Wn = el.querySelector('.split .w'), Cn = el.querySelector('.split .c'), t0 = performance.now();
       const tick = () => {
         const u = Math.min(1, (performance.now() - t0 - 600) / 1400), e2 = u < 0 ? 0 : 1 - (1 - u) ** 3;
-        K.textContent = Math.round(r.kills * e2); D.textContent = Math.round(tot * e2); Sc.textContent = Math.round(sTot * e2).toLocaleString('en-US');
+        K.textContent = Math.round(r.kills * e2); D.textContent = Math.round(tot * e2); Wn.textContent = Math.round(d.weapons * e2); Cn.textContent = Math.round(d.collision * e2); Sc.textContent = Math.round(sTot * e2).toLocaleString('en-US');
         if (u < 1 && !el.hidden) requestAnimationFrame(tick);
       };
       tick();
