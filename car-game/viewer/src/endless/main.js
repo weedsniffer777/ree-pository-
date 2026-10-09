@@ -288,7 +288,10 @@ function updateCamera(dt) {
   shake *= Math.exp(-dt * 7);
   const jx = (Math.random() - 0.5) * shake, jy = (Math.random() - 0.5) * shake;
   let target = car.yaw;
-  if (car.vf > 5) target += THREE.MathUtils.clamp(Math.atan2(Math.sin(Math.atan2(car.vx, car.vz) - car.yaw), Math.cos(Math.atan2(car.vx, car.vz) - car.yaw)), -0.4, 0.4) * 0.6;
+  { // lean the camera toward where the car is travelling, fading in with speed (no snap when sliding sideways)
+    const sv = Math.hypot(car.vx, car.vz), off = Math.atan2(Math.sin(Math.atan2(car.vx, car.vz) - car.yaw), Math.cos(Math.atan2(car.vx, car.vz) - car.yaw));
+    target += THREE.MathUtils.clamp(Math.sin(off) * 2.5, -1, 1) * 0.24 * Math.min(1, Math.max(0, (sv - 2) / 6)); // sin: continuous all the way round
+  }
   camYaw = lerpAngle(camYaw, target, 1 - Math.exp(-dt * 6));
   if (!freeCam) {
     orbitYaw *= Math.exp(-dt * 3);

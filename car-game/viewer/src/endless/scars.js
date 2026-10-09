@@ -15,15 +15,15 @@ function scarMaterial() {
   for (let k = 0; k < 26; k++) {
     const a = Math.random() * Math.PI * 2, d = Math.random() * 26;
     const grd = g.createRadialGradient(64 + Math.cos(a) * d, 64 + Math.sin(a) * d, 0, 64 + Math.cos(a) * d, 64 + Math.sin(a) * d, 12 + Math.random() * 16);
-    grd.addColorStop(0, 'rgba(150,72,28,0.55)');
-    grd.addColorStop(1, 'rgba(120,55,22,0)');
+    grd.addColorStop(0, 'rgba(88,60,44,0.5)');
+    grd.addColorStop(1, 'rgba(70,50,38,0)');
     g.fillStyle = grd;
     g.fillRect(0, 0, 128, 128);
   }
   // drips running down
-  for (let k = 0; k < 4; k++) { g.fillStyle = 'rgba(130,60,25,0.35)'; g.fillRect(50 + Math.random() * 28, 64, 2 + Math.random() * 3, 20 + Math.random() * 34); }
-  blob(64, 64, 15, 'rgba(178,92,40,0.9)'); // scorched ring
-  blob(64, 64, 10, 'rgba(70,40,24,1)');
+  for (let k = 0; k < 4; k++) { g.fillStyle = 'rgba(80,56,42,0.3)'; g.fillRect(50 + Math.random() * 28, 64, 2 + Math.random() * 3, 20 + Math.random() * 34); }
+  blob(64, 64, 15, 'rgba(104,72,52,0.85)'); // scorched ring
+  blob(64, 64, 10, 'rgba(46,32,24,1)');
   blob(64, 64, 7, 'rgba(14,10,8,1)'); // the hole
   g.strokeStyle = 'rgba(190,186,180,0.7)'; g.lineWidth = 1.5; // torn bright metal at the rim
   g.beginPath(); g.arc(64, 64, 10.5, 0, Math.PI * 2); g.stroke();
@@ -46,7 +46,8 @@ export class Scars {
     const out = [];
     const walk = (o) => {
       if (o !== model && o.userData.part) return;
-      if (o.isMesh && o.material.blending !== THREE.AdditiveBlending && !o.userData.scar) out.push(o);
+      const glassy = [].concat(o.material).some((m) => m.transparent); // no rust on windows
+      if (o.isMesh && o.material.blending !== THREE.AdditiveBlending && !glassy && !o.userData.scar) out.push(o);
       for (const ch of o.children) walk(ch);
     };
     walk(model);

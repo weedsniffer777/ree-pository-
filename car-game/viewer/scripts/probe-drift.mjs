@@ -23,8 +23,7 @@ const out = await page.evaluate(() => {
   const y0 = c.yaw, v0 = Number(new URLSearchParams(location.search).get('v0') ?? 32); c.vx = Math.sin(y0) * v0; c.vz = Math.cos(y0) * v0;
   run(0.5, { throttle: 1 }, 'straight');
   run(0.7, { brake: 1, steer: 1 }, 'S+D');
-  run(0.6, { throttle: 1, steer: 1 }, 'W+D');
-  run(1.4, { throttle: 1 }, 'W');
+  run(2.4, { steer: 1 }, 'D coast');
   return rows.join('\n');
 });
 console.log(out);

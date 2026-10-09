@@ -57,7 +57,7 @@ export class CarController {
     const p = pointAt(i, lat);
     Object.assign(this, {
       x: p.x, z: p.z, yaw: p.yaw, vx: 0, vz: 0, vy: 0, vf: 0, vl: 0, steerS: 0, yawRate: 0,
-      nitro: 1, boost: 1, drift: 0, driftMode: false, prevBrake: false, stopT: 0, revOK: false, spun: false, lastVf: 0, clutch: 1, skid: 0, boosting: false, airborne: false, pitch: 0, roll: 0, accP: 0, lean: 0,
+      nitro: 1, boost: 1, drift: 0, driftMode: false, prevBrake: false, stopT: 0, revOK: false, spun: false, clutch: 1, skid: 0, boosting: false, airborne: false, pitch: 0, roll: 0, accP: 0, lean: 0,
       bob: 0, bobV: 0, hint: i, prevLat: lat, onRoad: true, prevVf: 0,
     });
     this.n = nearest(this.x, this.z, i);
@@ -108,9 +108,8 @@ export class CarController {
       const slip = Math.abs(Math.atan2(vl, Math.abs(vf))); // 0 = rolling straight (either way), PI/2 = fully sideways
       // Spun: a slide carried the car past 90 deg so it's now travelling backwards. That's
       // still the slide (steering keeps turning the nose the way you press), not reverse gear.
-      if (vf < -1 && (this.lastVf ?? 0) > 1 && spd0 > 8) this.spun = true;
+      if (vf < -1 && spd0 > 6 && this.drift > 0.3) this.spun = true;
       if (vf > 1 || spd0 < 3) this.spun = false;
-      this.lastVf = vf;
       // Drift amount: S + a turn key at speed kicks the tail loose; after that the slide
       // keeps itself going for as long as the car is sideways, and the tyres find their grip
       // again gradually as it lines back up (no switch).
@@ -168,8 +167,11 @@ export class CarController {
       // heavier: ~1.8 rad/s at 36 km/h, ~0.6 at 165); a slide adds a little rotation. A
       // spun car keeps the steering the way it was (A always swings the nose left), so it
       // doesn't flip when the travel crosses into backwards.
-      const sp = Math.max(Math.abs(vf), this.spun ? spd0 : 0);
-      const dir = this.spun ? 1 : THREE.MathUtils.clamp(vf / 2.5, -1, 1);
+      // While sliding the turn rate comes from the car's whole speed, not its forward part
+      // (which passes through zero at 90 deg), so a slide rotates evenly all the way round.
+      const slideW = Math.max(sm(0.15, 0.45, D), this.spun ? 1 : 0);
+      const sp = Math.abs(vf) + (spd0 - Math.abs(vf)) * slideW;
+      const dir = THREE.MathUtils.clamp(vf / 2.5, -1, 1) * (1 - slideW) + slideW;
       // the further sideways, the less extra rotation, so a held slide settles at an angle
       this.yawRate = -this.steerS * 2.4 * Math.min(1, sp / 4) / (1 + sp / 30 + (sp / 40) ** 2) * dir * (1 + 0.9 * D - 0.55 * sm(0.35, 1.2, slip));
     } else {
