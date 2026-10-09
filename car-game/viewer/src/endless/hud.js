@@ -321,7 +321,7 @@ html, body, #hud, #hud * { -webkit-user-select: none; user-select: none; -webkit
   #hud .touch .fireBtn { right: calc(246px + env(safe-area-inset-right, 0px)); bottom: calc(36px + env(safe-area-inset-bottom, 0px)); }
   #hud .touch .brakeBtn { right: calc(176px + env(safe-area-inset-right, 0px)); bottom: calc(90px + env(safe-area-inset-bottom, 0px)); width: 52px; height: 52px; font-size: 12px; }
   #hud .touch .switchBtn { right: calc(250px + env(safe-area-inset-right, 0px)); bottom: calc(112px + env(safe-area-inset-bottom, 0px)); }
-  #hud .touch .backBtn { left: calc(10px + env(safe-area-inset-left, 0px)); top: 40%; }
+  #hud .touch .backBtn { left: calc(12px + env(safe-area-inset-left, 0px)); top: auto; bottom: calc(132px + env(safe-area-inset-bottom, 0px)); }
 }
 @media (max-width: 720px) and (orientation: portrait) {
   #hud .tl { width: 200px; }
