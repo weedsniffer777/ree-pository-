@@ -29,7 +29,11 @@ export class Holes {
     if (list.length && t - list[list.length - 1].t0 < 0.18) return; // a burst makes a few, not dozens
     this.ray.set(this.tv.copy(point).addScaledVector(dir, -1.6), dir);
     this.ray.far = 3.2;
-    const hit = this.ray.intersectObject(model, true).find((h) => h.object.visible && h.face && !h.object.material.isShaderMaterial && h.object.material.blending !== THREE.AdditiveBlending);
+    // meshes only: the model also carries sprites (boost glow), which can't be raycast
+    // without a camera and would throw
+    const meshes = [];
+    model.traverse((o) => { if (o.isMesh && !o.isSprite && o.visible && !o.material.isShaderMaterial && o.material.blending !== THREE.AdditiveBlending) meshes.push(o); });
+    const hit = this.ray.intersectObjects(meshes, false).find((h) => h.face);
     if (!hit) return;
     const n = hit.face.normal.clone().applyNormalMatrix(this.nm.getNormalMatrix(hit.object.matrixWorld)).normalize();
     if (n.dot(dir) > 0) n.negate();
