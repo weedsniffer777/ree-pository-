@@ -340,7 +340,7 @@ export class Race {
         const g = target.mem.grudge.get(attacker) ?? { amount: 0, t: 0, ram: false };
         g.amount = Math.min(1.5, g.amount * Math.max(0, 1 - (this.t - g.t) / AI.memory) + dmg * 8 + (cause === 'ram' ? 0.5 : 0));
         g.t = this.t;
-        g.ram = g.ram || cause === 'ram';
+        g.ram = g.ram || cause === 'ram' || cause === 'grind';
         target.mem.grudge.set(attacker, g);
         target.rage = Math.min(1, (target.rage ?? 0) + dmg * AI.rage.hit + (cause === 'ram' ? AI.rage.ram : 0));
       }
@@ -373,22 +373,24 @@ export class Race {
     // armor comes off in chunks: stage 1 below 2/3 of that side, stage 2 below 1/3, the last at 0
     for (const [stage, th] of STAGES) if (zb > th && a.z[zone] <= th) this.tearOff(target, zone, vel, stage);
     if (attacker === this.player && target !== this.player) {
-      const cb = this.combo;
-      cb.n = this.raceT - cb.t < 0.75 ? cb.n + 1 : 1;
-      cb.t = this.raceT;
+      // grinding (dozer or spikes held against a car) is continuous: no combo, and the
+      // hitmarker only ticks a few times a second
+      const grind = cause === 'grind', cb = this.combo;
+      if (!grind) { cb.n = this.raceT - cb.t < 0.75 ? cb.n + 1 : 1; cb.t = this.raceT; }
       if (crit) { this.hitstop = Math.max(this.hitstop, 0.07); this.hud.flash(0.16); }
       if (a.wrecked) {
         this.hitstop = Math.max(this.hitstop, 0.18);
         this.hud.flash(0.6);
         this.kills++;
         this.hud.hitmarker('kill');
-        const word = cause === 'ram' ? (Math.random() < 0.5 ? 'RAMMED' : 'CRUSHED') : 'DESTROYED';
+        const word = cause === 'ram' || cause === 'grind' || cause === 'crash' ? (Math.random() < 0.5 ? 'RAMMED' : 'CRUSHED') : 'DESTROYED';
         this.hud.popup(`${word}<small>x${this.kills}</small>`, 'kill');
         this.car.addBoost(0.35);
       } else {
-        this.hud.hitmarker(crit ? 'crit' : 'hit');
+        if (!grind || crit || this.t - (this.grindT ?? -9) > 0.25) { this.hud.hitmarker(crit ? 'crit' : 'hit'); if (grind) this.grindT = this.t; }
         if (crit) this.hud.popup(broke ? 'ARMOR BROKEN' : 'CRITICAL', 'crit');
-        if (cb.n >= 2) this.hud.popup(`x${cb.n} HIT`, 'combo');
+        if (cause === 'ram' || cause === 'crash') this.hud.popup('RAMMED', 'combo'); // a ram reads as a ram, not a hit count
+        else if (!grind && cb.n >= 2) this.hud.popup(`x${cb.n} HIT`, 'combo');
       }
     }
     if (target === this.player) {
@@ -531,15 +533,15 @@ export class Race {
       const tx = -nz, tz = nx, vt = (ca.vx - cc.vx) * tx + (ca.vz - cc.vz) * tz;
       if (Math.abs(vt) > 3 && (zA === 'left' || zA === 'right') && (zC === 'left' || zC === 'right')) {
         const g = Math.min(1, Math.abs(vt) / 15) * DMG.spikes * dt;
-        if (this.hasSpikes(A.ref)) this.damage(C.ref, zC, g, A.ref, null, 'crash');
-        if (this.hasSpikes(C.ref)) this.damage(A.ref, zA, g, C.ref, null, 'crash');
+        if (this.hasSpikes(A.ref)) this.damage(C.ref, zC, g, A.ref, null, 'grind');
+        if (this.hasSpikes(C.ref)) this.damage(A.ref, zA, g, C.ref, null, 'grind');
         // continuous shower while they grind
         const n = Math.floor(Math.abs(vt) * dt * 22 + Math.random());
         this.fx.lines.burst(px, (A.y + C.y) / 2 + 0.35, pz, (ca.vx + cc.vx) / 2, 1, (ca.vz + cc.vz) / 2, n, 9, 3);
       }
       // dozer blade pressed into a car: contact damage while it's held there
-      if (zA === 'front' && this.hasRam(A.ref)) this.damage(C.ref, zC, DMG.dozer * dt, A.ref, null, 'ram');
-      if (zC === 'front' && this.hasRam(C.ref)) this.damage(A.ref, zA, DMG.dozer * dt, C.ref, null, 'ram');
+      if (zA === 'front' && this.hasRam(A.ref)) this.damage(C.ref, zC, DMG.dozer * dt, A.ref, null, 'grind');
+      if (zC === 'front' && this.hasRam(C.ref)) this.damage(A.ref, zA, DMG.dozer * dt, C.ref, null, 'grind');
       const vrel = (ca.vx - cc.vx) * nx + (ca.vz - cc.vz) * nz;
       if (vrel >= 0) continue;
       if (-vrel > 2.5) this.fx.lines.burst(px, (A.y + C.y) / 2 + 0.45, pz, (ca.vx + cc.vx) / 2, 1.5, (ca.vz + cc.vz) / 2, Math.min(40, Math.round(-vrel * 3)), 10 + -vrel * 0.6, 5);
