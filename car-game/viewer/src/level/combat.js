@@ -80,9 +80,10 @@ export class Tracers {
 // (tracer), rate (rounds/s), spread (m at 60 m), hitTest(origin, dir, range, shooter) ->
 // { d, point, ... } | null for vehicles, onTargetHit(hit) when such a round arrives.
 export class Guns {
-  constructor(model, scene, { tracers, dust, sparks, height = terrainHeight, light = true, color = 0xff2a1a, rate = 14, spread = 1.6, hitTest = null, onTargetHit = null, blockTest = null, onShot = null }) {
+  constructor(model, scene, { tracers, dust, sparks, height = terrainHeight, light = true, color = 0xff2a1a, rate = 14, spread = 1.6, hitTest = null, onTargetHit = null, blockTest = null, onShot = null, heat = null }) {
     this.height = height;
-    Object.assign(this, { color, rate, spread, hitTest, onTargetHit, blockTest, onShot });
+    // heat: { perShot, cool (per s), resume } -> overheats at 1, locked until it cools to resume
+    Object.assign(this, { color, rate, spread, hitTest, onTargetHit, blockTest, onShot, heatCfg: heat, heat: 0, overheated: false });
     this.tracers = tracers;
     this.dust = dust;
     this.sparks = sparks;
@@ -127,6 +128,11 @@ export class Guns {
 
   update(dt, firing, car, aim = null) {
     this.traverse(dt, aim);
+    if (this.heatCfg) {
+      if (this.overheated && this.heat <= this.heatCfg.resume) this.overheated = false;
+      if (this.overheated) firing = false;
+      if (!firing) this.heat = Math.max(0, this.heat - this.heatCfg.cool * dt * (this.overheated ? 1.3 : 1));
+    }
     this.cool -= dt;
     for (const f of this.flashes) {
       f.life -= dt;
@@ -143,6 +149,10 @@ export class Guns {
   }
 
   shoot(car, aimAt = null) {
+    if (this.heatCfg) {
+      this.heat = Math.min(1, this.heat + this.heatCfg.perShot);
+      if (this.heat >= 1) this.overheated = true;
+    }
     const k = this.side;
     this.side = (this.side + 1) % this.guns.length;
     const gun = this.guns[k];
@@ -150,7 +160,9 @@ export class Guns {
     this.fwd.set(Math.sin(car.yaw), 0, Math.cos(car.yaw));
     // slight spread, rounds converge ~60 m ahead
     const aim = aimAt ? aimAt.clone() : new THREE.Vector3(car.x, car.y + 0.9, car.z).addScaledVector(this.fwd, 60);
-    const sp = this.spread * (aimAt ? Math.max(0.5, aim.distanceTo(muzzle) / 60) : 1);
+    // dispersion widens with range, faster than linearly past ~50 m
+    const rng = aimAt ? aim.distanceTo(muzzle) : 60;
+    const sp = this.spread * Math.max(0.5, rng / 60) * (1 + Math.max(0, rng - 50) / 70);
     aim.x += (Math.random() - 0.5) * sp;
     aim.y += (Math.random() - 0.4) * sp * 0.6;
     aim.z += (Math.random() - 0.5) * sp;

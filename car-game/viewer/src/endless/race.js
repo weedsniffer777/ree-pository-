@@ -160,7 +160,17 @@ class Rival {
     this.rig.visible = Math.hypot(this.x - (Race.camX ?? this.x), this.z - (Race.camZ ?? this.z)) < 420;
     this.rig.rotation.set(-Math.atan2(S.y[ib] - S.y[ia], STEP), this.yaw, 0, 'YXZ');
     for (const wh of this.wheels) wh.rotation.x += (this.v / 0.332) * dt;
+    // a launched wreck: height and tumble, turning about the body's middle (0.6 m up)
+    if (this.air) {
+      const A = this.air;
+      this.rig.position.y += A.y;
+      this.model.rotation.set(A.rx, 0, A.rz);
+      const o = Rival.piv.set(0, 0.6, 0).applyEuler(this.model.rotation);
+      const flipped = Math.cos(A.rx) * Math.cos(A.rz) < 0;
+      this.model.position.set(-o.x, 0.6 - o.y + (A.landed ? (flipped ? 0.12 : -0.3) : 0), -o.z);
+    }
   }
+  static piv = new THREE.Vector3();
   // world displacement / velocity change applied to the spline state
   push(dx, dz) {
     this.prog += (dx * this.tx + dz * this.tz) / STEP;
@@ -217,7 +227,7 @@ export class Race {
     this.car.dead = false;
     unchar(this.model);
     this.model.position.y = 0;
-    for (const r of this.rivals) { unchar(r.model); r.model.position.y = 0; }
+    for (const r of this.rivals) { unchar(r.model); r.model.position.set(0, 0, 0); r.model.rotation.set(0, 0, 0); r.air = null; }
     this.kills = 0;
     this.combo = { n: 0, t: -9 };
     this.hud.clearCracks();
@@ -247,7 +257,7 @@ export class Race {
   bodies() {
     const c = this.car;
     const out = this.player.gone ? [] : [{ ref: this.player, x: c.x, y: c.y, z: c.z, yaw: c.yaw, prog: this.pProg }];
-    for (const r of this.rivals) if (!r.gone) out.push({ ref: r, x: r.x, y: r.y, z: r.z, yaw: r.yaw, prog: r.prog });
+    for (const r of this.rivals) if (!r.gone && !(r.air && r.air.y > 1.2)) out.push({ ref: r, x: r.x, y: r.y, z: r.z, yaw: r.yaw, prog: r.prog });
     return out;
   }
 
@@ -327,6 +337,10 @@ export class Race {
     }
   }
 
+  // How a rival goes up. Today a coin flip between a plain blast and one that throws the
+  // chassis into the air; later this keys off the kind of kill (ram, crit, overkill...).
+  killStyle(target) { return Math.random() < 0.5 ? 'launch' : 'plain'; }
+
   // a car going up: big blast, every bolt-on part blown off with the car's speed, and the
   // chassis left as a charred, burning wreck that slides to a stop and stays solid
   detonate(target) {
@@ -348,7 +362,13 @@ export class Race {
       this.debris.spawn(tmp, tv, { size: [0.12 + Math.random() * 0.3, 0.05 + Math.random() * 0.15, 0.12 + Math.random() * 0.35], life: 3 + Math.random() * 3, spin: 16, color: [0x1c1c1c, 0x2a2b2c, 0x141414][k % 3], burn: k % 2 === 0 });
     }
     if (me) { c.dead = true; c.vx *= 0.85; c.vz *= 0.85; this.over('wrecked'); }
-    else { target.deadT = 0; target.spin = (Math.random() - 0.5) * 2.2; target.v *= 0.7; }
+    else {
+      target.deadT = 0; target.spin = (Math.random() - 0.5) * 2.2; target.v *= 0.7;
+      if (this.killStyle(target) === 'launch') {
+        target.v *= 0.75;
+        target.air = { y: 0, vy: 10 + Math.random() * 4, rx: 0, rz: 0, wx: (Math.random() - 0.5) * 6, wz: (Math.random() < 0.5 ? -1 : 1) * (4 + Math.random() * 3), landed: false };
+      }
+    }
     if (!me && this.rivals.every((r) => r.armor.wrecked) && this.state === 'race') this.over('annihilation');
   }
 
@@ -393,6 +413,17 @@ export class Race {
     const N = LOOP.n, i = wrapI(r.prog);
     if (r.armor.wrecked) { // slide to a stop, burning
       r.deadT += dt;
+      const A = r.air;
+      if (A && !A.landed) { // thrown by the blast: fly, tumble, bounce once, settle on wheels or roof
+        A.vy -= 24 * dt;
+        A.y += A.vy * dt;
+        A.rx += A.wx * dt; A.rz += A.wz * dt;
+        if (A.y <= 0 && A.vy < 0) {
+          A.y = 0;
+          if (A.vy < -5) { A.vy *= -0.28; A.wx *= 0.5; A.wz *= 0.5; this.booms.blast(new THREE.Vector3(r.x, r.y + 0.4, r.z), new THREE.Vector3(r.vx, 0, r.vz).multiplyScalar(0.3), false); }
+          else { A.landed = true; A.rx = Math.round(A.rx / Math.PI) * Math.PI; A.rz = Math.round(A.rz / Math.PI) * Math.PI; }
+        }
+      }
       r.v = Math.max(0, r.v - 7 * dt);
       r.latV *= Math.exp(-dt * 3);
       r.lat += r.latV * dt;

@@ -62,9 +62,22 @@ export class Wreckage {
     this.box.getCenter(pivot.position);
     this.scene.add(pivot);
     pivot.attach(part);
+    // up to ~240 of the part's own vertices in pivot space: ground contact uses the real
+    // lowest point (a bounding box of a curved, rotated plate sits well below the metal)
+    pivot.updateMatrixWorld(true);
+    const inv = pivot.matrixWorld.clone().invert(), m = new THREE.Matrix4(), q = new THREE.Vector3(), pts = [];
+    let total = 0;
+    part.traverse((o) => { if (o.isMesh) total += o.geometry.attributes.position.count; });
+    const stride = Math.max(1, Math.floor(total / 240));
+    part.traverse((o) => {
+      if (!o.isMesh) return;
+      m.multiplyMatrices(inv, o.matrixWorld);
+      const pa = o.geometry.attributes.position;
+      for (let k = 0; k < pa.count; k += stride) { q.fromBufferAttribute(pa, k).applyMatrix4(m); pts.push(q.x, q.y, q.z); }
+    });
     const v = vel.clone().add(kick);
     const w = new THREE.Vector3((Math.random() - 0.5) * 9, (Math.random() - 0.5) * 9, (Math.random() - 0.5) * 9);
-    this.items.push({ part, pivot, v, w, t: 0, burn, rest: false });
+    this.items.push({ part, pivot, v, w, t: 0, burn, rest: false, restT: 0, pts: new Float32Array(pts) });
   }
   // put everything back on its car (new race)
   restoreAll() {
@@ -92,8 +105,10 @@ export class Wreckage {
         P.quaternion.multiply(this.tq);
         // ground contact by the part's actual lowest point
         P.updateMatrixWorld(true);
-        this.box.setFromObject(it.part);
-        const under = this.height(p.x, p.z) + 0.02 - this.box.min.y;
+        const e = P.matrixWorld.elements, pts = it.pts;
+        let low = Infinity;
+        for (let k = 0; k < pts.length; k += 3) low = Math.min(low, e[1] * pts[k] + e[5] * pts[k + 1] + e[9] * pts[k + 2] + e[13]);
+        const under = this.height(p.x, p.z) + 0.02 - (pts.length ? low : p.y);
         if (under > 0) {
           p.y += under;
           if (it.v.y < -2.5) { it.v.y *= -0.3; it.v.x *= 0.65; it.v.z *= 0.65; it.w.multiplyScalar(0.5); } else {
@@ -104,6 +119,13 @@ export class Wreckage {
           }
         }
       }
+      // settled debris sinks out of sight after a while (keeps the track and draw calls clean)
+      if (it.rest && !it.gone) {
+        it.restT += dt;
+        if (it.restT > 20) { p.y -= dt * 0.25; P.updateMatrixWorld(true); }
+        if (it.restT > 24) { it.part.visible = false; it.gone = true; }
+      }
+      if (it.gone) continue;
       // burning parts: flames for the first seconds, smoke trailing for longer
       if (it.burn && onBurn && it.t < 16 && Math.random() < dt * (it.t < 5 ? 22 : 9)) onBurn(p, it.t, !it.rest);
     }

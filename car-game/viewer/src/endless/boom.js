@@ -58,21 +58,21 @@ void main(){
   float facing = abs(dot(n, v));
   if (mode < 0.5) {
     // fire: cools from the edges in, and whatever has cooled is simply gone
-    float h = heat * (1.0 - t * 1.05) + vN * 0.45 + facing * 0.25;
-    if (h < 0.18) discard;
+    float h = heat * (1.0 - t * 1.2) + vN * 0.45 + facing * 0.25;
+    if (h < 0.32) discard; // the dull red fizzle is cut short
     vec3 c = ramp(clamp(h, 0.0, 1.0));
     gl_FragColor = vec4(c * (1.3 + smoothstep(0.3, 0.9, h) * 2.4), 1.0);
   } else {
     // smoke: dark, lit from the sun, soft-edged, fading out slowly as it rises
     float lit = 0.3 + 0.7 * max(dot(n, normalize(sun)), 0.0);
-    vec3 c = vec3(0.075, 0.07, 0.065) * (0.55 + lit * 1.1) + vec3(0.25, 0.08, 0.02) * heat * max(0.0, 1.0 - t * 4.0);
-    float a = (0.5 + vN * 0.5) * smoothstep(0.0, 0.55, facing) * smoothstep(0.0, 0.08, t) * pow(1.0 - t, 1.4) * 0.92;
+    vec3 c = vec3(0.028, 0.026, 0.025) * (0.6 + lit * 0.9) + vec3(0.22, 0.06, 0.015) * heat * max(0.0, 1.0 - t * 6.0);
+    float a = (0.62 + vN * 0.45) * smoothstep(0.0, 0.5, facing) * smoothstep(0.0, 0.05, t) * pow(1.0 - t, 0.85) * 0.97;
     gl_FragColor = vec4(c, a);
   }
 }`;
 
 export class Booms {
-  constructor(scene, { dust, sparks, max = 56, sun = new THREE.Vector3(0.4, 1, 0.3) }) {
+  constructor(scene, { dust, sparks, max = 96, sun = new THREE.Vector3(0.4, 1, 0.3) }) {
     Object.assign(this, { dust, sparks });
     const geo = new THREE.IcosahedronGeometry(1, 4);
     this.items = [];
@@ -135,11 +135,11 @@ export class Booms {
       this.puff(p.x + Math.cos(a) * r, p.y + 0.3 + Math.random() * (big ? 1.2 : 0.4), p.z + Math.sin(a) * r, size, (big ? 0.75 : 0.4) * (0.8 + Math.random() * 0.45), core ? 1.05 : 0.85 + Math.random() * 0.15, tv, core ? 0 : Math.random() * (big ? 0.1 : 0.03));
     }
     // black smoke rolls up out of the fire and hangs, fading slowly
-    const smokes = big ? 9 : 2;
+    const smokes = big ? 11 : 3;
     for (let k = 0; k < smokes; k++) {
       tv.set(vel.x * (big ? 0.3 : 0.5) + (Math.random() - 0.5) * 2, (big ? 3 : 2) + Math.random() * 2.5, vel.z * (big ? 0.3 : 0.5) + (Math.random() - 0.5) * 2);
       this.puff(p.x + (Math.random() - 0.5) * (big ? 2.5 : 0.8), p.y + (big ? 1.2 + k * 0.45 : 0.8), p.z + (Math.random() - 0.5) * (big ? 2.5 : 0.8),
-        big ? 2.0 + Math.random() * 1.8 : 0.9 + Math.random() * 0.5, big ? 4 + Math.random() * 2.5 : 2 + Math.random(), 1, tv, (big ? 0.2 : 0.12) + k * (big ? 0.06 : 0.05), true);
+        big ? 2.0 + Math.random() * 1.8 : 0.9 + Math.random() * 0.5, big ? 8 + Math.random() * 4 : 3.5 + Math.random() * 1.5, 1, tv, (big ? 0.12 : 0.08) + k * (big ? 0.05 : 0.04), true);
     }
     for (const [k, f] of this.flares.entries()) {
       if (!big && k) break;
@@ -173,9 +173,9 @@ export class Booms {
       it.m.material.uniforms.t.value = u;
       it.m.position.addScaledVector(it.v, dt);
       it.v.multiplyScalar(Math.exp(-dt * (it.smoke ? 1.2 : 2.6)));
-      it.v.y += dt * (it.smoke ? 0.9 : 1.2); // hot air keeps rising
+      it.v.y += dt * (it.smoke ? 0.45 : 1.2); // hot air keeps rising; smoke drifts up slowly
       // fire: violent swell then hold while it burns out; smoke: steady billow outward
-      const sc = it.size * (it.smoke ? 0.45 + Math.sqrt(u) * 1.6 : u < 0.15 ? 0.3 + (u / 0.15) * 0.7 : 1 + (u - 0.15) * 0.35);
+      const sc = it.size * (it.smoke ? 0.45 + Math.sqrt(u) * 1.9 : u < 0.15 ? 0.3 + (u / 0.15) * 0.7 : 1 + (u - 0.15) * 0.35);
       it.m.scale.set(sc * it.stretch.x, sc * it.stretch.y, sc * it.stretch.z);
       it.m.rotation.y += dt * 0.6;
     }

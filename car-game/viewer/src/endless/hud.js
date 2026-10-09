@@ -64,6 +64,13 @@ const CSS = `
 #hud .speed .g { position: absolute; left: 50%; top: 140px; transform: translateX(-50%); min-width: 34px; height: 30px; display: grid; place-items: center; font: 900 24px/1 var(--display); color: var(--black); background: var(--white); clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%); }
 #hud .speed .g.shift { background: var(--rust); }
 #hud .boost { width: 200px; margin-top: -2px; }
+#hud .heat { width: 200px; margin: -4px 0 6px; }
+#hud .heat .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+#hud .heat .ov { display: none; padding: 2px 6px 1px; background: #ff3b26; color: #fff; font: 800 10px/1 var(--mono); letter-spacing: 0.12em; animation: tagBlink 0.4s steps(1) infinite; }
+#hud .heat.over .ov { display: inline-block; }
+#hud .heat .bar { height: 6px; background: rgba(14,15,17,0.75); position: relative; overflow: hidden; clip-path: polygon(3px 0, 100% 0, calc(100% - 3px) 100%, 0 100%); }
+#hud .heat .bar i { position: absolute; inset: 0 auto 0 0; width: 0; background: linear-gradient(90deg, #e9d24a, #ff9a2a 55%, #ff3b1a); background-size: 200px 100%; }
+#hud .heat.over .bar i { background: #ff3b1a; animation: tagBlink 0.4s steps(1) infinite; }
 #hud .boost .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
 #hud .boost .bar { height: 10px; background: rgba(14,15,17,0.75); position: relative; overflow: hidden; clip-path: polygon(4px 0, 100% 0, calc(100% - 4px) 100%, 0 100%); }
 #hud .boost .bar i { position: absolute; inset: 0 auto 0 0; background: repeating-linear-gradient(-55deg, var(--rust) 0 7px, var(--rustD) 7px 14px); }
@@ -86,8 +93,15 @@ const CSS = `
 #hud .ret b:nth-of-type(3) { top: 50%; left: -1px; height: 1.5px; width: 12px; margin-top: -0.75px; }
 #hud .ret b:nth-of-type(4) { top: 50%; right: -1px; height: 1.5px; width: 12px; margin-top: -0.75px; }
 #hud .ret i { position: absolute; left: 50%; top: 50%; width: 3px; height: 3px; margin: -1.5px; background: var(--ret); }
-#hud .ret.on { border-color: rgba(255,255,255,0.85); }
-#hud .ret.on b, #hud .ret.on i { background: #fff; }
+#hud .ret.lock { border-color: rgba(93,255,122,0.9); }
+#hud .ret.lock b, #hud .ret.lock i { background: var(--lock); }
+#hud .ret.far { border-color: rgba(255,59,38,0.9); animation: farBlink 0.5s steps(1) infinite; }
+#hud .ret.far b, #hud .ret.far i { background: #ff3b26; }
+@keyframes farBlink { 50% { border-color: rgba(255,255,255,0.9); } }
+/* tags: solid coloured boxes so the text reads on any background */
+#hud .tag { position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%); padding: 3px 7px 2px; font: 800 11px/1 var(--mono); letter-spacing: 0.12em; white-space: nowrap; }
+#hud .ret .tag { background: #ff3b26; color: #fff; animation: tagBlink 0.5s steps(1) infinite; }
+@keyframes tagBlink { 50% { background: #fff; color: #ff3b26; } }
 #hud .lockbox { position: absolute; left: 0; top: 0; transform: translate(-50%, -50%); filter: drop-shadow(0 0 5px rgba(93,255,122,0.45));
   --c: var(--lock); --l: 30%; --w: 2px;
   background:
@@ -96,7 +110,7 @@ const CSS = `
     linear-gradient(var(--c), var(--c)) bottom left / var(--l) var(--w) no-repeat, linear-gradient(var(--c), var(--c)) bottom left / var(--w) var(--l) no-repeat,
     linear-gradient(var(--c), var(--c)) bottom right / var(--l) var(--w) no-repeat, linear-gradient(var(--c), var(--c)) bottom right / var(--w) var(--l) no-repeat; }
 #hud .lockbox i { position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px; background: var(--lock); }
-#hud .lockbox span { position: absolute; top: calc(100% + 5px); left: 50%; transform: translateX(-50%); color: var(--lock); font: 700 11px/1 var(--mono); letter-spacing: 0.14em; white-space: nowrap; text-shadow: 0 0 6px rgba(93,255,122,0.5); }
+#hud .lockbox .tag { top: calc(100% + 6px); background: var(--lock); color: #0b140d; }
 #hud .lockbox.new { animation: lockIn 0.32s steps(1) both; }
 @keyframes lockIn { 0% { opacity: 1; transform: translate(-50%, -50%) scale(1.6); } 25% { opacity: 0; } 50% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 75% { opacity: 0; } 100% { opacity: 1; } }
 /* white flash on kills / crits */
@@ -212,6 +226,7 @@ const CSS = `
   #hud .speed .v { font-size: 38px; }
   #hud .speed .g { top: 96px; height: 24px; min-width: 28px; font-size: 19px; }
   #hud .boost { width: 136px; margin-top: 6px; }
+  #hud .heat { width: 136px; margin: 2px 0 2px; }
   #hud .title { top: 20%; }
   #hud .title h3 { font-size: 34px; }
   #hud .card { top: 34%; padding: 8px 16px 7px; }
@@ -233,7 +248,7 @@ const CSS = `
   #hud .speed .rd { top: 58px; }
   #hud .speed .v { font-size: 44px; }
   #hud .speed .g { top: 112px; }
-  #hud .boost { width: 160px; }
+  #hud .boost, #hud .heat { width: 160px; }
   #hud .touch .boostBtn { bottom: calc(212px + env(safe-area-inset-bottom, 0px)); }
   #hud .touch .fireBtn { bottom: calc(190px + env(safe-area-inset-bottom, 0px)); }
   #hud .touch .brakeBtn { bottom: calc(298px + env(safe-area-inset-bottom, 0px)); }
@@ -271,8 +286,8 @@ export function createHud({ touch = false } = {}) {
     <div class="glass"></div>
     <div class="vig"></div>
     <div class="flash"></div>
-    <div class="ret" hidden><b></b><b></b><b></b><b></b><i></i></div>
-    <div class="lockbox" hidden><i></i><span>LOCK 000M</span></div>
+    <div class="ret" hidden><b></b><b></b><b></b><b></b><i></i><span class="tag" hidden></span></div>
+    <div class="lockbox" hidden><i></i><span class="tag">LOCK 000M</span></div>
     <div class="hm"><i></i><i></i><i></i><i></i></div>
     <div class="pops"></div>
     <div class="count" hidden></div>
@@ -280,6 +295,7 @@ export function createHud({ touch = false } = {}) {
     <div class="results" hidden><div class="box panel"><h2></h2><div class="sub"></div><div class="list"></div><div class="sub best"></div><button>PLAY AGAIN</button></div></div>
     <div class="gauge">
       <div class="speed"><canvas></canvas><div class="rd"><div class="v">0</div><div class="u lbl">KM/H</div></div><div class="g">N</div></div>
+      <div class="heat"><div class="top"><span class="lbl">Heat</span><span class="ov">OVERHEAT</span></div><div class="bar"><i></i></div></div>
       <div class="boost"><div class="top"><span class="lbl">Boost</span><span class="bk"><kbd>Shift</kbd></span></div><div class="bar"><i></i></div></div>
     </div>
     <div class="spot"></div>
@@ -537,7 +553,9 @@ export function createHud({ touch = false } = {}) {
     touch: t,
     set onPause(fn) { onPause = fn; },
     // speed km/h (signed), boost 0..1, lap number, current / best lap seconds
-    set({ speed, boost, boosting, throttle, lap, laps, lapT, bestLap, dt = 1 / 60 }) {
+    set({ speed, boost, boosting, throttle, lap, laps, lapT, bestLap, heat = 0, overheated = false, dt = 1 / 60 }) {
+      $('.heat .bar i').style.width = `${Math.round(heat * 100)}%`;
+      $('.heat').classList.toggle('over', overheated);
       const kmh = Math.abs(speed);
       const ng = speed < -2 ? 'R' : kmh < 3 && !throttle ? 'N' : gearFor(kmh, gear);
       if (typeof ng === 'number' && typeof gear === 'number' && ng !== gear) shiftT = 0.18;
@@ -600,12 +618,19 @@ export function createHud({ touch = false } = {}) {
     },
     lock(x, y, size, id, dist = 0) {
       const el = $('.lockbox');
-      $('.ret').classList.toggle('on', x !== null);
       if (x === null) { el.hidden = true; el.dataset.id = ''; return; }
       if (el.dataset.id !== String(id)) { el.dataset.id = String(id); el.classList.remove('new'); void el.offsetWidth; el.classList.add('new'); }
       el.hidden = false;
       Object.assign(el.style, { left: `${x}px`, top: `${y}px`, width: `${size}px`, height: `${size}px` });
-      el.querySelector('span').textContent = `LOCK ${String(Math.round(dist)).padStart(3, '0')}M`;
+      el.querySelector('.tag').textContent = `LOCK ${String(Math.round(dist)).padStart(3, '0')}M`;
+    },
+    // 'idle' (white), 'lock' (green), 'far' (red: a target in the circle beyond lock range)
+    reticleState(state, dist = 0) {
+      const el = $('.ret'), tag = el.querySelector('.tag');
+      el.classList.toggle('lock', state === 'lock');
+      el.classList.toggle('far', state === 'far');
+      tag.hidden = state !== 'far';
+      if (state === 'far') tag.textContent = `OUT OF RANGE ${String(Math.round(dist)).padStart(3, '0')}M`;
     },
     hurt(amount) { vigT = Math.min(0.9, vigT + 0.18 + amount * 4); },
     // cracked glass when HP crosses a threshold; cleared on a new race

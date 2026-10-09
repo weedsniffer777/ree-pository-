@@ -106,6 +106,7 @@ const tracers = new Tracers(scene);
 const guns = new Guns(model, scene, { tracers, dust, sparks: embers, height: terrainHeight });
 // Highway: every round that lands charges boost a little. Races: only hits on cars do.
 const gunImpact = guns.impact.bind(guns);
+guns.heatCfg = { perShot: 0.017, cool: 0.42, resume: 0.3 }; // ~4 s of fire to overheat
 if (!LOOP.on) guns.impact = (p) => { gunImpact(p); car.addBoost(0.0045); };
 let runTime = 0, biomeShown = -1, best = 0, freeCam = false;
 const pursuer = new Pursuer();
@@ -217,24 +218,26 @@ function readInput() {
 
 // ---- Lock-on: the reticle sits where the guns point (60 m ahead, so it rides hills);
 // the nearest live rival inside it is locked, boxed, and the guns lead it ----
-const LOCK_R = coarse ? 52 : 71, lockV = new THREE.Vector3(), lockAim = new THREE.Vector3();
+const LOCK_R = coarse ? 52 : 71, LOCK_MAX = 110, SEEK_MAX = 260, lockV = new THREE.Vector3(), lockAim = new THREE.Vector3();
 function updateLock() {
   if (!race || params.get('ui') === '0') return null;
   const fx = Math.sin(car.yaw), fz = Math.cos(car.yaw), W = innerWidth, Hh = innerHeight;
   const toScreen = (x, y, z) => { lockV.set(x, y, z).project(camera); return lockV.z < 1 ? [(lockV.x * 0.5 + 0.5) * W, (-lockV.y * 0.5 + 0.5) * Hh] : null; };
   const c0 = toScreen(car.x + fx * 60, car.y + 0.9, car.z + fz * 60);
-  if (!c0 || race.player.armor.wrecked || race.state === 'done') { hud.reticle(null); hud.lock(null); return null; }
+  if (!c0 || race.player.armor.wrecked || race.state === 'done') { hud.reticle(null); hud.lock(null); hud.reticleState('idle'); return null; }
   hud.reticle(c0[0], c0[1], LOCK_R);
   let best = null, bd = Infinity;
   for (const r of race.rivals) {
     if (r.armor.wrecked || !r.rig.visible) continue;
     const dx = r.x - car.x, dz = r.z - car.z, d = Math.hypot(dx, dz);
-    if (d > 150 || d < 3 || dx * fx + dz * fz <= 0) continue;
+    if (d > SEEK_MAX || d < 3 || dx * fx + dz * fz <= 0) continue;
     const sp = toScreen(r.x, r.y + 0.8, r.z);
     if (!sp || Math.hypot(sp[0] - c0[0], sp[1] - c0[1]) > LOCK_R) continue;
     if (d < bd) { bd = d; best = { r, sp }; }
   }
-  if (!best) { hud.lock(null); return null; }
+  if (!best) { hud.lock(null); hud.reticleState('idle'); return null; }
+  if (bd > LOCK_MAX) { hud.lock(null); hud.reticleState('far', bd); return null; } // seen, but too far to lock
+  hud.reticleState('lock');
   const size = Math.max(30, Math.min(150, 1100 / bd));
   hud.lock(best.sp[0], best.sp[1], size, best.r.slot, bd);
   const lead = bd / 420; // round flight time
@@ -262,7 +265,7 @@ function emitFx(dt, inp) {
 }
 
 // ---- Camera ----
-let camYaw = car.yaw, fov = 62, shake = 0;
+let camYaw = car.yaw, fov = 62, shake = 0, outroYaw = null, outroPos = null, deathSlow = false;
 const lerpAngle = (a, b, t) => a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * t;
 function updateCamera(dt) {
   const view = params.get('view') || 'chase';
@@ -286,7 +289,32 @@ function updateCamera(dt) {
   // fast = a constant fine buzz on top of impact shake
   const buzz = Math.max(0, speed - 36) * 0.0016 + (car.boosting ? 0.02 : 0);
   const bx = (Math.random() - 0.5) * buzz, by = (Math.random() - 0.5) * buzz;
-  if (view === 'chase' || view === 'high') {
+  const outro = race?.state === 'done' && view === 'chase' ? race.t - race.doneT : -1;
+  if (outro >= 0) {
+    // race over: a wreck gets a slow orbit pulling back over the fire; a finish swings round
+    // to a front three-quarter shot of the car rolling on
+    const e = outro, k = 1 - Math.exp(-dt * 2.5);
+    let ang, dist, up;
+    if (race.why === 'wrecked') {
+      outroYaw ??= camYaw + Math.PI;
+      ang = outroYaw + Math.PI + e * 0.32;
+      dist = 7 + Math.min(e, 4) * 2.2;
+      up = 2.4 + Math.min(e, 4) * 1.1;
+    } else {
+      const u = Math.min(1, e / 2.6), sm = u * u * (3 - 2 * u);
+      ang = car.yaw + Math.PI + (0.55 - Math.PI) * sm;
+      dist = 6.5 + sm * 1.5;
+      up = 1.9 + sm * 0.6;
+    }
+    const px = car.x - Math.sin(ang) * dist, pz = car.z - Math.cos(ang) * dist;
+    const py = Math.max(car.y + up, terrainHeight(px, pz) + 0.8);
+    outroPos ??= camera.position.clone();
+    outroPos.lerp(tmpV.set(px, py, pz), k);
+    camera.position.copy(outroPos);
+    camera.lookAt(car.x, car.y + 0.7, car.z);
+    fovT = 55;
+  } else if (view === 'chase' || view === 'high') {
+    outroYaw = null; outroPos = null;
     const back = (view === 'high' ? 13 : 5.5) + Math.min(speed, 45) * 0.03;
     const up = (view === 'high' ? 6.5 : 2.0) + orbitPitch * 4;
     const px = car.x - fx * back, pz = car.z - fz * back;
@@ -462,6 +490,8 @@ function frame(now) {
   const rdt = isPaused() || race?.frozen ? 0 : Math.min(0.05, (now - last) / 1000);
   last = now;
   // slow motion for dramatic tutorial beats: eases back to full speed
+  // a beat of slow motion as your car goes up
+  if (race?.state === 'done' && race.why === 'wrecked') { if (!deathSlow) { deathSlow = true; slowmo = 1.6; } } else deathSlow = false;
   slowmo = Math.max(0, slowmo - rdt);
   let dt = rdt * (slowmo > 0 ? 0.35 + 0.65 * Math.max(0, 1 - slowmo / 0.6) ** 2 : 1);
   // hitstop: the world all but freezes for a beat on crits and kills
@@ -513,7 +543,7 @@ function frame(now) {
   if (LOOP.on) biomeShown = 0; else if (bi !== biomeShown) { biomeShown = bi; hud.title(BIOMES[bi].name, dist < 10 ? 'Drive · Survive · Destroy' : `${(dist / 1000).toFixed(1)} km`); }
   if (race) {
     race.update(dt);
-    hud.set({ speed: car.vf * 3.6, boost: car.boost, boosting: car.boosting, throttle: inp.throttle, lap: race.playerLap, laps: 3, lapT: race.raceT - race.lapStart, bestLap: race.bestLap, dt });
+    hud.set({ speed: car.vf * 3.6, boost: car.boost, boosting: car.boosting, throttle: inp.throttle, lap: race.playerLap, laps: 3, lapT: race.raceT - race.lapStart, bestLap: race.bestLap, heat: guns.heat, overheated: guns.overheated, dt });
     hud.mapUpdate(car.x, car.z, car.yaw);
   } else if (LOOP.on) {
     updateLap(dt);
