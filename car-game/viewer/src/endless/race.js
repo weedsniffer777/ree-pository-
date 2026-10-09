@@ -309,6 +309,9 @@ export class Race {
     setTimeout(() => this.reset(), 880);
   }
 
+  static pos = new THREE.Vector3();
+  static vel = new THREE.Vector3();
+
   get frozen() { return performance.now() < this.holdUntil; }
 
   get playerLap() { return Math.min(LAPS, Math.max(1, Math.floor(this.pProg / LOOP.n) + 1)); }
@@ -394,8 +397,9 @@ export class Race {
     wear(target.mats, a);
     const broke = zb > 0 && a.z[zone] === 0, tier = (h) => (h > 0.66 ? 0 : h > 0.33 ? 1 : 2);
     const crit = critRoll || broke || tier(a.core) > tier(hb);
-    const pos = point ?? new THREE.Vector3(target.x ?? this.car.x, (target.y ?? this.car.y) + 0.8, target.z ?? this.car.z);
-    const vel = target === this.player ? new THREE.Vector3(this.car.vx, 0, this.car.vz) : new THREE.Vector3(target.vx, 0, target.vz);
+    // scratch vectors (damage runs every frame while grinding or scraping): nothing keeps them
+    const pos = point ?? Race.pos.set(target.x ?? this.car.x, (target.y ?? this.car.y) + 0.8, target.z ?? this.car.z);
+    const vel = target === this.player ? Race.vel.set(this.car.vx, 0, this.car.vz) : Race.vel.set(target.vx, 0, target.vz);
     if (crit) this.booms.blast(pos, vel, false); // every blast is a crit
     // armor comes off in chunks: stage 1 below 2/3 of that side, stage 2 below 1/3, the last at 0
     for (const [stage, th] of STAGES) if (zb > th && a.z[zone] <= th) this.tearOff(target, zone, vel, stage);

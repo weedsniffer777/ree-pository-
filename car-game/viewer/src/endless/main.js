@@ -21,6 +21,7 @@ import { Race } from './race.js';
 import { Booms, Bits, LineSparks } from './boom.js';
 import { bakeCar } from './carparts.js';
 import { Glass } from './glass.js';
+import { scarMaterial } from './scars.js';
 import { nearest, wAt, RAIL_LAT } from './route.js';
 import { createDevKit } from './devkit.js';
 import { Tracers, Guns } from '../level/combat.js';
@@ -611,6 +612,21 @@ function frame(now) {
   window.__stats = { calls: info.calls, tris: info.triangles, buildMs };
   if (++readyFrames === 3) window.__ready = true;
   requestAnimationFrame(frame);
+}
+// Warm-up, once at load: everything that starts hidden (explosion pools, flares, stand-ins,
+// debris, the scar decal) gets its shader prepared and textures uploaded now, so the first
+// blast, kill or crack doesn't stall mid-race.
+{
+  const hidden = [];
+  scene.traverse((o) => { if (!o.visible) { hidden.push(o); o.visible = true; } });
+  const scar = new THREE.Mesh(new THREE.PlaneGeometry(0.01, 0.01), scarMaterial());
+  scene.add(scar);
+  renderer.compile(scene, camera);
+  scene.traverse((o) => {
+    for (const m of [].concat(o.material ?? [])) for (const k of ['map', 'normalMap', 'roughnessMap', 'emissiveMap', 'alphaMap']) if (m[k]?.isTexture) renderer.initTexture(m[k]);
+  });
+  scene.remove(scar);
+  for (const o of hidden) o.visible = false;
 }
 let readyFrames = 0;
 requestAnimationFrame((t) => { last = t; frame(t); });

@@ -5,7 +5,7 @@ import { DecalGeometry } from 'three/addons/geometries/DecalGeometry.js';
 // bullet holes, decals projected onto the car's body and carried with it.
 
 let mat = null;
-function scarMaterial() {
+export function scarMaterial() {
   if (mat) return mat;
   const c = document.createElement('canvas');
   c.width = c.height = 128;

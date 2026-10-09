@@ -25,6 +25,7 @@ function starTexture() {
 }
 
 export class Tracers {
+  static look = new THREE.Vector3();
   constructor(scene, max = 60) {
     this.items = [];
     const geo = new THREE.CylinderGeometry(1, 1, 1, 8, 1, true).translate(0, 0.5, 0).rotateX(Math.PI / 2); // along +Z, 0..1
@@ -70,7 +71,7 @@ export class Tracers {
       }
       if (it.onHit && it.t >= it.len) { it.onHit(); it.onHit = null; }
       it.mesh.position.copy(it.a).addScaledVector(it.dir, tail);
-      it.mesh.lookAt(it.mesh.position.clone().add(it.dir));
+      it.mesh.lookAt(Tracers.look.copy(it.mesh.position).add(it.dir));
       it.mesh.scale.set(R, R, Math.max(0.01, head - tail));
     }
   }
@@ -104,6 +105,7 @@ export class Guns {
     this.kick = 0;
     this.tmp = new THREE.Vector3();
     this.fwd = new THREE.Vector3();
+    this.sAim = new THREE.Vector3(); this.sP = new THREE.Vector3(); this.sStart = new THREE.Vector3(); this.sEnd = new THREE.Vector3();
   }
 
   // Swing each gun mount toward the aim point (traverse ±35°, elevation -12°..+18°), easing
@@ -159,7 +161,8 @@ export class Guns {
     const muzzle = gun.localToWorld(this.tmp.copy(gun.userData.muzzle));
     this.fwd.set(Math.sin(car.yaw), 0, Math.cos(car.yaw));
     // slight spread, rounds converge ~60 m ahead
-    const aim = aimAt ? aimAt.clone() : new THREE.Vector3(car.x, car.y + 0.9, car.z).addScaledVector(this.fwd, 60);
+    // scratch vectors, reused every shot (tracers copy what they need)
+    const aim = aimAt ? this.sAim.copy(aimAt) : this.sAim.set(car.x, car.y + 0.9, car.z).addScaledVector(this.fwd, 60);
     // dispersion widens with range, faster than linearly past ~50 m
     const rng = aimAt ? aim.distanceTo(muzzle) : 60;
     const sp = this.spread * Math.max(0.5, rng / 60) * (1 + Math.max(0, rng - 50) / 70);
@@ -169,16 +172,16 @@ export class Guns {
     const dir = aim.sub(muzzle).normalize();
     // march to the ground or max range
     let hit = null;
-    const p = new THREE.Vector3();
+    const p = this.sP;
     for (let d = 2; d <= 160; d += 1.5) {
       p.copy(muzzle).addScaledVector(dir, d);
       if (p.y <= this.height(p.x, p.z) || this.blockTest?.(p)) { hit = p.clone(); break; }
     }
-    const start = muzzle.clone();
+    const start = this.sStart.copy(muzzle);
     const veh = this.hitTest?.(start, dir, hit ? hit.distanceTo(start) : 160, car);
     if (veh) this.tracers.fire(start, veh.point, this.color, () => { this.sparkAt(veh.point); this.onTargetHit?.(veh); });
     else {
-      const end = hit ?? muzzle.clone().addScaledVector(dir, 160);
+      const end = hit ?? this.sEnd.copy(muzzle).addScaledVector(dir, 160);
       this.tracers.fire(start, end, this.color, hit ? () => this.impact(hit) : null);
     }
 
