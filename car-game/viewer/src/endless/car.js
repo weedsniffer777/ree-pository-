@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import { S, STEP, I_START, LOOP, wAt, RAIL_LAT, ROAD_HALF, ROAD_BEVEL, nearest, corridor, pointAt } from './route.js';
 import { roadSurfaceY } from '../level/road.js';
 import { railSide } from './world.js';
-import { rampHeight } from './ramps.js';
 
 // The world supplies terrain height; set once at startup.
 let terrainHeight = () => 0;
@@ -36,8 +35,6 @@ export function groundAt(x, z, n) {
   if (n) {
     const w = wAt(n.i);
     if (Math.abs(n.lat) < ROAD_BEVEL * w) h = Math.max(h, n.y + roadSurfaceY(n.lat / w));
-    const rh = rampHeight(n);
-    if (rh > 0) h = Math.max(h, n.y + roadSurfaceY(n.lat / w) + rh);
   }
   return h;
 }
@@ -149,7 +146,7 @@ export class CarController {
         // brakes bite hard at speed and progressively softer as the car slows (no snap
         // stop); in a committed drift the brake mostly unloads the rear instead
         if (vf > 0.5) vf -= (7 + 13 * Math.min(1, vf / 22)) * (1 - this.drift * (inp.throttle > 0 ? 0.92 : 0.8)) * dt * brake;
-        else if (this.revOK || (this.stopT += dt) > 0.9) vf = Math.max(-REV_V, vf - 9 * dt * brake);
+        else if (this.revOK || (this.stopT += dt) > 0.3) vf = Math.max(-REV_V, vf - 9 * dt * brake); // stopped: a beat, then it backs up on its own
         else vf = Math.max(0, vf - 7 * dt);
       }
       if (!inp.throttle && !brake) vf -= vf * (this.dead ? 1.1 : 0.06 + 0.24 * cl) * dt; // declutched: rolls on; a wreck grinds to a halt
@@ -169,12 +166,22 @@ export class CarController {
         vf = fwd * s2 * Math.cos(beta);
         vl = s2 * Math.sin(beta);
       }
+      // Spun round: the slide carried the car past 90 deg so it's now travelling backwards.
+      // That stays a drift (not reverse gear): loose grip, clutch out, and steering just
+      // rotates the car either way until it swings back past 90 deg into forward driving.
+      // Backing up from a standstill is ordinary reverse.
+      const spdNow = Math.hypot(vf, vl);
+      if (vf < -1 && (this.lastVf ?? 0) > 1 && spdNow > 8) this.spun = true;
+      if (vf > 1 || spdNow < 3) this.spun = false;
+      this.lastVf = vf;
+      if (this.spun) { this.drift = Math.max(this.drift, 0.7); this.clutch = Math.min(this.clutch, 0.2); }
       this.wheelspin = inp.throttle > 0 ? Math.max(Math.abs(this.yawRate) > 0.9 ? 1 : 0, 1 - Math.abs(vf) / 7) : 0;
       this.skid = Math.max(Math.min(1, (Math.abs(vl) - 2) / 4), braking && this.drift < 0.3 ? 0.75 : 0, this.wheelspin > 0.5 && Math.abs(vf) < 12 ? 0.8 : 0);
       const sp = Math.abs(vf);
       // turn rate falls off with speed (a squared term so top speed and boost are clearly
       // heavier: ~1.8 rad/s at 36 km/h, ~0.6 at 165, ~0.5 boosting); drifting adds rotation back
       this.yawRate = -this.steerS * 2.4 * Math.min(1, sp / 4) / (1 + sp / 30 + (sp / 40) ** 2) * THREE.MathUtils.clamp(vf / 2.5, -1, 1) * (1 + this.drift * (0.6 + Math.max(0, Math.abs(this.steerS) - 0.7) * 2.2)); // hard lock in a drift whips the car round
+      if (this.spun) this.yawRate = -this.steerS * 2.1 * Math.min(1, Math.hypot(vf, vl) / 6); // free rotation while spun
     } else {
       this.yawRate *= Math.exp(-dt * 2);
     }
@@ -275,6 +282,8 @@ export class CarController {
     this.x -= rx * dl;
     this.z -= rz * dl;
     const vn = this.vx * rx + this.vz * rz;
+    // scraping along (or pinned against) the wall: the race turns this into contact damage
+    this.scrape = { nx: rx * Math.sign(dl), nz: rz * Math.sign(dl), v: Math.abs(this.vx * S.tx[i] + this.vz * S.tz[i]) };
     if (vn * dl > 0) {
       this.onImpact?.(Math.abs(vn), rx * -Math.sign(dl), rz * -Math.sign(dl));
       const e = this.dead ? 1 : 1.2;

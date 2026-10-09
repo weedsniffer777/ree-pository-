@@ -29,6 +29,23 @@ export const ROSTER = [
 ];
 const PLAYER_SLOT = 4; // 5th on the grid
 
+// ---------------------------------------------------------------- damage tuning
+// Two kinds of melee damage. IMPACT: the hit of a collision, by closing speed (an intact
+// ram adds to it). CONTACT: damage per second while touching: spiked wheels grinding a
+// car alongside, the dozer blade pressed into one, and scraping / being pinned against a
+// wall. Gun damage per round is set where the guns are wired (0.05 player, 0.022 AI).
+export const DMG = {
+  impactFrom: 5, // m/s of closing speed before a collision hurts
+  impactPer: 0.012, // armor per m/s above that
+  ramBonus: 1.5, // an intact ram hitting multiplies the impact it deals ...
+  ramSelf: 0.5, // ... and what it takes itself
+  spikes: 0.15, // per second, scraping alongside at speed
+  dozer: 0.12, // per second, blade pressed into a car
+  wallScrape: 0.05, // per second against a wall, plus ...
+  wallScrapeV: 0.004, // ... this per m/s of sliding along it
+  wallImpactFrom: 7, wallImpactPer: 0.018, // slamming a wall
+};
+
 // ---------------------------------------------------------------- armor
 const ZONES = ['front', 'back', 'left', 'right'];
 export class Armor {
@@ -194,17 +211,14 @@ export class Race {
     this.wreckage = new Wreckage(scene, fx.height);
     this.holes = new Holes();
     // the player's car slamming walls and props costs armor on the side that hit
-    car.onImpact = (v, nx, nz) => {
-      if (v < 7 || this.state !== 'race') return;
-      const f = [Math.sin(car.yaw), Math.cos(car.yaw)], lz = -nx * f[0] - nz * f[1], lx = -nx * -f[1] - nz * f[0];
-      this.damage(this.player, Armor.zoneOf(lx, lz, 1, 1), (v - 7) * 0.018, null, null, 'wall');
-    };
+    this.wallHits(car, () => this.player);
     this.playerParts = partsOf(model);
     profile ??= speedProfile(17, 9);
     this.player = { name: 'You', hex: ROSTER[0].hex, you: true, armor: new Armor(), mats: model.userData.skins };
     this.hb = car.hitbox;
     this.rivals = [];
     for (let s = 1; s < ROSTER.length; s++) this.rivals.push(new Rival(s, model, scene, fx, car.colliders));
+    for (const r of this.rivals) this.wallHits(r.car, () => r);
     const hitTest = (o, d, range, shooter) => this.rayHit(o, d, range, shooter);
     for (const r of this.rivals) { r.guns.hitTest = hitTest; r.guns.onTargetHit = (h) => this.damage(h.target, h.zone, 0.022, r, h.point, 'gun', h.dir); }
     gunsHitHook(hitTest, (h) => { this.damage(h.target, h.zone, 0.05, this.player, h.point, 'gun', h.dir); car.addBoost(0.012); });
@@ -408,6 +422,26 @@ export class Race {
     if (!me && this.rivals.every((r) => r.armor.wrecked) && this.state === 'race') this.over('annihilation');
   }
 
+  // slamming a wall or prop: impact damage on the side that hit (every car)
+  wallHits(car, who) {
+    car.onImpact = (v, nx, nz) => {
+      if (v < DMG.wallImpactFrom || this.state !== 'race') return;
+      const f = [Math.sin(car.yaw), Math.cos(car.yaw)], lz = -nx * f[0] - nz * f[1], lx = -nx * -f[1] - nz * f[0];
+      this.damage(who(), Armor.zoneOf(lx, lz, 1, 1), (v - DMG.wallImpactFrom) * DMG.wallImpactPer, null, null, 'wall');
+    };
+  }
+  // scraping or pinned against the wall this frame: contact damage on that side
+  scrapes(dt) {
+    for (const [car, ref] of [[this.car, this.player], ...this.rivals.map((r) => [r.car, r])]) {
+      const sc = car.scrape;
+      car.scrape = null;
+      if (!sc || ref.armor.wrecked || this.state !== 'race') continue;
+      const f = [Math.sin(car.yaw), Math.cos(car.yaw)], lz = sc.nx * f[0] + sc.nz * f[1], lx = sc.nx * -f[1] + sc.nz * f[0];
+      this.damage(ref, Armor.zoneOf(lx, lz, 1, 1), (DMG.wallScrape + sc.v * DMG.wallScrapeV) * dt, null, null, 'wall');
+      if (sc.v > 4 && Math.random() < dt * 25) this.fx.sparks.emit(car.x + sc.nx * 1.1, car.y + 0.4, car.z + sc.nz * 1.1, car.vx * 0.6 + (Math.random() - 0.5) * 4, 1 + Math.random() * 3, car.vz * 0.6 + (Math.random() - 0.5) * 4, 0.1, 0.25, 1, 0.8, 0.4);
+    }
+  }
+
   // Car-to-car contact, the same for every car: separate the hulls, trade momentum along
   // the contact normal, and spin each car by where it was struck (a hit on the rear
   // quarter swings the tail round: PIT). Damage goes to the struck zone; a car hitting
@@ -438,11 +472,14 @@ export class Race {
       // spiked wheels: scraping side to side grinds the other car down
       const tx = -nz, tz = nx, vt = (ca.vx - cc.vx) * tx + (ca.vz - cc.vz) * tz;
       if (Math.abs(vt) > 3 && (zA === 'left' || zA === 'right') && (zC === 'left' || zC === 'right')) {
-        const g = Math.min(1, Math.abs(vt) / 15) * 0.22 * dt;
+        const g = Math.min(1, Math.abs(vt) / 15) * DMG.spikes * dt;
         if (this.hasSpikes(A.ref)) this.damage(C.ref, zC, g, A.ref, null, 'crash');
         if (this.hasSpikes(C.ref)) this.damage(A.ref, zA, g, C.ref, null, 'crash');
         if (Math.random() < dt * 30) for (let k = 0; k < 3; k++) this.fx.sparks.emit(px, (A.y + C.y) / 2 + 0.4, pz, (Math.random() - 0.5) * 6 + (ca.vx + cc.vx) / 2, 1 + Math.random() * 3, (Math.random() - 0.5) * 6 + (ca.vz + cc.vz) / 2, 0.1, 0.25, 1, 0.8, 0.4);
       }
+      // dozer blade pressed into a car: contact damage while it's held there
+      if (zA === 'front' && this.hasRam(A.ref)) this.damage(C.ref, zC, DMG.dozer * dt, A.ref, null, 'ram');
+      if (zC === 'front' && this.hasRam(C.ref)) this.damage(A.ref, zA, DMG.dozer * dt, C.ref, null, 'ram');
       const vrel = (ca.vx - cc.vx) * nx + (ca.vz - cc.vz) * nz;
       if (vrel >= 0) continue;
       const j = -(A.ref.armor.wrecked || C.ref.armor.wrecked ? 1 : 1.3) * vrel / 2; // wrecks: dead stop, no rebound
@@ -453,12 +490,12 @@ export class Race {
       if (!A.ref.armor.wrecked) ca.spin += spinOf(A, j);
       if (!C.ref.armor.wrecked) cc.spin += spinOf(C, -j);
       if (A.ref === this.player) ca.hit(j); if (C.ref === this.player) cc.hit(j);
-      if (-vrel > 4) {
-        const base = (-vrel - 4) * 0.025;
+      if (-vrel > DMG.impactFrom) {
+        const base = (-vrel - DMG.impactFrom) * DMG.impactPer;
         const ramA = zA === 'front' && this.hasRam(A.ref), ramC = zC === 'front' && this.hasRam(C.ref);
-        // a ram hitting deals x2.4 and soaks its own blow; the hit car takes it full
-        this.damage(A.ref, zA, base * (ramC ? 2.4 : 1) * (ramA ? 0.4 : 1), C.ref, null, zC === 'front' ? 'ram' : 'crash');
-        this.damage(C.ref, zC, base * (ramA ? 2.4 : 1) * (ramC ? 0.4 : 1), A.ref, null, zA === 'front' ? 'ram' : 'crash');
+        // an intact ram adds to the impact it deals and soaks part of its own
+        this.damage(A.ref, zA, base * (ramC ? DMG.ramBonus : 1) * (ramA ? DMG.ramSelf : 1), C.ref, null, zC === 'front' ? 'ram' : 'crash');
+        this.damage(C.ref, zC, base * (ramA ? DMG.ramBonus : 1) * (ramC ? DMG.ramSelf : 1), A.ref, null, zA === 'front' ? 'ram' : 'crash');
         if (A.ref.ai) A.ref.hitT = this.t; if (C.ref.ai) C.ref.hitT = this.t;
       }
     }
@@ -578,6 +615,7 @@ export class Race {
     const all = this.bodies().map((b) => ({ ...b, lat: b.ref === this.player ? c.n.lat : b.ref.lat }));
     for (const r of this.rivals) this.updateRival(r, dt, all);
     this.contacts(dt);
+    this.scrapes(dt);
     for (const r of this.rivals) r.sync(dt);
     // damage tiers from hull HP: untouched = clean; hurt = light smoke; heavy = black
     // smoke; critical = black smoke and flame licking out of the engine bay

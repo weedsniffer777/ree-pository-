@@ -21,7 +21,6 @@ import { SpeedLines } from './speedlines.js';
 import { Race } from './race.js';
 import { Booms, Bits } from './boom.js';
 import { bakeCar } from './carparts.js';
-import { buildRamps } from './ramps.js';
 import { Glass } from './glass.js';
 import { nearest, wAt, RAIL_LAT } from './route.js';
 import { createDevKit } from './devkit.js';
@@ -159,7 +158,6 @@ if (LOOP.on && LOOP.walls === 'both') {
     return Math.abs(n.lat) > RAIL_LAT * wAt(n.i) - 0.35 && p.y < S.y[n.i] + 3.4;
   };
 }
-if (LOOP.on) buildRamps(scene, THEME, world);
 const race = LOOP.on && params.get('race') !== '0'
   ? new Race({ scene, model, car, hud, booms, debris, fx: { tracers, dust, sparks: embers, height: terrainHeight }, gunsHitHook: (test, onHit) => { guns.hitTest = test; guns.onTargetHit = onHit; } })
   : null;
