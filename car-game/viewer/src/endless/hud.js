@@ -76,6 +76,16 @@ const CSS = `
 #hud .armor .hp { text-align: center; font: 900 17px/1 var(--display); letter-spacing: 0.04em; font-variant-numeric: tabular-nums; text-shadow: 0 2px 0 rgba(0,0,0,0.6); }
 #hud .armor .hp small { font-size: 11px; color: var(--dim); }
 #hud .armor .hp.low b { color: #ff4a2a; }
+/* lock-on: reticle circle where the guns point, box on the locked car */
+#hud .ret { position: absolute; left: 0; top: 0; border-radius: 50%; border: 2px solid rgba(236,230,217,0.5); box-shadow: 0 0 0 1px rgba(0,0,0,0.35), inset 0 0 0 1px rgba(0,0,0,0.25); transform: translate(-50%, -50%); }
+#hud .ret::before, #hud .ret::after { content: ''; position: absolute; left: 50%; width: 2px; height: 10px; margin-left: -1px; background: rgba(236,230,217,0.75); }
+#hud .ret::before { top: -6px; } #hud .ret::after { bottom: -6px; }
+#hud .ret i { position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px; border-radius: 50%; background: rgba(236,230,217,0.85); }
+#hud .ret.on { border-color: rgba(216,100,42,0.8); }
+#hud .lockbox { position: absolute; left: 0; top: 0; border: 2px solid var(--rust); box-shadow: 0 0 0 1px rgba(0,0,0,0.5), 0 0 12px rgba(216,100,42,0.5); transform: translate(-50%, -50%); }
+#hud .lockbox span { position: absolute; top: calc(100% + 4px); left: 50%; transform: translateX(-50%); padding: 2px 6px 1px; background: var(--rust); color: var(--black); font: 900 12px/1 var(--display); letter-spacing: 0.16em; white-space: nowrap; }
+#hud .lockbox.new { animation: lockIn 0.18s ease-out both; }
+@keyframes lockIn { from { opacity: 0; transform: translate(-50%, -50%) scale(1.8); } }
 /* white flash on kills / crits */
 #hud .flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
 /* hits: centre hitmarker, combo / critical / destroyed popups, damage vignette, cracked glass */
@@ -97,19 +107,18 @@ const CSS = `
 @keyframes popOut { to { transform: skewX(-8deg) translateY(-14px); opacity: 0; } }
 #hud .vig { position: absolute; inset: 0; background: radial-gradient(ellipse at center, transparent 45%, rgba(150,10,6,0.55) 80%, rgba(60,0,0,0.9) 100%); opacity: 0; }
 #hud .glass { position: absolute; inset: 0; overflow: hidden; }
-#hud .glass canvas { position: absolute; width: 520px; height: 520px; opacity: 0.7; mix-blend-mode: screen; animation: crack 0.18s ease-out both; }
-@keyframes crack { from { transform: scale(0.6); opacity: 0; } }
+#hud .glass .crack { position: absolute; width: 0; height: 0; animation: crack 0.12s ease-out both; }
+#hud .glass .crack canvas { position: absolute; left: 0; top: 0; width: 760px; height: 760px; opacity: 0.85; }
+#hud .glass .crack::before { content: ''; position: absolute; left: -40px; top: -40px; width: 80px; height: 80px; border-radius: 50%; backdrop-filter: blur(3px) brightness(1.15); -webkit-backdrop-filter: blur(3px) brightness(1.15); }
+@keyframes crack { from { opacity: 0; transform: scale(0.85); } }
 /* intro: black halves split open from a seam across the middle */
 #hud .intro { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
 #hud .intro i { position: absolute; left: 0; right: 0; height: 50.5%; background: #070708; transition: transform 0.85s cubic-bezier(.7,0,.2,1); }
 #hud .intro .t { top: 0; }
 #hud .intro .b { bottom: 0; }
-#hud .intro::after { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 2px; margin-top: -1px; background: var(--rust); box-shadow: 0 0 14px 2px rgba(216,100,42,0.7); transform: scaleX(0); transition: transform 0.4s ease-out, opacity 0.3s 0.25s; }
-#hud .intro.shut::after { transform: scaleX(1); opacity: 1; }
-#hud .intro.open::after { transform: scaleX(1); opacity: 0; }
 #hud .intro.open .t { transform: translateY(-101%); }
 #hud .intro.open .b { transform: translateY(101%); }
-#hud .intro.instant i, #hud .intro.instant::after { transition: none; }
+#hud .intro.instant i { transition: none; }
 
 /* countdown */
 #hud .count { position: absolute; left: 50%; top: 32%; transform: translate(-50%, -50%) skewX(-6deg); font: 900 clamp(70px, 14vw, 150px)/1 var(--display); color: var(--white); -webkit-text-stroke: 3px #0e0f11; paint-order: stroke fill; text-shadow: 0 5px 0 rgba(0,0,0,0.55); }
@@ -178,7 +187,7 @@ const CSS = `
   #hud .map { width: 112px; height: 112px; }
   #hud .armor { left: calc(var(--gx) + 116px); width: 70px; height: 110px; }
   #hud .pop { font-size: 22px; } #hud .pop.combo { font-size: 28px; } #hud .pop.kill { font-size: 38px; }
-  #hud .glass canvas { width: 340px; height: 340px; }
+  #hud .glass .crack canvas { width: 460px; height: 460px; }
   #hud .results h2 { font-size: 50px; }
   #hud .results .box { gap: 6px; padding: 12px 16px 14px; }
   #hud .results .list { max-height: 46vh; }
@@ -249,6 +258,8 @@ export function createHud({ touch = false } = {}) {
     <div class="glass"></div>
     <div class="vig"></div>
     <div class="flash"></div>
+    <div class="ret" hidden><i></i></div>
+    <div class="lockbox" hidden><span>LOCKED</span></div>
     <div class="hm"><i></i><i></i><i></i><i></i></div>
     <div class="pops"></div>
     <div class="count" hidden></div>
@@ -431,35 +442,79 @@ export function createHud({ touch = false } = {}) {
   let xray = null, vigT = 0, vigBase = 0, hpShown = -1, flashV = 0;
   const flashEl = $('.flash');
   const vig = $('.vig'), hm = $('.hm'), pops = $('.pops'), glass = $('.glass');
+  // Bullet-strike on the windscreen: a crushed, frosted pit; radial cracks that taper and
+  // branch, a few running long; spider-web rings joining neighbouring rays in jagged
+  // steps; loose chips near the centre. Each line is drawn as a refraction pair (dark
+  // offset under a bright edge) so it reads as broken glass, not white scribbles.
   const crackCanvas = (seed) => {
-    const c = document.createElement('canvas');
-    c.width = c.height = 512;
+    const S = 900, c = document.createElement('canvas');
+    c.width = c.height = S;
     const g = c.getContext('2d');
     let r = seed;
     const rnd = () => ((r = (r * 16807) % 2147483647) / 2147483647);
-    g.translate(256, 256);
-    g.lineCap = 'round';
-    const rays = 11 + Math.floor(rnd() * 6), ends = [];
-    for (let k = 0; k < rays; k++) {
-      let a = (k / rays) * Math.PI * 2 + rnd() * 0.4, x = 0, y = 0;
-      const pts = [[0, 0]];
-      const len = 120 + rnd() * 130;
-      for (let d = 0; d < len; d += 14 + rnd() * 18) { a += (rnd() - 0.5) * 0.5; x += Math.cos(a) * 18; y += Math.sin(a) * 18; pts.push([x, y]); }
-      ends.push(pts);
-      for (const [w, col] of [[3.2, 'rgba(0,0,0,0.35)'], [1.3, 'rgba(255,255,255,0.9)']]) {
-        g.lineWidth = w; g.strokeStyle = col; g.beginPath();
-        pts.forEach(([px, py], j) => (j ? g.lineTo(px, py) : g.moveTo(px, py)));
-        g.stroke();
+    g.translate(S / 2, S / 2);
+    g.lineCap = g.lineJoin = 'round';
+    const stroke = (pts, w) => {
+      const path = () => { g.beginPath(); pts.forEach(([x, y], j) => (j ? g.lineTo(x, y) : g.moveTo(x, y))); };
+      g.save(); g.translate(1.2, 1.4); path(); g.strokeStyle = 'rgba(0,0,0,0.32)'; g.lineWidth = w + 1.2; g.stroke(); g.restore();
+      path(); g.strokeStyle = 'rgba(255,255,255,0.07)'; g.lineWidth = w + 5; g.stroke();
+      path(); g.strokeStyle = 'rgba(245,250,255,0.82)'; g.lineWidth = w; g.stroke();
+    };
+    // a crack: wandering polyline, tapering, sometimes forking
+    const rays = [];
+    const crack = (x, y, a, len, w, depth) => {
+      const pts = [[x, y]];
+      let d = 0;
+      while (d < len) {
+        const st = 9 + rnd() * 16;
+        a += (rnd() - 0.5) * 0.32;
+        x += Math.cos(a) * st; y += Math.sin(a) * st; d += st;
+        pts.push([x, y]);
+        if (depth < 2 && rnd() < 0.09) crack(x, y, a + (rnd() < 0.5 ? -1 : 1) * (0.35 + rnd() * 0.5), len * (0.25 + rnd() * 0.3), w * 0.6, depth + 1);
+      }
+      // taper: draw in a few chunks getting thinner
+      const n = pts.length, chunks = 4;
+      for (let k = 0; k < chunks; k++) stroke(pts.slice(Math.floor((k * n) / chunks), Math.floor(((k + 1) * n) / chunks) + 1), Math.max(0.5, w * (1 - k / chunks)));
+      return pts;
+    };
+    const nr = 13 + Math.floor(rnd() * 7);
+    for (let k = 0; k < nr; k++) {
+      const a = (k / nr) * Math.PI * 2 + (rnd() - 0.5) * 0.35, long = rnd() < 0.25;
+      rays.push({ a, pts: crack(Math.cos(a) * 10, Math.sin(a) * 10, a, long ? 330 + rnd() * 110 : 120 + rnd() * 160, 2.1 + rnd() * 0.8, 0) });
+    }
+    rays.sort((p, q) => p.a - q.a);
+    // spider-web rings between neighbouring rays, denser near the strike
+    const at = (pts, rad) => pts.find(([x, y]) => Math.hypot(x, y) >= rad) ?? null;
+    for (const [rad, prob] of [[30, 0.95], [55, 0.9], [88, 0.75], [128, 0.55], [175, 0.35], [230, 0.2]]) {
+      for (let k = 0; k < rays.length; k++) {
+        if (rnd() > prob) continue;
+        const A = at(rays[k].pts, rad * (0.9 + rnd() * 0.2)), B = at(rays[(k + 1) % rays.length].pts, rad * (0.9 + rnd() * 0.2));
+        if (!A || !B) continue;
+        const pts = [A];
+        for (let q = 1; q < 4; q++) { const u = q / 4; pts.push([A[0] + (B[0] - A[0]) * u + (rnd() - 0.5) * 7, A[1] + (B[1] - A[1]) * u + (rnd() - 0.5) * 7]); }
+        pts.push(B);
+        stroke(pts, rad < 60 ? 1.3 : 0.9);
       }
     }
-    for (const ring of [34, 70, 115]) { // concentric breaks between neighbouring rays
-      g.lineWidth = 1; g.strokeStyle = 'rgba(255,255,255,0.7)'; g.beginPath();
-      ends.forEach((pts, k) => { const p = pts[Math.min(pts.length - 1, Math.round(ring / 18))]; if (rnd() < 0.75) (k ? g.lineTo(...p) : g.moveTo(...p)); });
-      g.stroke();
+    // crushed centre: frosted pit with fine fractures and a dark hole
+    const fr = g.createRadialGradient(0, 0, 0, 0, 0, 34);
+    fr.addColorStop(0, 'rgba(255,255,255,0.75)'); fr.addColorStop(0.5, 'rgba(235,240,245,0.4)'); fr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = fr; g.beginPath(); g.arc(0, 0, 34, 0, Math.PI * 2); g.fill();
+    g.lineWidth = 0.7;
+    for (let k = 0; k < 160; k++) {
+      const a = rnd() * Math.PI * 2, d0 = rnd() * 26, l = 3 + rnd() * 10;
+      g.strokeStyle = `rgba(255,255,255,${0.25 + rnd() * 0.5})`;
+      g.beginPath(); g.moveTo(Math.cos(a) * d0, Math.sin(a) * d0); g.lineTo(Math.cos(a + (rnd() - 0.5)) * (d0 + l), Math.sin(a + (rnd() - 0.5)) * (d0 + l)); g.stroke();
     }
-    const gr = g.createRadialGradient(0, 0, 0, 0, 0, 40);
-    gr.addColorStop(0, 'rgba(255,255,255,0.55)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
-    g.fillStyle = gr; g.beginPath(); g.arc(0, 0, 40, 0, Math.PI * 2); g.fill();
+    g.fillStyle = 'rgba(20,22,26,0.55)'; g.beginPath(); g.arc(0, 0, 3.5, 0, Math.PI * 2); g.fill();
+    // loose chips: small facets catching the light
+    for (let k = 0; k < 18; k++) {
+      const a = rnd() * Math.PI * 2, d0 = 14 + rnd() * 50, s0 = 3 + rnd() * 7;
+      g.fillStyle = `rgba(255,255,255,${0.08 + rnd() * 0.18})`;
+      g.beginPath();
+      for (let q = 0; q < 3 + Math.floor(rnd() * 2); q++) { const b = a + q * 2.1 + rnd(); g.lineTo(Math.cos(a) * d0 + Math.cos(b) * s0, Math.sin(a) * d0 + Math.sin(b) * s0); }
+      g.fill();
+    }
     return c;
   };
 
@@ -523,14 +578,31 @@ export function createHud({ touch = false } = {}) {
       vig.style.opacity = Math.min(1, vigBase + vigT).toFixed(3);
     },
     flash(v) { flashV = Math.max(flashV, v); },
+    // reticle centre / radius in px (null hides); lock box at a screen point, size px (null hides)
+    reticle(x, y, r) {
+      const el = $('.ret');
+      if (x === null) { el.hidden = true; return; }
+      el.hidden = false;
+      Object.assign(el.style, { left: `${x}px`, top: `${y}px`, width: `${r * 2}px`, height: `${r * 2}px` });
+    },
+    lock(x, y, size, id) {
+      const el = $('.lockbox');
+      $('.ret').classList.toggle('on', x !== null);
+      if (x === null) { el.hidden = true; el.dataset.id = ''; return; }
+      if (el.dataset.id !== String(id)) { el.dataset.id = String(id); el.classList.remove('new'); void el.offsetWidth; el.classList.add('new'); }
+      el.hidden = false;
+      Object.assign(el.style, { left: `${x}px`, top: `${y}px`, width: `${size}px`, height: `${size}px` });
+    },
     hurt(amount) { vigT = Math.min(0.9, vigT + 0.18 + amount * 4); },
     // cracked glass when HP crosses a threshold; cleared on a new race
     crack() {
-      const c = crackCanvas(1 + Math.floor(Math.random() * 1e6));
-      const x = Math.random() < 0.5 ? -8 - Math.random() * 12 : 52 + Math.random() * 14, y = -6 + Math.random() * 50;
-      c.style.left = `${x}%`; c.style.top = `${y}%`;
-      c.style.transform = `rotate(${Math.random() * 360}deg)`;
-      glass.append(c);
+      const w = document.createElement('div'), c = crackCanvas(1 + Math.floor(Math.random() * 1e6));
+      w.className = 'crack';
+      const x = Math.random() < 0.5 ? 6 + Math.random() * 22 : 70 + Math.random() * 22, y = 12 + Math.random() * 55;
+      w.style.left = `${x}%`; w.style.top = `${y}%`;
+      c.style.transform = `translate(-50%, -50%) rotate(${Math.random() * 360}deg)`;
+      w.append(c);
+      glass.append(w);
     },
     clearCracks() { glass.innerHTML = ''; vigT = 0; },
     hitmarker(kind = 'hit') {

@@ -22,14 +22,15 @@ varying vec3 vP; varying vec3 vN; varying vec3 vV;
 // rectangular panels: a nose band, a tail band, and a side band each side between them
 void main() {
   float nz = (vP.z - zc) / hz, nx = vP.x / hx;
-  vec3 c = vec3(0.5, 0.55, 0.52) * 0.35; // the hull between the panels
+  vec3 ok = vec3(0.45, 1.0, 0.5);
+  vec3 c = ok; // the hull reads as one healthy ghost; panels only show once they're hurt
   float seam = 0.0;
   if (nz > 0.58) { c = cF; seam = smoothstep(0.05, 0.0, nz - 0.58); }
   else if (nz < -0.58) { c = cB; seam = smoothstep(0.05, 0.0, -0.58 - nz); }
   else if (abs(nx) > 0.5) { c = nx < 0.0 ? cR : cL; seam = max(smoothstep(0.05, 0.0, abs(nx) - 0.5), smoothstep(0.05, 0.0, 0.58 - abs(nz))); }
   float rim = 1.0 - abs(dot(normalize(vN), normalize(vV)));
   float a = 0.08 + pow(rim, 2.2) * 0.9;
-  a *= 1.0 - seam * 0.85;
+  a *= 1.0 - seam * 0.85 * step(0.04, distance(c, ok));
   gl_FragColor = vec4(c * a * 1.6, 1.0);
 }`;
 

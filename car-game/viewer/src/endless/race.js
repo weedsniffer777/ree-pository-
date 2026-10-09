@@ -214,6 +214,7 @@ export class Race {
     this.player.armor.reset();
     wear(this.player.mats, this.player.armor);
     this.wreckage.restoreAll();
+    this.car.dead = false;
     unchar(this.model);
     this.model.position.y = 0;
     for (const r of this.rivals) { unchar(r.model); r.model.position.y = 0; }
@@ -346,7 +347,7 @@ export class Race {
       tv.set(v.x * (0.7 + Math.random() * 0.3) + (Math.random() - 0.5) * 16, 4 + Math.random() * 12, v.z * (0.7 + Math.random() * 0.3) + (Math.random() - 0.5) * 16);
       this.debris.spawn(tmp, tv, { size: [0.12 + Math.random() * 0.3, 0.05 + Math.random() * 0.15, 0.12 + Math.random() * 0.35], life: 3 + Math.random() * 3, spin: 16, color: [0x1c1c1c, 0x2a2b2c, 0x141414][k % 3], burn: k % 4 === 0 });
     }
-    if (me) { c.vx *= 0.5; c.vz *= 0.5; this.over('wrecked'); }
+    if (me) { c.dead = true; c.vx *= 0.85; c.vz *= 0.85; this.over('wrecked'); }
     else { target.deadT = 0; target.spin = (Math.random() - 0.5) * 2.2; target.v *= 0.7; }
     if (!me && this.rivals.every((r) => r.armor.wrecked) && this.state === 'race') this.over('annihilation');
   }
@@ -375,7 +376,7 @@ export class Race {
       move(A, pen * wA / (wA + wC)); move(C, -pen * wC / (wA + wC));
       const vrel = (vA[0] - vC[0]) * nx + (vA[1] - vC[1]) * nz;
       if (vrel >= 0) continue;
-      const j = -1.3 * vrel / 2;
+      const j = -(A.ref.armor?.wrecked || C.ref.armor?.wrecked ? 1 : 1.3) * vrel / 2; // wrecks: dead stop, no rebound
       const kickB = (body, s) => {
         if (body.ref === this.player) { c.vx += nx * s; c.vz += nz * s; c.hit(Math.abs(s)); } else body.ref.kick(nx * s, nz * s);
       };

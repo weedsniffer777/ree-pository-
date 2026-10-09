@@ -127,7 +127,7 @@ export class CarController {
         else if (this.revOK || (this.stopT += dt) > 0.9) vf = Math.max(-11, vf - 10 * dt * brake);
         else vf = Math.max(0, vf - 20 * dt);
       }
-      if (!inp.throttle && !brake) vf -= vf * 0.3 * dt;
+      if (!inp.throttle && !brake) vf -= vf * (this.dead ? 1.1 : 0.3) * dt; // a wreck grinds to a halt
       vf -= vf * surf.drag * dt * 0.35;
       this.braking = braking;
       const grip = surf.grip + (0.6 - surf.grip) * this.drift;
@@ -219,8 +219,9 @@ export class CarController {
         this.z += nz * pen;
         const vn = this.vx * nx + this.vz * nz;
         if (vn < 0) {
-          this.vx -= nx * vn * 1.3;
-          this.vz -= nz * vn * 1.3;
+          const e = this.dead ? 1 : 1.3; // wrecks don't bounce off, they stop against it
+          this.vx -= nx * vn * e;
+          this.vz -= nz * vn * e;
           this.hit(-vn);
         }
       }
@@ -233,8 +234,9 @@ export class CarController {
     this.z -= rz * dl;
     const vn = this.vx * rx + this.vz * rz;
     if (vn * dl > 0) {
-      this.vx -= rx * vn * 1.2;
-      this.vz -= rz * vn * 1.2;
+      const e = this.dead ? 1 : 1.2;
+      this.vx -= rx * vn * e;
+      this.vz -= rz * vn * e;
       this.hit(Math.abs(vn));
     }
   }

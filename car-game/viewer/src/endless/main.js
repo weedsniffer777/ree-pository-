@@ -60,6 +60,7 @@ const GR = THEME ? THEME.grade : { saturation: 1.58, contrast: 1.04, lift: 0.07,
 grade.uniforms.saturation.value = GR.saturation;
 grade.uniforms.contrast.value = GR.contrast;
 grade.uniforms.lift.value = GR.lift;
+renderer.toneMappingExposure = GR.exposure ?? 1.12; // desert maps run a touch brighter
 grade.uniforms.toon.value = GR.toon; // punchier than the garage; the sky dome is pre-desaturated to match
 composer.addPass(grade);
 
@@ -126,7 +127,7 @@ const isPaused = () => devOpen || userPaused;
 createDevKit({ viewerUrl: import.meta.env.DEV ? 'index.html' : 'garage.html', onStats: () => hud.toggleDebug(), onOpenChange: (on) => { devOpen = on; keys.clear(); } });
 hud.onPause = (on) => { userPaused = on; keys.clear(); };
 // explosions, wreck debris, and the brass + belt links thrown out of the guns
-const booms = new Booms(scene, { dust, sparks: embers });
+const booms = new Booms(scene, { dust, sparks: embers, sun: SUN_DIR });
 const debris = new Bits(scene, new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ roughness: 0.75, metalness: 0.45 }), { max: 220, height: terrainHeight, shadow: true });
 const casings = new Bits(scene, new THREE.CylinderGeometry(0.022, 0.022, 0.11, 6), new THREE.MeshStandardMaterial({ color: 0xc8963a, roughness: 0.35, metalness: 0.9 }), { max: 140, height: terrainHeight, bounce: 0.45 });
 const links = new Bits(scene, new THREE.BoxGeometry(0.075, 0.022, 0.05), new THREE.MeshStandardMaterial({ color: 0x2a2b2c, roughness: 0.5, metalness: 0.8 }), { max: 140, height: terrainHeight, bounce: 0.3 });
@@ -192,7 +193,7 @@ function autopilot() {
 
 function readInput() {
   if (race?.state === 'done' || (race && race.player.armor.wrecked)) {
-    if (race.player.armor.wrecked) return { throttle: 0, brake: 1, steer: 0, boost: false, fire: false };
+    if (race.player.armor.wrecked) return { throttle: 0, brake: 0, steer: 0, boost: false, fire: false }; // the wreck just rolls on
     return { ...autopilot(), boost: false, fire: false, cap: 20 }; // cool-down lap after the flag
   }
   if (auto) return { ...autopilot(), cap: race?.inputCap || 0, fire: race ? race.canFire && params.get('fire') === '1' : params.get('fire') === '1' };
@@ -212,6 +213,32 @@ function readInput() {
   };
   freeCam = k('KeyC') || rightDrag;
   return inp;
+}
+
+// ---- Lock-on: the reticle sits where the guns point (60 m ahead, so it rides hills);
+// the nearest live rival inside it is locked, boxed, and the guns lead it ----
+const LOCK_R = coarse ? 70 : 95, lockV = new THREE.Vector3(), lockAim = new THREE.Vector3();
+function updateLock() {
+  if (!race || params.get('ui') === '0') return null;
+  const fx = Math.sin(car.yaw), fz = Math.cos(car.yaw), W = innerWidth, Hh = innerHeight;
+  const toScreen = (x, y, z) => { lockV.set(x, y, z).project(camera); return lockV.z < 1 ? [(lockV.x * 0.5 + 0.5) * W, (-lockV.y * 0.5 + 0.5) * Hh] : null; };
+  const c0 = toScreen(car.x + fx * 60, car.y + 0.9, car.z + fz * 60);
+  if (!c0 || race.player.armor.wrecked || race.state === 'done') { hud.reticle(null); hud.lock(null); return null; }
+  hud.reticle(c0[0], c0[1], LOCK_R);
+  let best = null, bd = Infinity;
+  for (const r of race.rivals) {
+    if (r.armor.wrecked || !r.rig.visible) continue;
+    const dx = r.x - car.x, dz = r.z - car.z, d = Math.hypot(dx, dz);
+    if (d > 150 || d < 3 || dx * fx + dz * fz <= 0) continue;
+    const sp = toScreen(r.x, r.y + 0.8, r.z);
+    if (!sp || Math.hypot(sp[0] - c0[0], sp[1] - c0[1]) > LOCK_R) continue;
+    if (d < bd) { bd = d; best = { r, sp }; }
+  }
+  if (!best) { hud.lock(null); return null; }
+  const size = Math.max(30, Math.min(150, 1100 / bd));
+  hud.lock(best.sp[0], best.sp[1], size, best.r.slot);
+  const lead = bd / 420; // round flight time
+  return lockAim.set(best.r.x + best.r.vx * lead, best.r.y + 0.8, best.r.z + best.r.vz * lead);
 }
 
 // ---- Effects ----
@@ -470,7 +497,7 @@ function frame(now) {
     sun.target.position.set(cx, cy, cz);
   }
 
-  guns.update(dt, inp.fire, car);
+  guns.update(dt, inp.fire, car, updateLock());
   booms.update(dt);
   casings.update(dt);
   links.update(dt);

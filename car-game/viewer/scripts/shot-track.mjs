@@ -17,7 +17,7 @@ const errors = [];
 page.on('pageerror', (e) => errors.push(e.stack?.split('\n').slice(0, 3).join(' ') ?? e.message));
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 for (const s of shots) {
-  const [name, q = '', size = ''] = s.split('|'); // size "WxH" = phone (touch) viewport
+  const [name, q = '', size = '', wait = '300'] = s.split('|'); // size "WxH" = phone (touch) viewport; wait ms before the shot
   let pg = page;
   if (size) {
     const [width, height] = size.split('x').map(Number);
@@ -26,7 +26,7 @@ for (const s of shots) {
   }
   await pg.goto(`http://localhost:5197/endless.html?${/(^|&)ui=/.test(q) ? '' : 'ui=0&'}${q}`);
   try { await pg.waitForFunction(() => window.__ready === true, null, { timeout: 120000 }); } catch (e) { console.error(name, 'never ready', errors.slice(-3)); continue; }
-  await pg.waitForTimeout(300);
+  await pg.waitForTimeout(Number(wait));
   await pg.screenshot({ path: `${out}/${name}.png` });
   console.log(name, JSON.stringify(await pg.evaluate(() => ({ ...window.__stats, dbg: window.__dbg }))));
   if (pg !== page) await pg.close();
