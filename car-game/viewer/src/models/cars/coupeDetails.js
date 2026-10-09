@@ -217,14 +217,14 @@ export function addDetails(car, { skinMats, dloRear }) {
   car.add(box(1.56, 0.17, 0.03, dark, { pos: [0, 0.66, -2.235] }));
   for (let i = 0; i < 4; i++) car.add(box(0.3, 0.012, 0.02, metal, { pos: [0, 0.6 + i * 0.04, -2.25] }));
   // brake lights: one material per side so each lights up under braking and can be blown out
-  const brakeMats = { L: glowMat('#c8261a', 0.65).clone(), R: glowMat('#c8261a', 0.65).clone() };
-  brakeMats.L.userData.brake = 'L'; brakeMats.R.userData.brake = 'R';
+  const brakeMats = { L: glowMat('#c8261a', 0.65).clone(), R: glowMat('#c8261a', 0.65).clone(), LA: glowMat('#e08a1c', 0.5).clone(), RA: glowMat('#e08a1c', 0.5).clone() };
+  for (const k in brakeMats) brakeMats[k].userData.brake = k; // LA / RA: the amber lamp on that side
   car.userData.brakeMats = brakeMats;
   for (const s of [-1, 1]) {
     car.add(box(0.36, 0.14, 0.05, dark, { pos: [s * 0.6, 0.66, -2.245] }));
     for (let i = 0; i < 4; i++) {
       const x = s * (0.47 + i * 0.085);
-      car.add(box(0.075, 0.1, 0.02, i === 0 ? glowMat('#e08a1c', 0.5) : brakeMats[s > 0 ? 'L' : 'R'], { pos: [x, 0.66, -2.272] }));
+      car.add(box(0.075, 0.1, 0.02, brakeMats[(s > 0 ? 'L' : 'R') + (i === 0 ? 'A' : '')], { pos: [x, 0.66, -2.272] }));
     }
     // welded guard cage
     for (let i = 0; i < 4; i++) tag(tube([s * (0.44 + i * 0.105), 0.585, -2.31], [s * (0.44 + i * 0.105), 0.735, -2.31], 0.007, metal, 5), 'back', 2);

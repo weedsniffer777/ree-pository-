@@ -116,8 +116,8 @@ function rivalTemplate(model) {
 function cloneCar(base, color) {
   const { model, skins, brakeMats } = rivalTemplate(base);
   const m = model.clone(true);
-  const src = skins, mats = { side: src.side.clone(), front: src.front.clone(), back: src.back.clone(), top: paintTopSkin(color), lamps: { L: brakeMats.L.clone(), R: brakeMats.R.clone() } };
-  const map = new Map([[src.side, mats.side], [src.front, mats.front], [src.back, mats.back], [src.top, mats.top], [brakeMats.L, mats.lamps.L], [brakeMats.R, mats.lamps.R]]);
+  const src = skins, mats = { side: src.side.clone(), front: src.front.clone(), back: src.back.clone(), top: paintTopSkin(color), lamps: Object.fromEntries(Object.entries(brakeMats).map(([k, m]) => [k, m.clone()])) };
+  const map = new Map([[src.side, mats.side], [src.front, mats.front], [src.back, mats.back], [src.top, mats.top], ...Object.keys(brakeMats).map((k) => [brakeMats[k], mats.lamps[k]])]);
   m.traverse((o) => {
     if (!o.isMesh) return;
     if (Array.isArray(o.material)) o.material = o.material.map((x) => map.get(x) ?? x);
@@ -706,10 +706,9 @@ export class Race {
     for (const q of [this.player, ...this.rivals]) {
       const on = !q.armor.wrecked && (q === this.player ? this.car.input?.brake : q.inp?.brake) > 0;
       for (const k of ['L', 'R']) {
-        const m = q.lamps.mats?.[k];
-        if (!m) continue;
-        m.emissiveIntensity = q.lamps.out[k] || q.armor.wrecked ? 0 : on ? 2.6 : 0.6;
-        m.color.setHex(q.lamps.out[k] ? 0x1a0d0b : 0xc8261a);
+        const m = q.lamps.mats?.[k], am = q.lamps.mats?.[k + 'A'], dead = q.lamps.out[k];
+        if (m) { m.emissiveIntensity = dead || q.armor.wrecked ? 0 : on ? 2.6 : 0.6; m.color.setHex(dead ? 0x1a0d0b : 0xc8261a); }
+        if (am) { am.emissiveIntensity = dead || q.armor.wrecked ? 0 : 0.5; am.color.setHex(dead ? 0x1a140b : 0xe08a1c); } // the amber goes with its side
       }
     }
 

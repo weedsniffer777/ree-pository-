@@ -12,9 +12,9 @@ await page.waitForFunction(() => window.__ready === true, null, { timeout: 15000
 await page.waitForTimeout(1500);
 console.log(await page.evaluate(() => {
   const r = window.__game.race, p = r.player;
-  r.damage(p, 'back', 0.4, null, null, 'wall'); r.damage(p, 'back', 0.3, null, null, 'wall');
+  try { r.damage(p, 'back', 0.4, null, null, 'wall'); r.damage(p, 'back', 0.3, null, null, 'wall');
   r.damage(p, 'left', 0.4, null, null, 'wall'); r.damage(p, 'left', 0.3, null, null, 'wall');
-  p.armor.core = 1;
+  p.armor.core = 1; } catch (e) { return String(e.stack).slice(0, 600); }
   return { scars: r.scars.list.length, lamps: p.lamps.out, back: p.armor.z.back };
 }));
 await page.waitForTimeout(2500);
