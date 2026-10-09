@@ -17,7 +17,7 @@ console.log(await page.evaluate(() => {
   try {
     const THREE_V = r.holes.tv.constructor;
     const p = new THREE_V(c.x, c.y + 0.8, c.z + 1.5), d = new THREE_V(0, 0, -1);
-    r.damage(r.player, 'front', 0.01, r.rivals[0], p, 'gun', d); for (let k = 0; k < 1800; k++) { r.stepAI(1 / 120); if (k % 4 === 3) r.update(1 / 30); }
+    r.damage(r.player, 'front', 0.01, r.rivals[0], p, 'gun', d); window.__hud_crack_test = true; for (let k = 0; k < 1800; k++) { r.stepAI(1 / 120); if (k % 4 === 3) r.update(1 / 30); }
     return { ok: true, t: r.t, rivals: r.rivals.map((q) => [Math.round(q.prog), Math.round(q.v), Math.round(q.lat * 10) / 10]) };
   } catch (e) { return { err: String(e) }; }
 }));

@@ -17,6 +17,9 @@ const CSS = `
   --gx: calc(16px + env(safe-area-inset-left, 0px)); --gxr: calc(16px + env(safe-area-inset-right, 0px));
   --gy: calc(16px + env(safe-area-inset-top, 0px)); --gyb: calc(16px + env(safe-area-inset-bottom, 0px));
   position: fixed; inset: 0; pointer-events: none; color: var(--white); font-family: var(--sign); }
+/* phones: no selection, long-press callouts, magnifier or tap highlight anywhere in the game */
+html, body, #hud, #hud * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+#hud .touch, #hud .touch * { touch-action: none; }
 #hud .panel { position: relative; background: ${NOISE}, var(--panel); clip-path: var(--cut); }
 #hud .panel::before { content: ''; position: absolute; left: 12px; right: 0; top: 0; height: 2px; background: linear-gradient(90deg, var(--rust), rgba(216,100,42,0.15)); }
 #hud .lbl { font: 800 10px/1 var(--sign); letter-spacing: 0.22em; text-transform: uppercase; color: var(--dim); }
@@ -308,6 +311,8 @@ export function createHud({ touch = false } = {}) {
     <div class="paused" hidden><h2>PAUSED</h2><button class="main" data-a="resume">RESUME</button><button data-a="restart">RESTART</button></div>
     <pre class="debug" hidden></pre>`;
   document.body.append(root);
+  // and no context menu / selection start from a held finger
+  for (const ev of ['contextmenu', 'selectstart', 'dragstart']) document.addEventListener(ev, (e) => e.preventDefault());
   const $ = (s) => root.querySelector(s);
   // left half of the screen steers left, right half steers right; buttons take their own touches
   const t = { left: false, right: false, boost: false, brake: false, fire: false, active: touch, get steer() { return (this.right ? 1 : 0) - (this.left ? 1 : 0); } };

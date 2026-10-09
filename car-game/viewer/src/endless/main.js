@@ -22,6 +22,7 @@ import { Race } from './race.js';
 import { Booms, Bits } from './boom.js';
 import { bakeCar } from './carparts.js';
 import { buildRamps } from './ramps.js';
+import { Glass } from './glass.js';
 import { nearest, wAt, RAIL_LAT } from './route.js';
 import { createDevKit } from './devkit.js';
 import { Tracers, Guns } from '../level/combat.js';
@@ -122,6 +123,10 @@ window.__game = { car, pursuer, skids };
 const coarse = matchMedia('(pointer: coarse)').matches;
 const hud = createHud({ touch: coarse });
 if (params.get('ui') === '0') hud.hide();
+// cracked windscreen: a refracting post pass on the frame replaces the old DOM overlay
+const glass = new Glass(composer);
+{ const clr = hud.clearCracks.bind(hud); hud.crack = () => glass.add(); hud.clearCracks = () => { clr(); glass.clear(); }; }
+for (let k = 0; k < num('crack', 0); k++) glass.add(); // dev: preview the shattered glass
 if (params.get('stats') === '1') hud.toggleDebug();
 // the garage viewer: index.html in dev, garage.html next to the page in the artifact
 let devOpen = false, userPaused = false;
@@ -559,6 +564,7 @@ function frame(now) {
   updateTutorial(dt);
 
   renderer.info.reset();
+  glass.update();
   composer.render();
   frames++;
   fpsT += dt;

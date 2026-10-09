@@ -121,29 +121,42 @@ export class CarController {
       if (this.drift > 0.3 && inp.brake > 0 && Math.abs(inp.steer) < 0.15) this.brakeLatch = true;
       const brake = this.brakeLatch ? 0 : inp.brake;
       const braking = brake > 0 && vf > 6;
-      const driftWant = braking ? Math.min(1, Math.abs(this.steerS) * 1.3) * Math.min(1, (vf - 6) / 14) : 0;
-      this.drift += (driftWant - this.drift) * Math.min(1, dt * (driftWant > this.drift ? 4.5 : 2.5));
+      // Drift: S + steer kicks the tail out; once sliding, holding the steer with the
+      // throttle down keeps it going as a power slide (no need to keep braking), and it
+      // ends when you straighten up or the speed is gone.
+      const sliding = this.drift > 0.3 && Math.abs(this.steerS) > 0.35 && inp.throttle > 0 && vf > 8;
+      const driftWant = braking ? Math.min(1, Math.abs(this.steerS) * 1.3) * Math.min(1, (vf - 6) / 14)
+        : sliding ? Math.min(0.85, Math.abs(this.steerS) * 1.1) * Math.min(1, (vf - 8) / 12) : 0;
+      this.drift += (driftWant - this.drift) * Math.min(1, dt * (driftWant > this.drift ? 4.5 : 1.6));
       this.driftMode = this.drift > 0.35;
       if (inp.brake > 0 && vf < -3) {
         // already rolling backwards (after a J-turn): S keeps driving it backwards, Death
         // Race style, instead of killing the momentum
         vf = Math.max(-30, vf - 7 * dt);
       } else if (brake > 0) {
-        // in a committed drift the brake mostly unloads the rear instead of stopping the
-        // car: speed bleeds off gently, and less still with the throttle down
-        if (vf > 0.5) vf -= 20 * (1 - this.drift * (inp.throttle > 0 ? 0.94 : 0.86)) * dt * brake;
+        // brakes bite hard at speed and progressively softer as the car slows (no snap
+        // stop); in a committed drift the brake mostly unloads the rear instead
+        if (vf > 0.5) vf -= (7 + 13 * Math.min(1, vf / 22)) * (1 - this.drift * (inp.throttle > 0 ? 0.92 : 0.8)) * dt * brake;
         else if (this.revOK || (this.stopT += dt) > 0.9) vf = Math.max(-11, vf - 10 * dt * brake);
-        else vf = Math.max(0, vf - 20 * dt);
+        else vf = Math.max(0, vf - 7 * dt);
       }
       if (!inp.throttle && !brake) vf -= vf * (this.dead ? 1.1 : 0.3) * dt; // a wreck grinds to a halt
       vf -= vf * surf.drag * dt * 0.35;
       this.braking = braking;
-      const grip = surf.grip + (0.6 - surf.grip) * this.drift;
-      const vl0 = vl;
-      vl *= Math.exp(-grip * dt);
-      // drift-corrected speed: part of the sideways slide scrubbed off is carried forward
-      // as the car straightens, so a held drift doesn't dump momentum
-      if (this.drift > 0.2 && vf > 0) vf = Math.min(Math.max(vf, want), vf + Math.abs(vl0 - vl) * 0.45 * this.drift);
+      // Momentum: the velocity keeps its size and swings round toward where the car points
+      // (fast with full grip, slowly in a drift), instead of the sideways part being
+      // thrown away. Tyres scrub a little speed in proportion to how sideways it is.
+      const grip = surf.grip + (0.75 - surf.grip) * this.drift;
+      const spd = Math.hypot(vf, vl);
+      if (spd > 0.3) {
+        const fwd = vf >= 0 ? 1 : -1;
+        let beta = Math.atan2(vl, Math.abs(vf)); // slip angle
+        beta *= Math.exp(-grip * dt);
+        const scrub = Math.exp(-dt * (0.08 + 0.22 * this.drift) * Math.abs(Math.sin(beta)) * (spd > 12 ? 1 : 2));
+        const s2 = spd * scrub;
+        vf = fwd * s2 * Math.cos(beta);
+        vl = s2 * Math.sin(beta);
+      }
       this.wheelspin = inp.throttle > 0 ? Math.max(Math.abs(this.yawRate) > 0.9 ? 1 : 0, 1 - Math.abs(vf) / 7) : 0;
       this.skid = Math.max(Math.min(1, (Math.abs(vl) - 2) / 4), braking && this.drift < 0.3 ? 0.75 : 0, this.wheelspin > 0.5 && Math.abs(vf) < 12 ? 0.8 : 0);
       const sp = Math.abs(vf);
