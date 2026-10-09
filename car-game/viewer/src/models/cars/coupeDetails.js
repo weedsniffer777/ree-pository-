@@ -129,7 +129,7 @@ export function addDetails(car, { skinMats, dloRear }) {
   const RY = 1.37;
   const rack = new THREE.Group();
   rack.name = 'roof_rack';
-  rack.userData.part = 'rack';
+  Object.assign(rack.userData, { part: 'rack', armor: true }); // only comes off when the car goes up
   car.add(rack);
   for (const s of [-1, 1]) {
     for (const z of [0.1, -0.86]) rack.add(tube([s * 0.55, cabinTop(z) - 0.01, z], [s * 0.58, RY, z], 0.018, metal, 6));
@@ -216,11 +216,15 @@ export function addDetails(car, { skinMats, dloRear }) {
   // =================== Rear: tail panel, caged lights, ducktail, armored bumper, exhausts ===================
   car.add(box(1.56, 0.17, 0.03, dark, { pos: [0, 0.66, -2.235] }));
   for (let i = 0; i < 4; i++) car.add(box(0.3, 0.012, 0.02, metal, { pos: [0, 0.6 + i * 0.04, -2.25] }));
+  // brake lights: one material per side so each lights up under braking and can be blown out
+  const brakeMats = { L: glowMat('#c8261a', 0.65).clone(), R: glowMat('#c8261a', 0.65).clone() };
+  brakeMats.L.userData.brake = 'L'; brakeMats.R.userData.brake = 'R';
+  car.userData.brakeMats = brakeMats;
   for (const s of [-1, 1]) {
     car.add(box(0.36, 0.14, 0.05, dark, { pos: [s * 0.6, 0.66, -2.245] }));
     for (let i = 0; i < 4; i++) {
       const x = s * (0.47 + i * 0.085);
-      car.add(box(0.075, 0.1, 0.02, i === 0 ? glowMat('#e08a1c', 0.5) : glowMat('#c8261a', 0.65), { pos: [x, 0.66, -2.272] }));
+      car.add(box(0.075, 0.1, 0.02, i === 0 ? glowMat('#e08a1c', 0.5) : brakeMats[s > 0 ? 'L' : 'R'], { pos: [x, 0.66, -2.272] }));
     }
     // welded guard cage
     for (let i = 0; i < 4; i++) tag(tube([s * (0.44 + i * 0.105), 0.585, -2.31], [s * (0.44 + i * 0.105), 0.735, -2.31], 0.007, metal, 5), 'back', 2);
@@ -234,13 +238,14 @@ export function addDetails(car, { skinMats, dloRear }) {
   for (const x of [-0.78, -0.3, 0.3, 0.78]) tag(box(0.03, 0.27, 0.2, metal, { pos: [x, 0.36, -2.33] }), 'back', 3);
   {
     const shackle = new THREE.MeshStandardMaterial({ color: 0xb8962a, roughness: 0.65, metalness: 0.4 });
-    car.add(box(0.16, 0.05, 0.1, metal, { pos: [0, 0.215, -2.33] }));
-    for (const x of [-0.035, 0.035]) car.add(box(0.016, 0.07, 0.08, metal, { pos: [x, 0.17, -2.38] }));
-    car.add(cyl(0.011, 0.011, 0.11, 8, steelMaterial(), { pos: [0, 0.16, -2.39], rot: [0, 0, Math.PI / 2] }));
-    for (const x of [-0.055, 0.055]) car.add(cyl(0.016, 0.016, 0.012, 6, steelMaterial(), { pos: [x, 0.16, -2.39], rot: [0, 0, Math.PI / 2] }));
+    // tow hook: bolted to the bumper, so it goes with it
+    tag(box(0.16, 0.05, 0.1, metal, { pos: [0, 0.215, -2.33] }), 'back', 3);
+    for (const x of [-0.035, 0.035]) tag(box(0.016, 0.07, 0.08, metal, { pos: [x, 0.17, -2.38] }), 'back', 3);
+    tag(cyl(0.011, 0.011, 0.11, 8, steelMaterial(), { pos: [0, 0.16, -2.39], rot: [0, 0, Math.PI / 2] }), 'back', 3);
+    for (const x of [-0.055, 0.055]) tag(cyl(0.016, 0.016, 0.012, 6, steelMaterial(), { pos: [x, 0.16, -2.39], rot: [0, 0, Math.PI / 2] }), 'back', 3);
     const d = mesh(new THREE.TorusGeometry(0.038, 0.011, 8, 16, Math.PI), shackle, { pos: [0, 0.16, -2.39] });
     d.rotation.set(0, Math.PI / 2, -Math.PI / 2 - 0.5); // hangs back and down from the pin
-    car.add(d);
+    tag(d, 'back', 3);
   }
   for (const s of [-1, 1]) {
     for (const x of [0.36, 0.46]) {
@@ -264,8 +269,8 @@ export function addDetails(car, { skinMats, dloRear }) {
 
   // =================== Attachments: dozer, twin Brownings + belts ===================
   const front = socket('FRONT', [0, 0.36, 2.42]);
-  front.userData.part = 'front'; // the dozer blade is the front armor's last piece
-  front.userData.stage = 3;
+  // the dozer blade: its own part (a ram, like the guns), torn off with the front armor's last stage
+  Object.assign(front.userData, { part: 'dozer', zone: 'front', stage: 3 });
   car.add(front);
   const plow = buildCautionPlow();
   plow.userData.attachment = true;

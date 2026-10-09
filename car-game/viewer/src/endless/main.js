@@ -170,9 +170,11 @@ addEventListener('keydown', (e) => {
   keys.add(e.code);
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
   if (e.code === 'KeyR') location.reload();
+  race?.skipEnd();
   if (e.code === 'F3' || e.code === 'Backquote') hud.toggleDebug();
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
+addEventListener('pointerdown', () => race?.skipEnd()); // skip the ending
 addEventListener('blur', () => keys.clear());
 
 // Free camera: hold C or the right mouse button and move the mouse; eases back on release.

@@ -33,6 +33,21 @@ export const AI = {
     ahead: 0.3, // in front of me (easy to shoot)
   },
 
+  // Anger (r.rage 0..1) blends a car from racer (0) to killer (1). Everyone starts calm;
+  // being shot or rammed and falling behind wind it up, and it cools off slowly.
+  rage: {
+    hit: 6, // per unit of damage taken (a full-armor side is 1)
+    ram: 0.25, // extra when rammed
+    behind: 0.035, // per second while running in the back half of the field
+    decay: 0.012, // per second otherwise
+  },
+  // guns: who a car will shoot at besides its plan's target (anything in a ~26 deg cone)
+  guns: {
+    reachCalm: 35, // metres: a calm car only shoots whoever closes in on it
+    reachAngry: 100, // an angry one shoots anything it can reach
+    coolCalm: 2.4, coolAngry: 0.9, // seconds between bursts (plus up to 1.5 random)
+  },
+
   // per-personality multipliers on each behaviour's score, plus traits
   personalities: {
     // killers: ram by default, run people down, burn boost to reposition
@@ -101,7 +116,7 @@ export const BEHAVIOURS = {
       plan.lat = t.lat + Math.sin(ctx.t * 0.7 + r.slot) * 1.2; // a little offset keeps out of its wake
       plan.speed = Math.max(ctx.line * 0.9, t.v + 3);
       plan.fire = t;
-      plan.boost = gap(ctx.me, t) > (r.personality === 'killer' ? 12 : 25);
+      plan.boost = gap(ctx.me, t) > 25 - 13 * (r.rage ?? 0);
     },
   },
   // close in hard and hit it; much likelier if it rammed me first
@@ -177,9 +192,16 @@ export const BEHAVIOURS = {
   },
 };
 
+// a car's current weights: racer and killer blended by its anger
+export function persona(r) {
+  const a = AI.personalities.racer, b = AI.personalities.killer, k = r.rage ?? 0, out = {};
+  for (const key in a) out[key] = a[key] + (b[key] - a[key]) * k;
+  return out;
+}
+
 // one decision: returns the chosen behaviour's name and fills `plan`
 export function think(r, ctx, plan) {
-  const P = AI.personalities[r.personality];
+  const P = persona(r);
   ctx.target = r.target = pickTarget(r, ctx);
   // engaged: someone shot, rammed or is tailing me lately
   const g = ctx.target && r.mem.grudge.get(ctx.target.ref);

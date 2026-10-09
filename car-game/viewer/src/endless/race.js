@@ -1,3 +1,4 @@
+import { Scars } from './scars.js';
 import * as THREE from 'three';
 import { S, STEP, LOOP, wAt, RAIL_LAT, pointAt } from './route.js';
 import { roadSurfaceY } from '../level/road.js';
@@ -43,7 +44,7 @@ export const DMG = {
   dozer: 0.12, // per second, blade pressed into a car
   wallScrape: 0.03, // per second against a wall, plus ...
   wallScrapeV: 0.0025, // ... this per m/s of sliding along it; fades to 0 below scrapeFrom
-  scrapeFrom: 3, scrapeFull: 10, // m/s
+  scrapeFrom: 26.8, scrapeFull: 34, // m/s along the wall: nothing below 60 mph
   wallImpactFrom: 7, wallImpactPer: 0.018, // slamming a wall
 };
 
@@ -92,7 +93,7 @@ function rivalTemplate(model) {
   const skins = new Set(Object.values(ud.skins)), canon = new Map();
   // close-enough colours share a material (rivals are seen at speed, not in the garage)
   const q = (c) => (c ? [c.r, c.g, c.b].map((v) => Math.round(Math.sqrt(v) * 4)).join(',') : '');
-  const keyOf = (x) => (skins.has(x) ? x.uuid : [x.type, q(x.color), x.map?.uuid, x.transparent, x.emissive && x.emissive.getHex() ? q(x.emissive) : '', x.blending].join('|'));
+  const keyOf = (x) => (skins.has(x) || x.userData.brake ? x.uuid : [x.type, q(x.color), x.map?.uuid, x.transparent, x.emissive && x.emissive.getHex() ? q(x.emissive) : '', x.blending].join('|'));
   const dedupe = (x) => { const k = keyOf(x); if (!canon.has(k)) canon.set(k, x); return canon.get(k); };
   m.traverse((o) => { if (o.isMesh) o.material = Array.isArray(o.material) ? o.material.map(dedupe) : dedupe(o.material); });
   // small bolt-ons get one flat material each (seen at speed, they read the same)
@@ -107,16 +108,16 @@ function rivalTemplate(model) {
   let meshes = 0;
   m.traverse((o) => { if (o.isMesh) meshes++; });
   window.__dbg = { ...window.__dbg, rivalMeshes: meshes };
-  template = { model: m, skins: ud.skins };
+  template = { model: m, skins: ud.skins, brakeMats: ud.brakeMats };
   return template;
 }
 
 // A rival: the template with its own skin materials (own streak colour, own damage).
 function cloneCar(base, color) {
-  const { model, skins } = rivalTemplate(base);
+  const { model, skins, brakeMats } = rivalTemplate(base);
   const m = model.clone(true);
-  const src = skins, mats = { side: src.side.clone(), front: src.front.clone(), back: src.back.clone(), top: paintTopSkin(color) };
-  const map = new Map([[src.side, mats.side], [src.front, mats.front], [src.back, mats.back], [src.top, mats.top]]);
+  const src = skins, mats = { side: src.side.clone(), front: src.front.clone(), back: src.back.clone(), top: paintTopSkin(color), lamps: { L: brakeMats.L.clone(), R: brakeMats.R.clone() } };
+  const map = new Map([[src.side, mats.side], [src.front, mats.front], [src.back, mats.back], [src.top, mats.top], [brakeMats.L, mats.lamps.L], [brakeMats.R, mats.lamps.R]]);
   m.traverse((o) => {
     if (!o.isMesh) return;
     if (Array.isArray(o.material)) o.material = o.material.map((x) => map.get(x) ?? x);
@@ -155,14 +156,15 @@ class Rival {
     const r = ROSTER[slot];
     Object.assign(this, { slot, name: r.name, hex: r.hex, ai: true });
     const { model, mats, wheels } = cloneCar(base, r.color);
-    Object.assign(this, { model, mats, wheels, parts: partsOf(model) });
+    Object.assign(this, { model, mats, wheels, parts: partsOf(model), lamps: { mats: mats.lamps, out: {} } });
     this.car = new CarController(model, colliders);
     this.rig = this.car.rig;
     scene.add(this.rig);
     this.armor = new Armor();
-    this.personality = slot % 2 ? 'killer' : 'racer';
+    this.personality = 'racer'; // a label for its anger (see AI.rage): racer, killer past half
+    this.drifter = slot % 2 === 0; // throws the car into tight corners
     // easy: well under the player's top speed; racers drive faster lines than killers
-    this.skill = 0.86 + (slot / ROSTER.length) * 0.05 + Math.random() * 0.03 + (this.personality === 'racer' ? 0.05 : 0);
+    this.skill = 0.86 + (slot / ROSTER.length) * 0.05 + Math.random() * 0.03 + 0.025;
     this.guns = new Guns(model, scene, { ...fx, sparks: fx.lines, light: false, color: 0xffa21c, rate: 6.5, spread: 2.2 });
     this.guns.owner = this;
     this.burst = 0;
@@ -178,7 +180,7 @@ class Rival {
     const p = pointAt(i, lat);
     this.car.vx = Math.sin(p.yaw) * v; this.car.vz = Math.cos(p.yaw) * v; this.car.vf = v;
     this.car.dead = false;
-    Object.assign(this, { prog, pI: i, latT: lat, laneT: lat, finished: false, finishT: 0, deadT: 0, smokeAcc: 0, stuckT: 0, hitT: -9, air: null, target: null, behaviour: 'race', thinkT: Math.random() * AI.thinkEvery });
+    Object.assign(this, { prog, pI: i, latT: lat, laneT: lat, rage: 0, personality: 'racer', finished: false, finishT: 0, deadT: 0, smokeAcc: 0, stuckT: 0, hitT: -9, air: null, target: null, behaviour: 'race', thinkT: Math.random() * AI.thinkEvery });
     this.mem = { grudge: new Map(), crossed: new Map(), side: new Map() };
     this.plan = { lat, speed: v, fire: null, boost: false };
     this.car.boost = 1; // full tank, same as the player
@@ -213,11 +215,12 @@ export class Race {
     Object.assign(this, { scene, car, fx, hud, booms, debris, model, hitstop: 0 });
     this.wreckage = new Wreckage(scene, fx.height);
     this.holes = new Holes();
+    this.scars = new Scars();
     // the player's car slamming walls and props costs armor on the side that hit
     this.wallHits(car, () => this.player);
     this.playerParts = partsOf(model);
     profile ??= speedProfile(17, 9);
-    this.player = { name: 'You', hex: ROSTER[0].hex, you: true, armor: new Armor(), mats: model.userData.skins };
+    this.player = { name: 'You', hex: ROSTER[0].hex, you: true, armor: new Armor(), mats: model.userData.skins, lamps: { mats: model.userData.brakeMats, out: {} } };
     this.hb = car.hitbox;
     this.rivals = [];
     for (let s = 1; s < ROSTER.length; s++) this.rivals.push(new Rival(s, model, scene, fx, car.colliders));
@@ -253,6 +256,8 @@ export class Race {
     this.player.armor.reset();
     wear(this.player.mats, this.player.armor);
     this.wreckage.restoreAll();
+    for (const q of [this.player, ...this.rivals]) q.lamps.out = {};
+    this.scars.clear();
     this.holes.clear();
     this.car.dead = false;
     unchar(this.model);
@@ -262,7 +267,7 @@ export class Race {
     this.dealt = { front: 0, back: 0, left: 0, right: 0, core: 0 }; // HP the player put into each part of the enemies
     this.combo = { n: 0, t: -9 };
     this.hud.clearCracks();
-    Object.assign(this, { state: 'race', t: 0, raceT: 0, lapStart: 0, lapsDone: 0, bestLap: 0, lastLap: 0, pFinish: 0, shown: false, endE: 0, endShot: null, finalKill: null, parked: false, placed: false, closing: false });
+    Object.assign(this, { state: 'race', t: 0, raceT: 0, lapStart: 0, lapsDone: 0, bestLap: 0, lastLap: 0, pFinish: 0, shown: false, endE: 0, endShot: null, finalKill: null, parked: false, placed: false, closing: false, skipping: false });
     this.hud.results(null);
     this.hud.ended(false);
     // intro: hold on black for a beat, then the screen splits open onto the race
@@ -334,16 +339,22 @@ export class Race {
         g.t = this.t;
         g.ram = g.ram || cause === 'ram';
         target.mem.grudge.set(attacker, g);
+        target.rage = Math.min(1, (target.rage ?? 0) + dmg * AI.rage.hit + (cause === 'ram' ? AI.rage.ram : 0));
       }
     }
+    // critical hits: a share of gun and ram hits land somewhere that matters (anyone can
+    // take one, you included), for extra damage and a blast; wall friction never crits
+    const lucky = cause === 'gun' ? 0.05 : cause === 'ram' || cause === 'crash' ? 0.12 : 0;
+    const critRoll = Math.random() < lucky;
+    if (critRoll) dmg *= 2.5;
     a.hit(zone, dmg);
     if (attacker === this.player && target !== this.player) { this.dealt[zone] += (zb - a.z[zone]) * 100; this.dealt.core += (hb - a.core) * 100; }
     wear(target.mats, a);
     const broke = zb > 0 && a.z[zone] === 0, tier = (h) => (h > 0.66 ? 0 : h > 0.33 ? 1 : 2);
-    const crit = broke || tier(a.core) > tier(hb);
+    const crit = critRoll || broke || tier(a.core) > tier(hb);
     const pos = point ?? new THREE.Vector3(target.x ?? this.car.x, (target.y ?? this.car.y) + 0.8, target.z ?? this.car.z);
     const vel = target === this.player ? new THREE.Vector3(this.car.vx, 0, this.car.vz) : new THREE.Vector3(target.vx, 0, target.vz);
-    if (crit || Math.random() < 0.04) this.booms.blast(pos, vel, false);
+    if (crit) this.booms.blast(pos, vel, false); // every blast is a crit
     // armor comes off in chunks: stage 1 below 2/3 of that side, stage 2 below 1/3, the last at 0
     for (const [stage, th] of STAGES) if (zb > th && a.z[zone] <= th) this.tearOff(target, zone, vel, stage);
     if (attacker === this.player && target !== this.player) {
@@ -368,6 +379,7 @@ export class Race {
     if (target === this.player) {
       this.hud.hurt(dmg);
       this.car.hit(crit ? 6 : 1.5);
+      if (crit) { this.hud.flash(0.12); this.hud.hurt(0.05); }
       // the screen cracks on solid chunks of hull damage once HP is under 75
       if (a.core < 0.75) {
         this.crackAcc = (this.crackAcc ?? 0) + (hb - a.core);
@@ -379,10 +391,17 @@ export class Race {
 
   // a stage of a side's armor comes away (the front's last stage is the dozer blade)
   tearOff(target, zone, vel, stage = 3) {
+    // the rear going: first one brake light is smashed, then the other
+    if (zone === 'back') {
+      const o = target.lamps.out, side = !o.L && !o.R ? (Math.random() < 0.5 ? 'L' : 'R') : !o.L ? 'L' : 'R';
+      if (stage >= 2) o.L = o.R = true; else o[side] = true;
+    }
     const me = target === this.player, parts = me ? this.playerParts : target.parts, yaw = me ? this.car.yaw : target.yaw;
     const f = [Math.sin(yaw), Math.cos(yaw)], out = { front: f, back: [-f[0], -f[1]], left: [f[1], -f[0]], right: [-f[1], f[0]] }[zone];
     for (const part of parts) {
-      if (part.userData.part !== zone || (part.userData.stage ?? 3) !== stage) continue;
+      if (part.userData.zone !== zone || (part.userData.stage ?? 3) !== stage) continue;
+      // bare metal under it: scarred
+      this.scars.addUnder(me ? this.model : target.model, part, zone === 'front' && stage === 1 ? new THREE.Vector3(out[0] * 0.3, 1, out[1] * 0.3) : new THREE.Vector3(out[0], zone === 'front' || zone === 'back' ? 0.3 : 0, out[1])); // hood plates: from above
       // thrown clear and tumbling so you see the plating go
       const kick = new THREE.Vector3(out[0] * (4 + Math.random() * 4), 3.5 + Math.random() * 3, out[1] * (4 + Math.random() * 4));
       this.wreckage.detach(part, vel.clone().multiplyScalar(0.85), kick);
@@ -455,9 +474,10 @@ export class Race {
       if (!sc || ref.armor.wrecked || this.state !== 'race') continue;
       const f = [Math.sin(car.yaw), Math.cos(car.yaw)], lz = sc.nx * f[0] + sc.nz * f[1], lx = sc.nx * -f[1] + sc.nz * f[0];
       const fade = Math.max(0, Math.min(1, (sc.v - DMG.scrapeFrom) / (DMG.scrapeFull - DMG.scrapeFrom)));
+      const spark = Math.max(0, Math.min(1, (sc.v - 3) / 7)); // the sparks still fly at any real speed
       if (fade > 0) this.damage(ref, Armor.zoneOf(lx, lz, 1, 1), (DMG.wallScrape + sc.v * DMG.wallScrapeV) * fade * dt, null, null, 'wall');
       // a continuous stream along the wall while scraping (none when barely moving)
-      const n = Math.floor(sc.v * dt * 18 * fade + Math.random() * fade);
+      const n = Math.floor(sc.v * dt * 18 * spark + Math.random() * spark);
       for (let q = 0; q < n; q++) {
         const along = (Math.random() - 0.5) * 3.6, f2 = [Math.sin(car.yaw), Math.cos(car.yaw)];
         this.fx.lines.emit(car.x + sc.nx * 1.0 + f2[0] * along, car.y + 0.3 + Math.random() * 0.4, car.z + sc.nz * 1.0 + f2[1] * along, car.vx * 0.75 - sc.nx * 2 + (Math.random() - 0.5) * 3, 0.5 + Math.random() * 2.5, car.vz * 0.75 - sc.nz * 2 + (Math.random() - 0.5) * 3, 0, 0.2 + Math.random() * 0.3);
@@ -586,6 +606,10 @@ export class Race {
       } else r.mem.side.delete(o.ref);
     }
     for (const o of all) o.v = o.ref === this.player ? Math.max(0, this.car.vf) : o.ref.v; // speeds for the brain
+    // anger: winds up running in the back half of the field, cools off otherwise
+    const place = this.order ? this.order.indexOf(r) : 0;
+    r.rage = Math.max(0, Math.min(1, (r.rage ?? 0) + dt * (place >= this.order?.length / 2 ? AI.rage.behind : -AI.rage.decay)));
+    r.personality = r.rage > 0.5 ? 'killer' : 'racer';
     // ---- decide (a few times a second), then follow the plan
     r.thinkT -= dt;
     if (this.state === 'race' && !r.finished && r.thinkT <= 0) {
@@ -603,17 +627,32 @@ export class Race {
     const steer = THREE.MathUtils.clamp(-diff * 2.6, -1, 1);
     // brake hard only when well over and fairly straight (braking while steering drifts)
     const over = v - want;
-    Object.assign(r.inp, { steer, throttle: over < -0.5 || plan.boost ? 1 : 0, brake: over > (Math.abs(steer) > 0.3 ? 7 : 3) ? 1 : 0, cap: plan.boost ? 0 : 45.8 * r.skill * (want > 45.8 * r.skill ? 1.05 : 1), boost: plan.boost && c.boost > AI.boostMeter && Math.abs(steer) < 0.3 && over < 2 });
+    const flick = r.drifter && Math.abs(steer) > 0.55 && over > 1.5 && v > 18; // brake + steer: a drift into the corner
+    Object.assign(r.inp, { steer, throttle: !flick && (over < -0.5 || plan.boost) ? 1 : 0, brake: flick || over > (Math.abs(steer) > 0.3 ? 7 : 3) ? 1 : 0, cap: plan.boost ? 0 : 45.8 * r.skill * (want > 45.8 * r.skill ? 1.05 : 1), boost: plan.boost && c.boost > AI.boostMeter && Math.abs(steer) < 0.3 && over < 2 });
     // ---- unstick: spun round or stopped against something for a while -> back on the road
     r.stuckT = v < 4 || Math.abs(diff) > 1.7 ? r.stuckT + dt : 0;
     if (r.stuckT > 2.5) { r.stuckT = 0; const k = i; c.reset(k, Math.max(-room, Math.min(room, me.lat))); const p = pointAt(k, me.lat); c.vx = Math.sin(p.yaw) * 16; c.vz = Math.cos(p.yaw) * 16; c.vf = 16; r.pI = k; }
     if (!r.finished && r.prog >= LAPS * N) { r.finished = true; r.finishT = this.raceT; }
     // ---- guns: short bursts at whatever the plan says to shoot
     r.cool -= dt;
-    const shoot = this.state === 'race' && ptarget && !ptarget.ref.armor.wrecked && (ptarget.prog - r.prog) * STEP > 5 ? ptarget : null;
-    if (shoot && r.burst <= 0 && r.cool <= 0) r.burst = 0.9 + Math.random() * 0.8;
+    // the plan's target, else anything in a cone ahead: calm cars only shoot whoever comes
+    // close, angry ones anything in reach
+    let shoot = this.state === 'race' && ptarget && !ptarget.ref.armor.wrecked && (ptarget.prog - r.prog) * STEP > 5 ? ptarget : null;
+    if (!shoot && this.state === 'race') {
+      const reach = AI.guns.reachCalm + (AI.guns.reachAngry - AI.guns.reachCalm) * r.rage;
+      let bd = reach;
+      for (const o of all) {
+        if (o.ref === r || o.ref.armor.wrecked) continue;
+        const dx = o.x - r.x, dz = o.z - r.z, d = Math.hypot(dx, dz);
+        if (d < 5 || d > bd) continue;
+        let ang = Math.atan2(dx, dz) - c.yaw;
+        ang = Math.atan2(Math.sin(ang), Math.cos(ang));
+        if (Math.abs(ang) < 0.45) { bd = d; shoot = o; }
+      }
+    }
+    if (shoot && r.burst <= 0 && r.cool <= 0) r.burst = 1 + Math.random() * 0.8;
     const firing = r.burst > 0;
-    if (firing) { r.burst -= dt; if (r.burst <= 0) r.cool = (r.personality === 'racer' ? 3.2 : 2) + Math.random() * 2.5; }
+    if (firing) { r.burst -= dt; if (r.burst <= 0) r.cool = AI.guns.coolCalm + (AI.guns.coolAngry - AI.guns.coolCalm) * r.rage + Math.random() * 1.5; }
     r.aim = r.aim ?? new THREE.Vector3();
     if (shoot) { // lead the target like the player's lock does
       const lead = Math.hypot(shoot.x - r.x, shoot.z - r.z) / 420, sv = shoot.ref === this.player ? this.car : shoot.ref.car;
@@ -663,6 +702,16 @@ export class Race {
       }
     }
     for (const k of ZONES) this.player.armor.flash[k] = Math.max(0, this.player.armor.flash[k] - dt);
+    // brake lights: bright under braking, dead once smashed
+    for (const q of [this.player, ...this.rivals]) {
+      const on = !q.armor.wrecked && (q === this.player ? this.car.input?.brake : q.inp?.brake) > 0;
+      for (const k of ['L', 'R']) {
+        const m = q.lamps.mats?.[k];
+        if (!m) continue;
+        m.emissiveIntensity = q.lamps.out[k] || q.armor.wrecked ? 0 : on ? 2.6 : 0.6;
+        m.color.setHex(q.lamps.out[k] ? 0x1a0d0b : 0xc8261a);
+      }
+    }
 
     // standings: finishers by time, then by progress; wrecks last
     const rows = [{ ...this.player, prog: this.pProg, finished: this.state === 'done' && this.pFinish > 0, finishT: this.pFinish }, ...this.rivals];
@@ -694,9 +743,9 @@ export class Race {
 
   // The end sequence, on real (unslowed) seconds: the outro shot, the placement slam, the
   // shutters close, and they open on the hero shot with the results.
-  static END = { wrecked: { place: 5.4 }, annihilation: { pass: 2.9, place: 5.8 }, finished: { place: 3.6 } };
+  static END = { wrecked: { place: 3.5 }, annihilation: { pass: 1.9, place: 3.8 }, finished: { place: 2.4 } };
   tickEnd(rdt) {
-    if (this.state !== 'done' || this.shown) return;
+    if (this.state !== 'done' || this.shown || this.skipping) return;
     const e = (this.endE += rdt), T = Race.END[this.why];
     if (T.pass && e >= T.pass && this.endShot === 'kill') this.endShot = 'pass';
     if (e >= T.place && !this.placed) {
@@ -705,15 +754,23 @@ export class Race {
       if (this.why === 'wrecked') this.hud.placement('DESTROYED', `${this.kills} kill${this.kills === 1 ? '' : 's'}`, 'dead');
       else this.hud.placement(ord(me), this.why === 'annihilation' ? 'Last car running' : me === 1 ? 'Winner' : me <= 3 ? 'Podium' : 'Finished', me === 1 ? 'win' : '');
     }
-    if (e >= T.place + 2 && !this.closing) { this.closing = true; this.hud.intro(false); }
-    if (e >= T.place + 3) { this.hero(); this.showResults(); this.hud.intro(true); }
+    if (e >= T.place + 1.3 && !this.closing) { this.closing = true; this.hud.intro(false); }
+    if (e >= T.place + 2) { this.hero(); this.showResults(); this.hud.intro(true); }
+  }
+
+  // click / tap / key to skip the ending (after its first second): straight to the results
+  skipEnd() {
+    if (this.state !== 'done' || this.shown || this.endE < 1 || this.skipping) return;
+    this.skipping = true;
+    this.hud.intro(false);
+    setTimeout(() => { this.hero(); this.showResults(); this.hud.intro(true); }, 450);
   }
 
   // how fast the world runs during the end sequence (slow motion on the big moments)
   get endScale() {
     if (this.state !== 'done') return 1;
     const e = this.endE, ramp = (a, b, lo) => (e < a ? lo : e > b ? 1 : lo + (1 - lo) * (e - a) / (b - a));
-    return this.why === 'wrecked' ? ramp(2.8, 3.8, 0.25) : this.why === 'annihilation' ? ramp(2.2, 2.9, 0.2) : 1;
+    return this.why === 'wrecked' ? ramp(1.8, 2.5, 0.25) : this.why === 'annihilation' ? ramp(1.4, 1.9, 0.2) : 1;
   }
 
   // our car parked just past the finish line, facing on (a wreck stays where it lies)

@@ -85,6 +85,7 @@ export class CarController {
   }
 
   step(dt, inp) {
+    this.input = inp;
     const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
     const rx = -Math.cos(this.yaw), rz = Math.sin(this.yaw);
     let vf = this.vx * fx + this.vz * fz;
@@ -170,7 +171,7 @@ export class CarController {
       const sp = Math.max(Math.abs(vf), this.spun ? spd0 : 0);
       const dir = this.spun ? 1 : THREE.MathUtils.clamp(vf / 2.5, -1, 1);
       // the further sideways, the less extra rotation, so a held slide settles at an angle
-      this.yawRate = -this.steerS * 2.4 * Math.min(1, sp / 4) / (1 + sp / 30 + (sp / 40) ** 2) * dir * (1 + 0.3 * D - 0.55 * sm(0.35, 1.2, slip));
+      this.yawRate = -this.steerS * 2.4 * Math.min(1, sp / 4) / (1 + sp / 30 + (sp / 40) ** 2) * dir * (1 + 0.9 * D - 0.55 * sm(0.35, 1.2, slip));
     } else {
       this.yawRate *= Math.exp(-dt * 2);
     }
@@ -183,6 +184,7 @@ export class CarController {
 
     this.vx = fx * vf + rx * vl;
     this.vz = fz * vf + rz * vl;
+    const px = this.x, pz = this.z;
     this.x += this.vx * dt;
     this.z += this.vz * dt;
     this.accP += ((vf - this.prevVf) / dt * 0.004 - this.accP) * Math.min(1, dt * 6);
@@ -192,13 +194,22 @@ export class CarController {
     this.limit();
 
     // Vertical: ballistic with ground contact
-    const gC = this.groundCenter();
+    let gC = this.groundCenter();
+    // ground rising steeper than ~45 deg (dune cut faces, embankments) is a wall, not a ramp:
+    // step back out of it and lose the speed going into it
+    const moved = Math.hypot(this.x - px, this.z - pz);
+    if (!this.airborne && moved > 1e-4 && gC - this.y > Math.max(0.25, moved * 1.0)) {
+      const dx = (this.x - px) / moved, dz = (this.z - pz) / moved, into = this.vx * dx + this.vz * dz;
+      this.x = px; this.z = pz;
+      if (into > 0) { this.vx -= dx * into * 1.15; this.vz -= dz * into * 1.15; if (into > 3) { this.events.impact = Math.max(this.events.impact, into); this.onImpact?.(into, -dx, -dz); } }
+      gC = this.groundCenter();
+    }
     this.vy -= G * dt;
     this.y += this.vy * dt;
     if (this.y <= gC) {
       if (this.airborne && this.vy < -3) { this.events.land = Math.max(this.events.land, -this.vy); this.bobV += this.vy * 0.08; }
       this.y = gC;
-      this.vy = Math.max(this.vy, (gC - this.prevG) / dt);
+      this.vy = Math.max(this.vy, Math.min(8, (gC - this.prevG) / dt)); // crests can lift the car, never fling it
       this.airborne = false;
     } else if (this.y > gC + 0.25) {
       this.airborne = true;

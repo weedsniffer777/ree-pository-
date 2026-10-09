@@ -129,8 +129,9 @@ function applyToggles() {
   current?.traverse((o) => {
     if (o.isMesh && !o.userData.debug) for (const m of [].concat(o.material)) m.wireframe = state.wire;
   });
-  const armor = current?.getObjectByName('armor');
-  if (armor) armor.visible = state.armor;
+  // armor: every piece that can come off (plates, cages, bumper, spoiler, rack); the dozer
+  // is its own part, like the guns, and goes with Parts
+  current?.traverse((o) => { if (o.userData.armor) o.visible = state.armor; });
   current?.traverse((o) => { if (o.userData.attachment) o.visible = state.parts; });
 }
 

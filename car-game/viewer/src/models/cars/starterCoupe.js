@@ -118,7 +118,7 @@ export function buildStarterCoupe() {
     for (const stage of [1, 2, 3]) {
       const g = new THREE.Group();
       g.name = `armor_${zone}_${stage}`;
-      Object.assign(g.userData, { part: zone, stage });
+      Object.assign(g.userData, { part: zone, zone, stage, armor: true });
       car.add(g);
       for (const c of [...armor.children]) if (c.userData.zone === zone && c.userData.stage === stage) g.attach(c);
     }
