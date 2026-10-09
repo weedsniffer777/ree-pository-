@@ -7,7 +7,7 @@ import { glowMat } from '../../lib/materials.js';
 import { sideX, topY, bodyTop, cabinBase, cabinTop, WS, RG, along } from './coupeShape.js';
 import { buildCautionPlow } from '../parts/cautionPlow.js';
 import { buildBrowningM2 } from '../parts/browningM2.js';
-import { buildAmmoBelt } from '../parts/ammoBelt.js';
+import { buildFeed } from '../parts/ammoFeed.js';
 import { buildEngineV8, buildRadiator } from '../parts/engineV8.js';
 
 const deg = THREE.MathUtils.degToRad;
@@ -286,23 +286,11 @@ export function addDetails(car, { skinMats, dloRear }) {
     const gun = buildBrowningM2({ feedSide: -s });
     gun.userData.attachment = true;
     mount.add(gun);
-    // belt from the inboard feed tray down into an armored chute on the hood
-    const f = gun.userData.feedPoint.clone().add(mount.position);
-    const chuteZ = 1.0;
-    const chute = new THREE.Group();
-    chute.userData.attachment = true;
-    const cy = topY(chuteZ, 0.36);
-    const cx = s * 0.36;
-    // hollow armored chute, open on top, dark inside
-    chute.add(box(0.14, 0.012, 0.12, darkMaterial(0x060606), { pos: [cx, cy + 0.01, chuteZ] }));
-    for (const dx of [-0.065, 0.065]) chute.add(box(0.012, 0.1, 0.12, metal, { pos: [cx + dx, cy + 0.05, chuteZ] }));
-    for (const dz of [-0.055, 0.055]) chute.add(box(0.142, 0.1, 0.012, metal, { pos: [cx, cy + 0.05, chuteZ + dz] }));
-    chute.add(mesh(new THREE.TorusGeometry(0.075, 0.006, 4, 4).rotateX(Math.PI / 2).rotateY(Math.PI / 4), weld, { pos: [cx, cy + 0.1, chuteZ] }));
-    chute.add(buildAmmoBelt([
-      f, new THREE.Vector3(s * 0.5, f.y - 0.07, f.z - 0.05), new THREE.Vector3(s * 0.42, cy + 0.24, 1.15),
-      new THREE.Vector3(cx, cy + 0.15, chuteZ + 0.03), new THREE.Vector3(cx, cy + 0.03, chuteZ),
-    ]));
-    car.add(chute);
+    // ammo feed: the mount's variant (a belt into an armored hood chute), its own part so
+    // it comes away with the gun
+    mount.userData.feed = 'beltChute';
+    const feed = buildFeed(mount.userData.feed, { feedPoint: gun.userData.feedPoint.clone().add(mount.position), side: s, at: [s * 0.36, 1.0], topY });
+    if (feed) car.add(feed);
   }
 }
 
