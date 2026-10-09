@@ -376,7 +376,7 @@ export class Race {
       // grinding (dozer or spikes held against a car) is continuous: no combo, and the
       // hitmarker only ticks a few times a second
       const grind = cause === 'grind', cb = this.combo;
-      if (!grind) { cb.n = this.raceT - cb.t < 0.75 ? cb.n + 1 : 1; cb.t = this.raceT; }
+      if (cause === 'gun') { cb.n = this.raceT - cb.t < 0.75 ? cb.n + 1 : 1; cb.t = this.raceT; }
       if (crit) { this.hitstop = Math.max(this.hitstop, 0.07); this.hud.flash(0.16); }
       if (a.wrecked) {
         this.hitstop = Math.max(this.hitstop, 0.18);
@@ -389,7 +389,12 @@ export class Race {
       } else {
         if (!grind || crit || this.t - (this.grindT ?? -9) > 0.25) { this.hud.hitmarker(crit ? 'crit' : 'hit'); if (grind) this.grindT = this.t; }
         if (crit) this.hud.popup(broke ? 'ARMOR BROKEN' : 'CRITICAL', 'crit');
-        if (cause === 'ram' || cause === 'crash') this.hud.popup('RAMMED', 'combo'); // a ram reads as a ram, not a hit count
+        if (cause === 'ram' || cause === 'crash') { // rams count up on their own, like gun hits
+          const rc = (this.ramCombo ??= { n: 0, t: -9 });
+          rc.n = this.raceT - rc.t < 1.5 ? rc.n + 1 : 1;
+          rc.t = this.raceT;
+          this.hud.popup(rc.n >= 2 ? `x${rc.n} RAMMED` : 'RAMMED', 'combo');
+        }
         else if (!grind && cb.n >= 2) this.hud.popup(`x${cb.n} HIT`, 'combo');
       }
     }
