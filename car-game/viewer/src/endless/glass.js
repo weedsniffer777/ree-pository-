@@ -86,7 +86,7 @@ export class Glass {
       rays.push({ pts, branches });
     }
     const at = (pts, rad) => pts.find(([x, y]) => Math.hypot(x - cx, y - cy) >= rad) ?? null;
-    const rings = [R * 0.06, R * 0.13, R * 0.22, R * 0.34, R * 0.5, R * 0.68];
+    const rings = [R * 0.075, R * 0.15, R * 0.24, R * 0.36, R * 0.52, R * 0.7]; // ring 0 = the piece that's gone
     // shards: the cells between neighbouring rays and successive rings
     const cells = [];
     for (let k = 0; k < nr; k++) {
@@ -96,8 +96,10 @@ export class Glass {
         const pa = at(A, rings[q]), pb = at(B, rings[q]);
         if (!pa || !pb) break;
         const mid = [(prevA[0] + pa[0] + pb[0] + prevB[0]) / 4, (prevA[1] + pa[1] + pb[1] + prevB[1]) / 4];
-        const ang = Math.atan2(mid[1] - cy, mid[0] - cx) + (rnd() - 0.5) * 1.6, mag = (0.25 + rnd() * 0.75) * (q < 2 ? 0.6 : 1);
-        cells.push({ poly: [prevA, pa, pb, prevB], dx: Math.cos(ang) * mag, dy: Math.sin(ang) * mag, frost: q === 0 ? 1 : q === 1 ? 0.55 : q === 2 ? 0.15 : 0 });
+        // some shards sit visibly pushed in or popped out: stronger shift, a tint, a lit bevel
+        const deep = q > 0 && rnd() < 0.3, out = rnd() < 0.5 ? 1 : -1;
+        const ang = Math.atan2(mid[1] - cy, mid[0] - cx) + (rnd() - 0.5) * 1.6, mag = (0.25 + rnd() * 0.75) * (q < 2 ? 0.6 : 1) * (deep ? 2.4 : 1);
+        cells.push({ poly: [prevA, pa, pb, prevB], hole: q === 0, deep, out, dx: Math.cos(ang) * mag, dy: Math.sin(ang) * mag, frost: q === 0 ? 0 : q === 1 ? 0.85 : q === 2 ? 0.3 : 0 });
         prevA = pa; prevB = pb;
       }
     }
@@ -116,8 +118,8 @@ export class Glass {
       }
     });
     const chips = [];
-    for (let k = 0; k < 26; k++) { const a = rnd() * Math.PI * 2, d = R * (0.03 + rnd() * 0.16); chips.push([cx + Math.cos(a) * d, cy + Math.sin(a) * d, 2 + rnd() * 6, rnd() * 6]); }
-    return { cx, cy, R, rays, cells, webs, chips, seed: Math.floor(rnd() * 1e6) };
+    for (let k = 0; k < 26; k++) { const a = rnd() * Math.PI * 2, d = R * (0.09 + rnd() * 0.14); chips.push([cx + Math.cos(a) * d, cy + Math.sin(a) * d, 2 + rnd() * 6, rnd() * 6]); }
+    return { cx, cy, R, holeR: rings[0], rays, cells, webs, chips, seed: Math.floor(rnd() * 1e6) };
   }
 
   render() {
@@ -128,24 +130,46 @@ export class Glass {
     l.lineCap = l.lineJoin = 'round';
     for (const c of this.cracks) {
       const A = c.a;
+      const poly = (ctx, pts) => { ctx.beginPath(); pts.forEach(([x, y], k) => (k ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath(); };
       for (const cell of c.cells) {
+        if (cell.hole) continue; // the missing piece: a clean view straight through
         d.fillStyle = `rgb(${Math.round(128 + cell.dx * 70 * A)},${Math.round(128 + cell.dy * 70 * A)},${Math.round(cell.frost * 255 * A)})`;
-        d.beginPath(); cell.poly.forEach(([x, y], k) => (k ? d.lineTo(x, y) : d.moveTo(x, y))); d.closePath(); d.fill();
+        poly(d, cell.poly); d.fill();
+        if (cell.deep) {
+          // tilted shard: a faint tint over it and a lit bevel on the edge facing up-left
+          poly(l, cell.poly);
+          l.fillStyle = cell.out > 0 ? `rgba(225,235,245,${0.13 * A})` : `rgba(8,10,14,${0.16 * A})`;
+          l.fill();
+          const [p0, p1] = cell.poly[0][1] < cell.poly[3][1] ? [cell.poly[0], cell.poly[1]] : [cell.poly[3], cell.poly[2]];
+          l.strokeStyle = `rgba(255,255,255,${0.55 * A})`; l.lineWidth = 1.6;
+          l.beginPath(); l.moveTo(p0[0] - 1, p0[1] - 1); l.lineTo(p1[0] - 1, p1[1] - 1); l.stroke();
+        }
       }
+      // the hole: jagged rim with the glass's thickness catching the light
+      const rim = c.cells.filter((cell) => cell.hole).map((cell) => cell.poly[1]);
+      if (rim.length > 2) {
+        poly(l, rim); l.strokeStyle = `rgba(170,205,200,${0.75 * A})`; l.lineWidth = 3.2; l.stroke();
+        l.save(); l.translate(1.3, 1.6); poly(l, rim); l.strokeStyle = `rgba(10,12,14,${0.55 * A})`; l.lineWidth = 1.6; l.stroke(); l.restore();
+        poly(l, rim); l.strokeStyle = `rgba(255,255,255,${0.9 * A})`; l.lineWidth = 1; l.stroke();
+      }
+      // dark crack edges fade out as the cracks run away from the strike
+      const fadeAt = (pts) => { const [x, y] = pts[Math.floor(pts.length / 2)]; return Math.max(0, 1 - Math.hypot(x - c.cx, y - c.cy) / (c.R * 0.75)); };
       const line = (pts, w) => {
         const path = () => { l.beginPath(); pts.forEach(([x, y], k) => (k ? l.lineTo(x, y) : l.moveTo(x, y))); };
-        l.save(); l.translate(0.9, 1.1); path(); l.strokeStyle = `rgba(10,12,14,${0.45 * A})`; l.lineWidth = w + 1; l.stroke(); l.restore();
+        l.save(); l.translate(0.9, 1.1); path(); l.strokeStyle = `rgba(10,12,14,${0.5 * A * fadeAt(pts)})`; l.lineWidth = w + 1; l.stroke(); l.restore();
         path(); l.strokeStyle = `rgba(235,242,248,${0.85 * A})`; l.lineWidth = w; l.stroke();
         l.save(); l.translate(-0.6, -0.7); path(); l.strokeStyle = `rgba(255,255,255,${0.5 * A})`; l.lineWidth = Math.max(0.4, w * 0.35); l.stroke(); l.restore();
       };
       for (const ray of c.rays) {
-        const n = ray.pts.length;
-        for (let k = 0; k < 4; k++) line(ray.pts.slice(Math.floor((k * n) / 4), Math.floor(((k + 1) * n) / 4) + 1), Math.max(0.5, 2.2 * (1 - k / 4)));
+        // cracks start at the hole's rim, not at a point in the middle
+        const from = ray.pts.findIndex(([x, y]) => Math.hypot(x - c.cx, y - c.cy) >= c.holeR);
+        if (from < 0) continue;
+        const pts = ray.pts.slice(Math.max(0, from - 1)), n = pts.length;
+        for (let k = 0; k < 4; k++) line(pts.slice(Math.floor((k * n) / 4), Math.floor(((k + 1) * n) / 4) + 1), Math.max(0.5, 2.2 * (1 - k / 4)));
         for (const b of ray.branches) line(b, 0.8);
       }
       for (const wb of c.webs) line(wb.seg, wb.w);
       for (const [x, y, s, r] of c.chips) { l.fillStyle = `rgba(255,255,255,${0.35 * A})`; l.beginPath(); for (let q = 0; q < 3; q++) l.lineTo(x + Math.cos(r + q * 2.1) * s, y + Math.sin(r + q * 2.1) * s); l.fill(); }
-      l.fillStyle = `rgba(15,17,20,${0.7 * A})`; l.beginPath(); l.arc(c.cx, c.cy, 3, 0, Math.PI * 2); l.fill();
     }
     this.tDisp.needsUpdate = this.tLines.needsUpdate = true;
   }

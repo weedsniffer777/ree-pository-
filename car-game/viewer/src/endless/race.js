@@ -7,6 +7,7 @@ import { bakeGroup } from '../level/bake.js';
 import { partsOf, charModel, unchar, Wreckage } from './carparts.js';
 import { Holes } from './holes.js';
 import { CarController } from './car.js';
+import { AI, think } from './ai.js';
 
 // Closed-loop race: the player plus seven AI rivals on the same model, each with its own
 // streak colour. Rolling start mid-pack behind the line, three laps, four-zone armor on
@@ -157,7 +158,10 @@ class Rival {
     const p = pointAt(i, lat);
     this.car.vx = Math.sin(p.yaw) * v; this.car.vz = Math.cos(p.yaw) * v; this.car.vf = v;
     this.car.dead = false;
-    Object.assign(this, { prog, pI: i, latT: lat, finished: false, finishT: 0, deadT: 0, smokeAcc: 0, stuckT: 0, hitT: -9, air: null, target: null });
+    Object.assign(this, { prog, pI: i, latT: lat, laneT: lat, finished: false, finishT: 0, deadT: 0, smokeAcc: 0, stuckT: 0, hitT: -9, air: null, target: null, behaviour: 'race', thinkT: Math.random() * AI.thinkEvery });
+    this.mem = { grudge: new Map(), crossed: new Map(), side: new Map() };
+    this.plan = { lat, speed: v, fire: null, boost: false };
+    this.car.boost = 0.5;
     this.armor.reset();
     wear(this.mats, this.armor);
     this.sync(0);
@@ -300,9 +304,19 @@ export class Race {
   damage(target, zone, dmg, attacker = null, point = null, cause = 'gun', dir = null) {
     const a = target.armor;
     if (a.wrecked || this.state === 'done' && target === this.player) return;
-    if (cause === 'gun' && point && dir) this.holes.add(target.slot ?? 0, target === this.player ? this.model : target.model, point, dir, this.t);
+    // (bullet holes on the bodywork are switched off for now: this.holes.add(...))
     const zb = a.z[zone], hb = a.core;
-    if (target.ai) target.hitT = this.t;
+    if (target.ai) {
+      target.hitT = this.t;
+      // grudge: who hurt me, how much, and whether they rammed me
+      if (attacker && attacker !== target) {
+        const g = target.mem.grudge.get(attacker) ?? { amount: 0, t: 0, ram: false };
+        g.amount = Math.min(1.5, g.amount * Math.max(0, 1 - (this.t - g.t) / AI.memory) + dmg * 8 + (cause === 'ram' ? 0.5 : 0));
+        g.t = this.t;
+        g.ram = g.ram || cause === 'ram';
+        target.mem.grudge.set(attacker, g);
+      }
+    }
     a.hit(zone, dmg);
     wear(target.mats, a);
     const broke = zb > 0 && a.z[zone] === 0, tier = (h) => (h > 0.66 ? 0 : h > 0.33 ? 1 : 2);
@@ -476,55 +490,49 @@ export class Race {
       }
       return;
     }
-    const v = Math.max(0, c.vf), me = all.find((o) => o.ref === r);
-    // ---- speed: the corner profile ahead, rubber band, finishing cool-down
-    let want = Math.min(profile[(i + Math.round(v * 0.35)) % N], 45.8 * r.skill);
-    const gap = (r.prog - this.pProg) * STEP;
-    if (!r.finished && this.state === 'race') want *= gap > 60 ? Math.max(0.88, 1 - (gap - 60) / 1500) : gap < -90 ? Math.min(1.1, 1 + (-gap - 90) / 1200) : 1;
-    if (r.finished) want = Math.min(want, 22);
-    // ---- who matters: the fighter's quarry, and anyone in my way
-    const fighter = r.personality === 'fighter' && this.state === 'race' && !r.finished;
-    if (fighter && (!r.target || r.target.ref.armor.wrecked || Math.random() < dt * 0.2)) {
-      let best = null, bs = Infinity;
-      for (const o of all) {
-        if (o.ref === r || o.ref.armor.wrecked) continue;
-        const d = Math.abs((o.prog - r.prog) * STEP);
-        const score = d * (o.ref === this.player ? 0.6 : 1); // the player is the favourite quarry
-        if (d < 60 && score < bs) { bs = score; best = o; }
-      }
-      r.target = best;
+    const v = Math.max(0, c.vf), me = all.find((o) => o.ref === r), room = latMax(i);
+    // ---- normal racing speed: the corner profile ahead, rubber band, finishing cool-down
+    let line = Math.min(profile[(i + Math.round(v * 0.35)) % N], 45.8 * r.skill);
+    const gapP = (r.prog - this.pProg) * STEP;
+    if (!r.finished && this.state === 'race') line *= gapP > 60 ? Math.max(0.88, 1 - (gapP - 60) / 1500) : gapP < -90 ? Math.min(1.1, 1 + (-gapP - 90) / 1200) : 1;
+    if (r.finished) line = Math.min(line, 22);
+    // ---- my racing lane: pass slower traffic on the roomier side, wander a little
+    for (const o of all) {
+      if (o.ref === r) continue;
+      const ahead = (o.prog - r.prog) * STEP, dl = o.lat - me.lat;
+      if (ahead < 1 || ahead > 24 || Math.abs(dl) > 2.6) continue;
+      const ov = o.ref === this.player ? Math.max(0, this.car.vf) : o.ref.armor.wrecked ? 0 : o.ref.v;
+      if (ov >= v - 0.5) continue;
+      const left = o.lat - 3.2, right = o.lat + 3.2, canL = left > -room, canR = right < room;
+      if (canL || canR) r.laneT = !canR || (canL && Math.abs(left - me.lat) < Math.abs(right - me.lat)) ? left : right;
+      else line = Math.min(line, ov);
     }
-    const tgt = fighter && r.target ? all.find((o) => o.ref === r.target.ref) : null;
-    const room = latMax(i);
-    if (tgt) {
-      const ahead = (tgt.prog - r.prog) * STEP;
-      if (ahead > -3 && ahead < 45) {
-        want = Math.max(want, Math.min(45.8, tgt.ref === this.player ? Math.max(0, this.car.vf) + 4 : tgt.ref.v + 4)); // close in
-        r.latT = tgt.lat;
-        // alongside its rear quarter: cut in hard for the PIT
-        if (ahead > 0.5 && ahead < 4 && Math.abs(tgt.lat - me.lat) < 3.6) r.latT = tgt.lat + Math.sign(tgt.lat - me.lat) * 1.5;
-      }
-    } else if (this.state === 'race') {
-      // racers (and fighters with nobody near): pass slower traffic on the roomier side
-      for (const o of all) {
-        if (o.ref === r) continue;
-        const ahead = (o.prog - r.prog) * STEP, dl = o.lat - me.lat;
-        if (ahead < 1 || ahead > 24 || Math.abs(dl) > 2.6) continue;
-        const ov = o.ref === this.player ? Math.max(0, this.car.vf) : o.ref.armor.wrecked ? 0 : o.ref.v;
-        if (ov >= v - 0.5) continue;
-        const left = o.lat - 3.2, right = o.lat + 3.2, canL = left > -room, canR = right < room;
-        if (canL || canR) r.latT = !canR || (canL && Math.abs(left - me.lat) < Math.abs(right - me.lat)) ? left : right;
-        else want = Math.min(want, ov);
-      }
-      if (Math.random() < dt * 0.15) r.latT = (Math.random() - 0.5) * 2 * room * 0.7;
+    if (Math.random() < dt * 0.15) r.laneT = (Math.random() - 0.5) * 2 * room * 0.7;
+    r.laneT = Math.max(-room, Math.min(room, r.laneT));
+    // ---- what I can see: who's on my six, who's in my sights, who just cut across me
+    let threat = null, sights = null;
+    for (const o of all) {
+      if (o.ref === r || o.ref.armor.wrecked) continue;
+      const ahead = (o.prog - r.prog) * STEP, dl = o.lat - me.lat;
+      if (ahead < -3 && ahead > -30 && Math.abs(dl) < 3 && (!threat || ahead > (threat.prog - r.prog) * STEP)) threat = o;
+      if (ahead > 8 && ahead < 70 && Math.abs(dl) < 2.5 + ahead * 0.05 && !sights) sights = o;
+      if (ahead > 2 && ahead < 18) {
+        const side = Math.sign(dl), was = r.mem.side.get(o.ref);
+        if (was && side && side !== was) r.mem.crossed.set(o.ref, this.t);
+        r.mem.side.set(o.ref, side);
+      } else r.mem.side.delete(o.ref);
     }
-    // ---- evasive: weave when shot at or when someone sits on my tail
-    let threat = this.t - r.hitT < 1.6;
-    if (!threat) for (const o of all) { const behind = (r.prog - o.prog) * STEP; if (o.ref !== r && behind > 4 && behind < 35 && Math.abs(o.lat - me.lat) < 2.5 && !o.ref.armor.wrecked) { threat = true; break; } }
-    let lat = r.latT;
-    if (threat && !(tgt && Math.abs((tgt.prog - r.prog) * STEP) < 10)) lat += Math.sin(this.t * (r.personality === 'racer' ? 2.4 : 1.6) + r.slot) * (r.personality === 'racer' ? 3 : 1.8);
-    lat = Math.max(-room, Math.min(room, lat));
-    r.latT = Math.max(-room, Math.min(room, r.latT));
+    for (const o of all) o.v = o.ref === this.player ? Math.max(0, this.car.vf) : o.ref.v; // speeds for the brain
+    // ---- decide (a few times a second), then follow the plan
+    r.thinkT -= dt;
+    if (this.state === 'race' && !r.finished && r.thinkT <= 0) {
+      r.thinkT = AI.thinkEvery;
+      think(r, { me, all, t: this.t, player: this.player, room, line, straight: profile[(i + 60) % N] > 44 && line >= 45.8 * r.skill * 0.98, threat, shotAt: this.t - r.hitT, inSights: sights, target: null }, r.plan);
+    } else if (this.state !== 'race' || r.finished) Object.assign(r.plan, { lat: r.laneT, speed: line, fire: null, boost: false });
+    const plan = r.plan, ptarget = plan.fire && all.find((o) => o.ref === plan.fire.ref);
+    const lat = Math.max(-room, Math.min(room, plan.lat));
+    const want = Math.min(plan.speed, line * 1.12, 45.8);
+    c.addBoost(dt * AI.boostRegen);
     // ---- steer at a point down the road on my line
     const look = 9 + v * 0.55, tp = pointAt(i + Math.round(look / STEP), lat);
     let diff = Math.atan2(tp.x - c.x, tp.z - c.z) - c.yaw;
@@ -532,23 +540,15 @@ export class Race {
     const steer = THREE.MathUtils.clamp(-diff * 2.6, -1, 1);
     // brake hard only when well over and fairly straight (braking while steering drifts)
     const over = v - want;
-    Object.assign(r.inp, { steer, throttle: over < -0.5 ? 1 : 0, brake: over > (Math.abs(steer) > 0.3 ? 7 : 3) ? 1 : 0, cap: 45.8 * r.skill * (want > 45.8 * r.skill ? 1.05 : 1) });
+    Object.assign(r.inp, { steer, throttle: over < -0.5 || plan.boost ? 1 : 0, brake: over > (Math.abs(steer) > 0.3 ? 7 : 3) ? 1 : 0, cap: plan.boost ? 0 : 45.8 * r.skill * (want > 45.8 * r.skill ? 1.05 : 1), boost: plan.boost && c.boost > AI.boostMeter && Math.abs(steer) < 0.3 && over < 2 });
     // ---- unstick: spun round or stopped against something for a while -> back on the road
     r.stuckT = v < 4 || Math.abs(diff) > 1.7 ? r.stuckT + dt : 0;
     if (r.stuckT > 2.5) { r.stuckT = 0; const k = i; c.reset(k, Math.max(-room, Math.min(room, me.lat))); const p = pointAt(k, me.lat); c.vx = Math.sin(p.yaw) * 16; c.vz = Math.cos(p.yaw) * 16; c.vf = 16; r.pI = k; }
     if (!r.finished && r.prog >= LAPS * N) { r.finished = true; r.finishT = this.raceT; }
-    // ---- guns: fighters shoot their quarry, racers only what's straight ahead
+    // ---- guns: short bursts at whatever the plan says to shoot
     r.cool -= dt;
-    let shoot = null;
-    if (this.state === 'race' && r.cool <= 0) {
-      if (tgt && (tgt.prog - r.prog) * STEP > 6) shoot = tgt;
-      else for (const o of all) {
-        if (o.ref === r || o.ref.armor.wrecked) continue;
-        const ahead = (o.prog - r.prog) * STEP;
-        if (ahead > 8 && ahead < 70 && Math.abs(o.lat - me.lat) < (r.personality === 'racer' ? 2.5 : 4) + ahead * 0.05) { shoot = o; break; }
-      }
-    }
-    if (shoot && r.burst <= 0) r.burst = 0.9 + Math.random() * 0.8;
+    const shoot = this.state === 'race' && ptarget && !ptarget.ref.armor.wrecked && (ptarget.prog - r.prog) * STEP > 5 ? ptarget : null;
+    if (shoot && r.burst <= 0 && r.cool <= 0) r.burst = 0.9 + Math.random() * 0.8;
     const firing = r.burst > 0;
     if (firing) { r.burst -= dt; if (r.burst <= 0) r.cool = (r.personality === 'racer' ? 3.2 : 2) + Math.random() * 2.5; }
     r.aim = r.aim ?? new THREE.Vector3();

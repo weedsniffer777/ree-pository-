@@ -14,7 +14,7 @@ export function setTerrain(fn, fnN) { terrainHeight = fn; terrainHeightN = fnN; 
 // ballistic airtime off crests, circle/box collisions, corridor and guardrail limits.
 
 const G = 24;
-const TOP_V = 45.8, BOOST_V = 58.3; // 165 / 210 km/h
+const TOP_V = 45.8, BOOST_V = 58.3, REV_V = TOP_V * 0.5; // 165 / 210 km/h forward, 82 reverse
 const WB_F = 1.3, WB_R = -1.25, TRACK = 0.77, WHEEL_R = 0.332;
 // Hitbox: a row of circles fitted to the model's footprint (see fitHitbox).
 export function fitHitbox(model) {
@@ -105,11 +105,18 @@ export class CarController {
       this.boosting = inp.boost && this.boost > 0.02 && inp.throttle > 0;
       // top 165 km/h on the throttle, boost 210
       const want = Math.min(inp.cap || Infinity, (this.boosting ? BOOST_V : TOP_V) * surf.max);
+      // Clutch: a brake-kicked slide or a car well sideways drops the drive out, so the car
+      // rotates freely and keeps its momentum (no engine braking); it bites again smoothly
+      // over ~0.35 s once you're off the brake and pointing roughly where you're going.
+      const slipNow = Math.abs(Math.atan2(vl, Math.abs(vf)));
+      const declutch = (inp.brake > 0 && vf > 6 && Math.abs(this.steerS) > 0.3) || (slipNow > 1.0 && Math.hypot(vf, vl) > 6);
+      this.clutch = (this.clutch ?? 1) + ((declutch ? 0 : 1) - (this.clutch ?? 1)) * Math.min(1, dt * (declutch ? 10 : 3));
+      const cl = this.clutch;
       if (inp.throttle > 0 && vf < want) {
-        const a = (this.boosting ? 20 : 11) * inp.throttle * Math.max(0.18, 1 - (Math.max(0, vf) / want) ** 2);
+        const a = (this.boosting ? 20 : 11) * inp.throttle * cl * Math.max(0.18, 1 - (Math.max(0, vf) / want) ** 2);
         vf += a * dt;
       }
-      if (vf > want) vf -= (vf - want) * (inp.throttle ? 0.6 : 0.25) * dt;
+      if (vf > want) vf -= (vf - want) * (inp.throttle ? 0.6 : 0.25) * (0.2 + 0.8 * cl) * dt;
       // S straight = firm stop; S + steer = grip fades into a slide (the original model,
       // with less lateral friction so a hard swing keeps the car on its line, nose off-axis).
       // Letting go of steer with S still held ends the slide and S is ignored until pressed
@@ -130,17 +137,17 @@ export class CarController {
       this.drift += (driftWant - this.drift) * Math.min(1, dt * (driftWant > this.drift ? 4.5 : 1.6));
       this.driftMode = this.drift > 0.35;
       if (inp.brake > 0 && vf < -3) {
-        // already rolling backwards (after a J-turn): S keeps driving it backwards, Death
-        // Race style, instead of killing the momentum
-        vf = Math.max(-30, vf - 7 * dt);
+        // already rolling backwards (after a 180): S is full reverse, up to half the normal
+        // top speed; faster than that it just keeps the momentum it has
+        if (vf > -REV_V) vf = Math.max(-REV_V, vf - 9 * (0.3 + 0.7 * cl) * dt);
       } else if (brake > 0) {
         // brakes bite hard at speed and progressively softer as the car slows (no snap
         // stop); in a committed drift the brake mostly unloads the rear instead
         if (vf > 0.5) vf -= (7 + 13 * Math.min(1, vf / 22)) * (1 - this.drift * (inp.throttle > 0 ? 0.92 : 0.8)) * dt * brake;
-        else if (this.revOK || (this.stopT += dt) > 0.9) vf = Math.max(-11, vf - 10 * dt * brake);
+        else if (this.revOK || (this.stopT += dt) > 0.9) vf = Math.max(-REV_V, vf - 9 * dt * brake);
         else vf = Math.max(0, vf - 7 * dt);
       }
-      if (!inp.throttle && !brake) vf -= vf * (this.dead ? 1.1 : 0.3) * dt; // a wreck grinds to a halt
+      if (!inp.throttle && !brake) vf -= vf * (this.dead ? 1.1 : 0.06 + 0.24 * cl) * dt; // declutched: rolls on; a wreck grinds to a halt
       vf -= vf * surf.drag * dt * 0.35;
       this.braking = braking;
       // Momentum: the velocity keeps its size and swings round toward where the car points
