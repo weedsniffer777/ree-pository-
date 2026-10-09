@@ -1,11 +1,11 @@
 import * as THREE from 'three';
 
-// Explosions and flying bits. Each blast is a cluster of noise-deformed 3D puffs: lumpy,
-// uneven lobes that start white-hot, cool through yellow / orange / deep red into dark,
-// sun-lit smoke, roll upward and erode away. Cores are small and fierce, the outer lobes
-// and the smoke column big and slow, so no blast reads as one even ball. One shared flash
-// light (made up front so the light count never changes). Bits: an instanced pool of small
-// rigid pieces (debris, shell casings, belt links).
+// Explosions and flying bits. A blast is noise-deformed 3D lobes in two kinds. Fire lobes
+// flash white-hot, swell, and burn out fast from their thin edges inward while cooling
+// through yellow / orange / red (they never turn into cloud). Smoke lobes are separate:
+// dark, sun-lit, they roll upward, billow, and fade out softly over seconds. Plus an
+// anamorphic flare on the first instant and a shared flash light (made up front so the
+// light count never changes). Bits: an instanced pool of small rigid pieces.
 
 const NOISE = `
 vec3 m289(vec3 x){return x-floor(x*(1./289.))*289.;} vec4 m289(vec4 x){return x-floor(x*(1./289.))*289.;}
@@ -30,39 +30,45 @@ float snoise(vec3 v){
   return 42.*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
 }`;
 const VS = NOISE + `
-uniform float t, seed;
+uniform float t, seed, mode;
 varying float vN; varying vec3 vNorm; varying vec3 vW;
 void main(){
   vec3 p = position;
-  float n = snoise(p * 1.4 + vec3(seed, seed * 1.7, t * 1.2)) * 0.5 + snoise(p * 3.1 + vec3(seed * 2.3, t * 2.0, 0.)) * 0.22;
+  float sp = mode > 0.5 ? 0.45 : 1.2; // smoke churns slowly
+  float n = snoise(p * 1.4 + vec3(seed, seed * 1.7, t * sp * 3.0)) * 0.5 + snoise(p * 3.1 + vec3(seed * 2.3, t * sp * 5.0, 0.)) * 0.22;
   vN = n;
   p *= 1.0 + n * 0.55;
-  vNorm = normalize(normalMatrix * normal);
+  vNorm = normalize(mat3(modelMatrix) * normal);
   vec4 w = modelMatrix * vec4(p, 1.0);
   vW = w.xyz;
   gl_Position = projectionMatrix * viewMatrix * w;
 }`;
 const FS = `
-uniform float t, heat; uniform vec3 sun;
+uniform float t, heat, mode; uniform vec3 sun;
 varying float vN; varying vec3 vNorm; varying vec3 vW;
 vec3 ramp(float h){
-  vec3 smoke = vec3(0.09, 0.085, 0.08);
-  vec3 c = mix(smoke, vec3(0.45, 0.07, 0.02), smoothstep(0.08, 0.25, h));
-  c = mix(c, vec3(1.0, 0.36, 0.05), smoothstep(0.25, 0.45, h));
-  c = mix(c, vec3(1.0, 0.78, 0.25), smoothstep(0.45, 0.68, h));
+  vec3 c = vec3(0.32, 0.04, 0.01);
+  c = mix(c, vec3(1.0, 0.36, 0.05), smoothstep(0.2, 0.42, h));
+  c = mix(c, vec3(1.0, 0.78, 0.25), smoothstep(0.42, 0.66, h));
   c = mix(c, vec3(1.0, 0.98, 0.9), smoothstep(0.7, 0.9, h));
   return c;
 }
 void main(){
-  // dissolve from the thin edges in as the puff ages
-  float erode = smoothstep(0.55, 1.0, t) * 1.3;
-  if (vN * 0.5 + 0.5 < erode) discard;
-  float h = clamp(heat * (1.0 - t * 1.25) + vN * 0.55 + 0.1, 0.0, 1.0);
-  vec3 c = ramp(h);
-  float lit = 0.35 + 0.65 * max(dot(normalize(vNorm), normalize(sun)), 0.0);
-  float glow = smoothstep(0.25, 0.9, h);
-  c = mix(c * lit * 1.4, c * (1.4 + glow * 2.2), glow);
-  gl_FragColor = vec4(c, 1.0);
+  vec3 n = normalize(vNorm), v = normalize(cameraPosition - vW);
+  float facing = abs(dot(n, v));
+  if (mode < 0.5) {
+    // fire: cools from the edges in, and whatever has cooled is simply gone
+    float h = heat * (1.0 - t * 1.05) + vN * 0.45 + facing * 0.25;
+    if (h < 0.18) discard;
+    vec3 c = ramp(clamp(h, 0.0, 1.0));
+    gl_FragColor = vec4(c * (1.3 + smoothstep(0.3, 0.9, h) * 2.4), 1.0);
+  } else {
+    // smoke: dark, lit from the sun, soft-edged, fading out slowly as it rises
+    float lit = 0.3 + 0.7 * max(dot(n, normalize(sun)), 0.0);
+    vec3 c = vec3(0.075, 0.07, 0.065) * (0.55 + lit * 1.1) + vec3(0.25, 0.08, 0.02) * heat * max(0.0, 1.0 - t * 4.0);
+    float a = (0.5 + vN * 0.5) * smoothstep(0.0, 0.55, facing) * smoothstep(0.0, 0.08, t) * pow(1.0 - t, 1.4) * 0.92;
+    gl_FragColor = vec4(c, a);
+  }
 }`;
 
 export class Booms {
@@ -71,7 +77,7 @@ export class Booms {
     const geo = new THREE.IcosahedronGeometry(1, 4);
     this.items = [];
     for (let k = 0; k < max; k++) {
-      const mat = new THREE.ShaderMaterial({ uniforms: { t: { value: 0 }, seed: { value: Math.random() * 50 }, heat: { value: 1 }, sun: { value: sun } }, vertexShader: VS, fragmentShader: FS });
+      const mat = new THREE.ShaderMaterial({ uniforms: { t: { value: 0 }, seed: { value: Math.random() * 50 }, heat: { value: 1 }, mode: { value: 0 }, sun: { value: sun } }, vertexShader: VS, fragmentShader: FS, transparent: true });
       const m = new THREE.Mesh(geo, mat);
       m.visible = false;
       m.frustumCulled = false;
@@ -81,14 +87,35 @@ export class Booms {
     this.next = 0;
     this.light = new THREE.PointLight(0xffa050, 0, 45, 2);
     scene.add(this.light);
+    // anamorphic flare for the first instant: a hot core with a long horizontal streak
+    const fc = document.createElement('canvas');
+    fc.width = 512; fc.height = 128;
+    const g = fc.getContext('2d');
+    const st = g.createLinearGradient(0, 0, 512, 0);
+    st.addColorStop(0, 'rgba(255,160,80,0)'); st.addColorStop(0.5, 'rgba(255,235,200,0.9)'); st.addColorStop(1, 'rgba(255,160,80,0)');
+    g.fillStyle = st; g.fillRect(0, 60, 512, 8);
+    const gl = g.createRadialGradient(256, 64, 0, 256, 64, 64);
+    gl.addColorStop(0, 'rgba(255,255,245,1)'); gl.addColorStop(0.3, 'rgba(255,200,120,0.55)'); gl.addColorStop(1, 'rgba(255,120,40,0)');
+    g.fillStyle = gl; g.fillRect(192, 0, 128, 128);
+    this.flares = [0, 1].map(() => {
+      const f = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(fc), blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false, transparent: true }));
+      f.visible = false;
+      f.renderOrder = 10;
+      scene.add(f);
+      return { f, t: 0, life: 0, size: 1 };
+    });
   }
   // one lobe: heat 1 = white-hot core, ~0.35 = sooty smoke
-  puff(x, y, z, size, life, heat, v, delay = 0) {
+  puff(x, y, z, size, life, heat, v, delay = 0, smoke = false) {
     const it = this.items[this.next];
     this.next = (this.next + 1) % this.items.length;
     it.m.position.set(x, y, z);
     it.v.copy(v);
+    it.smoke = smoke;
     it.m.material.uniforms.heat.value = heat;
+    it.m.material.uniforms.mode.value = smoke ? 1 : 0;
+    it.m.material.depthWrite = !smoke;
+    it.m.renderOrder = smoke ? 2 : 0;
     it.m.material.uniforms.seed.value = Math.random() * 50;
     it.stretch.set(0.8 + Math.random() * 0.5, 0.75 + Math.random() * 0.6, 0.8 + Math.random() * 0.5);
     it.m.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
@@ -104,11 +131,21 @@ export class Booms {
       const a = Math.random() * Math.PI * 2, r = core ? Math.random() * 0.6 : (big ? 1.2 : 0.4) + Math.random() * (big ? 2.2 : 0.7);
       tv.set(vel.x * keep + Math.cos(a) * r * 2.2, (core ? 2 : 3.5) + Math.random() * (big ? 6 : 2.5), vel.z * keep + Math.sin(a) * r * 2.2);
       const size = (big ? (core ? 2.6 : 1.7 + Math.random() * 1.6) : (core ? 1.1 : 0.6 + Math.random() * 0.5));
-      this.puff(p.x + Math.cos(a) * r, p.y + 0.3 + Math.random() * (big ? 1.2 : 0.4), p.z + Math.sin(a) * r, size, (big ? 1.3 : 0.6) * (0.8 + Math.random() * 0.5), core ? 1.05 : 0.8 + Math.random() * 0.15, tv, core ? 0 : Math.random() * (big ? 0.12 : 0.04));
+      // fire is brief: it flares and burns out well inside a second
+      this.puff(p.x + Math.cos(a) * r, p.y + 0.3 + Math.random() * (big ? 1.2 : 0.4), p.z + Math.sin(a) * r, size, (big ? 0.75 : 0.4) * (0.8 + Math.random() * 0.45), core ? 1.05 : 0.85 + Math.random() * 0.15, tv, core ? 0 : Math.random() * (big ? 0.1 : 0.03));
     }
-    if (big) for (let k = 0; k < 7; k++) { // the dark column rolling up behind it
-      tv.set(vel.x * 0.35 + (Math.random() - 0.5) * 2, 3.5 + Math.random() * 3, vel.z * 0.35 + (Math.random() - 0.5) * 2);
-      this.puff(p.x + (Math.random() - 0.5) * 2.5, p.y + 1.5 + k * 0.7, p.z + (Math.random() - 0.5) * 2.5, 2.2 + Math.random() * 1.8, 2.6 + Math.random() * 1.2, 0.42 - k * 0.03, tv, 0.18 + k * 0.07);
+    // black smoke rolls up out of the fire and hangs, fading slowly
+    const smokes = big ? 9 : 2;
+    for (let k = 0; k < smokes; k++) {
+      tv.set(vel.x * (big ? 0.3 : 0.5) + (Math.random() - 0.5) * 2, (big ? 3 : 2) + Math.random() * 2.5, vel.z * (big ? 0.3 : 0.5) + (Math.random() - 0.5) * 2);
+      this.puff(p.x + (Math.random() - 0.5) * (big ? 2.5 : 0.8), p.y + (big ? 1.2 + k * 0.45 : 0.8), p.z + (Math.random() - 0.5) * (big ? 2.5 : 0.8),
+        big ? 2.0 + Math.random() * 1.8 : 0.9 + Math.random() * 0.5, big ? 4 + Math.random() * 2.5 : 2 + Math.random(), 1, tv, (big ? 0.2 : 0.12) + k * (big ? 0.06 : 0.05), true);
+    }
+    for (const [k, f] of this.flares.entries()) {
+      if (!big && k) break;
+      f.f.position.set(p.x, p.y + 1, p.z);
+      Object.assign(f, { t: 0, life: big ? 0.28 : 0.14, size: (big ? 26 : 9) * (k ? 0.55 : 1) });
+      f.f.material.rotation = k ? Math.PI / 2 : 0;
     }
     const sp = big ? 50 : 14;
     for (let k = 0; k < sp; k++) this.sparks.emit(p.x, p.y + 0.4, p.z, vel.x * keep + (Math.random() - 0.5) * (big ? 32 : 14), 2 + Math.random() * (big ? 16 : 6), vel.z * keep + (Math.random() - 0.5) * (big ? 32 : 14), big ? 0.16 : 0.11, 0.3 + Math.random() * 0.5, 1.0, 0.85, 0.45);
@@ -117,6 +154,15 @@ export class Booms {
   }
   update(dt) {
     this.light.intensity = Math.max(0, this.light.intensity - dt * 380);
+    for (const f of this.flares) {
+      if (f.life <= 0) continue;
+      f.t += dt;
+      const u = f.t / f.life;
+      if (u >= 1) { f.life = 0; f.f.visible = false; continue; }
+      f.f.visible = true;
+      f.f.scale.set(f.size * (1 + u * 0.4), f.size * 0.25 * (1 + u * 0.4), 1);
+      f.f.material.opacity = (1 - u) ** 2;
+    }
     for (const it of this.items) {
       if (it.life <= 0) continue;
       it.t += dt;
@@ -126,10 +172,10 @@ export class Booms {
       it.m.visible = true;
       it.m.material.uniforms.t.value = u;
       it.m.position.addScaledVector(it.v, dt);
-      it.v.multiplyScalar(Math.exp(-dt * 2.6));
-      it.v.y += dt * 1.2; // hot air keeps rising
-      // violent swell, then a slow billow
-      const sc = it.size * (u < 0.12 ? 0.25 + (u / 0.12) * 0.75 : 1 + (u - 0.12) * 0.6);
+      it.v.multiplyScalar(Math.exp(-dt * (it.smoke ? 1.2 : 2.6)));
+      it.v.y += dt * (it.smoke ? 0.9 : 1.2); // hot air keeps rising
+      // fire: violent swell then hold while it burns out; smoke: steady billow outward
+      const sc = it.size * (it.smoke ? 0.45 + Math.sqrt(u) * 1.6 : u < 0.15 ? 0.3 + (u / 0.15) * 0.7 : 1 + (u - 0.15) * 0.35);
       it.m.scale.set(sc * it.stretch.x, sc * it.stretch.y, sc * it.stretch.z);
       it.m.rotation.y += dt * 0.6;
     }
@@ -171,7 +217,10 @@ export class Bits {
       n = k + 1;
       it.v.y -= 24 * dt;
       it.p.addScaledVector(it.v, dt);
-      const gy = this.height(it.p.x, it.p.z) + it.s.y * 0.5;
+      // half-height of the rotated box along world up, so tumbled pieces rest on their face
+      const { x: qx, y: qy, z: qz, w: qw } = it.q;
+      const r10 = 2 * (qx * qy + qz * qw), r11 = 1 - 2 * (qx * qx + qz * qz), r12 = 2 * (qy * qz - qx * qw);
+      const gy = this.height(it.p.x, it.p.z) + 0.5 * (Math.abs(r10) * it.s.x + Math.abs(r11) * it.s.y + Math.abs(r12) * it.s.z);
       if (it.p.y < gy) {
         it.p.y = gy;
         if (it.v.y < -2) { it.v.y *= -this.bounce; it.v.x *= 0.7; it.v.z *= 0.7; it.w.multiplyScalar(0.6); } else { it.v.y = 0; it.v.x *= Math.exp(-dt * 5); it.v.z *= Math.exp(-dt * 5); it.w.multiplyScalar(Math.exp(-dt * 6)); }
@@ -181,7 +230,7 @@ export class Bits {
       const fade = Math.min(1, (it.life - it.t) / 0.6);
       this.m.compose(it.p, it.q, this.sv.copy(it.s).multiplyScalar(fade));
       this.mesh.setMatrixAt(k, this.m);
-      if (it.burn && onBurn && Math.random() < dt * 9) onBurn(it.p, it.t / it.life);
+      if (it.burn && onBurn && Math.random() < dt * 24) onBurn(it.p, it.t / it.life);
     }
     this.mesh.count = Math.max(n, 1);
     this.mesh.instanceMatrix.needsUpdate = true;

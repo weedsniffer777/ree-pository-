@@ -338,14 +338,14 @@ export class Race {
     charModel(model);
     for (const part of me ? this.playerParts : target.parts) {
       const kick = new THREE.Vector3((Math.random() - 0.5) * 18, 5 + Math.random() * 9, (Math.random() - 0.5) * 18);
-      this.wreckage.detach(part, v.clone().multiplyScalar(0.8 + Math.random() * 0.25), kick, Math.random() < 0.4);
+      this.wreckage.detach(part, v.clone().multiplyScalar(0.8 + Math.random() * 0.25), kick, Math.random() < 0.85);
     }
     model.position.y = -0.3; // on its belly with the wheels gone
     const tmp = new THREE.Vector3(), tv = new THREE.Vector3();
     for (let k = 0; k < 12; k++) { // shrapnel
       tmp.set(p.x + (Math.random() - 0.5) * 1.8, p.y + Math.random() * 0.8, p.z + (Math.random() - 0.5) * 3.5);
       tv.set(v.x * (0.7 + Math.random() * 0.3) + (Math.random() - 0.5) * 16, 4 + Math.random() * 12, v.z * (0.7 + Math.random() * 0.3) + (Math.random() - 0.5) * 16);
-      this.debris.spawn(tmp, tv, { size: [0.12 + Math.random() * 0.3, 0.05 + Math.random() * 0.15, 0.12 + Math.random() * 0.35], life: 3 + Math.random() * 3, spin: 16, color: [0x1c1c1c, 0x2a2b2c, 0x141414][k % 3], burn: k % 4 === 0 });
+      this.debris.spawn(tmp, tv, { size: [0.12 + Math.random() * 0.3, 0.05 + Math.random() * 0.15, 0.12 + Math.random() * 0.35], life: 3 + Math.random() * 3, spin: 16, color: [0x1c1c1c, 0x2a2b2c, 0x141414][k % 3], burn: k % 2 === 0 });
     }
     if (me) { c.dead = true; c.vx *= 0.85; c.vz *= 0.85; this.over('wrecked'); }
     else { target.deadT = 0; target.spin = (Math.random() - 0.5) * 2.2; target.v *= 0.7; }
@@ -493,9 +493,10 @@ export class Race {
     this.order = rows;
     this.hud.standings(rows.map((r) => ({ name: r.name, you: !!r.you, color: r.hex, out: r.armor.wrecked, gap: r.you ? '' : r.armor.wrecked ? 'OUT' : r.finished ? 'FIN' : `${r.prog > this.pProg ? '+' : '-'}${Math.round(Math.abs(r.prog - this.pProg) * STEP)}m` })));
     this.hud.armor(this.player.armor, this.t, dt);
-    this.wreckage.update(dt, (q) => {
-      this.fx.dust.emit(q.x, q.y + 0.3, q.z, 0, 1.2 + Math.random(), 0, 0.6 + Math.random() * 0.5, 1 + Math.random(), 0.1, 0.09, 0.08);
-      this.fx.sparks.emit(q.x, q.y + 0.2, q.z, (Math.random() - 0.5), 1 + Math.random() * 1.5, (Math.random() - 0.5), 0.3, 0.3, 1.0, 0.5, 0.1);
+    this.wreckage.update(dt, (q, t) => {
+      const g = 0.07 + Math.random() * 0.05;
+      this.fx.dust.emit(q.x, q.y + 0.25, q.z, (Math.random() - 0.5) * 0.6, 1.4 + Math.random() * 1.2, (Math.random() - 0.5) * 0.6, 0.7 + Math.random() * 0.7, 1.6 + Math.random() * 1.4, g, g * 0.95, g * 0.9);
+      if (t < 5) for (let k = 0; k < 2; k++) this.fx.sparks.emit(q.x + (Math.random() - 0.5) * 0.4, q.y + 0.15, q.z + (Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.8, 1.2 + Math.random() * 2, (Math.random() - 0.5) * 0.8, 0.28 + Math.random() * 0.22, 0.25 + Math.random() * 0.25, 1.0, 0.45 + Math.random() * 0.3, 0.08);
     });
     this.hud.mapDots(this.rivals.filter((r) => !r.armor.wrecked).map((r) => ({ x: r.x, z: r.z, color: r.hex })));
     if (this.state === 'done' && !this.shown && this.t - this.doneT > 1.6) this.showResults();

@@ -51,16 +51,20 @@ export class Wreckage {
   constructor(scene, height) {
     Object.assign(this, { scene, height, items: [], tq: new THREE.Quaternion(), te: new THREE.Euler(), box: new THREE.Box3() });
   }
-  // tear `part` off its car: keeps its world pose, takes the car's velocity plus a kick
+  // tear `part` off its car: keeps its world pose, takes the car's velocity plus a kick.
+  // Parts are grouped around the car's origin, so each is re-hung on a pivot at its own
+  // centre first; otherwise it would swing about a point a metre or two away and float.
   detach(part, vel, kick, burn = false) {
     if (part.userData.home) return;
     part.userData.home = { parent: part.parent, pos: part.position.clone(), quat: part.quaternion.clone(), scale: part.scale.clone() };
-    this.scene.attach(part);
     this.box.setFromObject(part);
-    const r = Math.max(0.15, (this.box.max.y - this.box.min.y) * 0.5);
+    const pivot = new THREE.Group();
+    this.box.getCenter(pivot.position);
+    this.scene.add(pivot);
+    pivot.attach(part);
     const v = vel.clone().add(kick);
     const w = new THREE.Vector3((Math.random() - 0.5) * 9, (Math.random() - 0.5) * 9, (Math.random() - 0.5) * 9);
-    this.items.push({ part, v, w, r, t: 0, burn, rest: false });
+    this.items.push({ part, pivot, v, w, t: 0, burn, rest: false });
   }
   // put everything back on its car (new race)
   restoreAll() {
@@ -73,30 +77,35 @@ export class Wreckage {
       it.part.visible = true;
       delete it.part.userData.home;
       unchar(it.part);
+      it.pivot.removeFromParent();
     }
     this.items.length = 0;
   }
   update(dt, onBurn) {
     for (const it of this.items) {
       it.t += dt;
-      const p = it.part.position;
+      const P = it.pivot, p = P.position;
       if (!it.rest) {
         it.v.y -= 24 * dt;
         p.addScaledVector(it.v, dt);
-        const gy = this.height(p.x, p.z) + it.r * 0.6;
-        if (p.y < gy) {
-          p.y = gy;
+        this.tq.setFromEuler(this.te.set(it.w.x * dt, it.w.y * dt, it.w.z * dt));
+        P.quaternion.multiply(this.tq);
+        // ground contact by the part's actual lowest point
+        P.updateMatrixWorld(true);
+        this.box.setFromObject(it.part);
+        const under = this.height(p.x, p.z) + 0.02 - this.box.min.y;
+        if (under > 0) {
+          p.y += under;
           if (it.v.y < -2.5) { it.v.y *= -0.3; it.v.x *= 0.65; it.v.z *= 0.65; it.w.multiplyScalar(0.5); } else {
-            it.v.y = 0;
-            it.v.x *= Math.exp(-dt * 3.5); it.v.z *= Math.exp(-dt * 3.5);
-            it.w.multiplyScalar(Math.exp(-dt * 5));
-            if (it.v.lengthSq() < 0.05) it.rest = true;
+            it.v.y = Math.max(0, it.v.y);
+            it.v.x *= Math.exp(-dt * 4); it.v.z *= Math.exp(-dt * 4);
+            it.w.multiplyScalar(Math.exp(-dt * 6));
+            if (it.v.lengthSq() < 0.05 && it.w.lengthSq() < 0.05) it.rest = true;
           }
         }
-        this.tq.setFromEuler(this.te.set(it.w.x * dt, it.w.y * dt, it.w.z * dt));
-        it.part.quaternion.multiply(this.tq);
       }
-      if (it.burn && onBurn && it.t < 14 && Math.random() < dt * 6) onBurn(p, it.t);
+      // burning parts: flames for the first seconds, smoke trailing for longer
+      if (it.burn && onBurn && it.t < 16 && Math.random() < dt * (it.t < 5 ? 22 : 9)) onBurn(p, it.t, !it.rest);
     }
   }
 }
