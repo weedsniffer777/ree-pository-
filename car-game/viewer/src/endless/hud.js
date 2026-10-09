@@ -4,7 +4,7 @@
 // as dots). Bottom right: tacho with simulated gears, speed and the boost bar. Centred
 // yellow tutorial cards still spotlight the HUD part they are about.
 
-import { XRay } from './xray.js';
+import { XRay, damageColor } from './xray.js';
 
 const NOISE = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.62  0 0 0 0 0.33  0 0 0 0 0.16  0 0 0 0.55 -0.12'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>")`;
 
@@ -78,11 +78,13 @@ const CSS = `
 #hud kbd { display: inline-block; min-width: 1.4em; padding: 2px 5px 1px; background: var(--white); color: var(--black); border-radius: 2px; font: 800 10px/1 var(--sign); text-align: center; letter-spacing: 0.04em; }
 
 /* armor: top-down car, four zones + core, green -> grey -> black */
-#hud .armor { position: absolute; left: calc(var(--gx) + 184px); bottom: calc(var(--gyb) - 6px); width: 96px; height: 150px; filter: drop-shadow(0 0 6px rgba(0,0,0,0.6)); }
-#hud .armor canvas { width: 100%; height: calc(100% - 18px); display: block; }
-#hud .armor .hp { text-align: center; font: 900 17px/1 var(--display); letter-spacing: 0.04em; font-variant-numeric: tabular-nums; text-shadow: 0 2px 0 rgba(0,0,0,0.6); }
-#hud .armor .hp small { font-size: 11px; color: var(--dim); }
-#hud .armor .hp.low b { color: #ff4a2a; }
+#hud .armor { position: absolute; left: calc(var(--gx) + 186px); bottom: calc(var(--gyb) - 8px); width: 134px; height: 236px; filter: drop-shadow(0 0 6px rgba(0,0,0,0.6)); }
+#hud .armor canvas { width: 100%; height: calc(100% - 34px); display: block; }
+#hud .armor .hp { text-align: center; font: 900 32px/1 var(--display); letter-spacing: 0.02em; font-variant-numeric: tabular-nums; text-shadow: 0 2px 0 rgba(0,0,0,0.65); white-space: nowrap; }
+#hud .armor .hp .lbl { font-size: 11px; margin-right: 2px; }
+#hud .armor .hp small { font-size: 15px; color: var(--dim); }
+#hud .armor .hp.low { animation: hpLow 0.6s steps(1) infinite; }
+@keyframes hpLow { 50% { opacity: 0.45; } }
 /* lock-on, military fire-control style: white reticle with mil ticks; a lock is phosphor
    green corner brackets + LOCK and range. No outlines, just a soft glow on the lock. */
 #hud { --lock: #5dff7a; --ret: rgba(255,255,255,0.9); --mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace; }
@@ -212,7 +214,9 @@ const CSS = `
   #hud .row { height: 17px; font-size: 10px; }
   #hud .row i { font-size: 12px; }
   #hud .map { width: 112px; height: 112px; }
-  #hud .armor { left: calc(var(--gx) + 116px); width: 70px; height: 110px; }
+  #hud .armor { left: calc(var(--gx) + 118px); width: 88px; height: 152px; }
+  #hud .armor canvas { height: calc(100% - 24px); }
+  #hud .armor .hp { font-size: 22px; } #hud .armor .hp small { font-size: 11px; }
   #hud .pop { font-size: 22px; } #hud .pop.combo { font-size: 28px; } #hud .pop.kill { font-size: 38px; }
   #hud .glass .crack canvas { width: 460px; height: 460px; }
   #hud .results h2 { font-size: 50px; }
@@ -242,7 +246,7 @@ const CSS = `
 @media (max-width: 720px) and (orientation: portrait) {
   #hud .tl { width: 200px; }
   #hud .map { width: 132px; height: 132px; }
-  #hud .armor { left: calc(var(--gx) + 140px); }
+  #hud .armor { left: calc(var(--gx) + 140px); width: 104px; height: 184px; }
   #hud .gauge, #hud .speed { width: 170px; }
   #hud .speed { height: 150px; }
   #hud .speed .rd { top: 58px; }
@@ -282,7 +286,7 @@ export function createHud({ touch = false } = {}) {
     </div>
     <div class="tr"><button class="pause" aria-label="Pause"></button></div>
     <div class="map panel"><canvas></canvas></div>
-    <div class="armor"><canvas></canvas><div class="hp"><span class="lbl">HP</span> <b>100</b><small>/100</small></div></div>
+    <div class="armor"><div class="hp"><span class="lbl">HP</span><b>100</b><small>/100</small></div><canvas></canvas></div>
     <div class="glass"></div>
     <div class="vig"></div>
     <div class="flash"></div>
@@ -600,7 +604,13 @@ export function createHud({ touch = false } = {}) {
     armor(a, t = performance.now() / 1000, dt = 1 / 60) {
       xray?.update(a, t);
       const hp = Math.ceil(a.core * 100);
-      if (hp !== hpShown) { hpShown = hp; $('.armor .hp b').textContent = String(hp); $('.armor .hp').classList.toggle('low', hp <= 30); }
+      if (hp !== hpShown) {
+        hpShown = hp;
+        const el = $('.armor .hp b'), [r, g, b] = damageColor(a.core);
+        el.textContent = String(hp);
+        el.style.color = `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)})`;
+        $('.armor .hp').classList.toggle('low', hp <= 25);
+      }
       flashV = Math.max(0, flashV - dt * 5);
       flashEl.style.opacity = flashV.toFixed(3);
       // red vignette: flashes on damage, settles to a glow that grows as HP drops

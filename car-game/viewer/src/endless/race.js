@@ -5,6 +5,7 @@ import { Guns } from '../level/combat.js';
 import { paintTopSkin } from '../models/cars/starterCoupe.js';
 import { bakeGroup } from '../level/bake.js';
 import { partsOf, charModel, unchar, Wreckage } from './carparts.js';
+import { Holes } from './holes.js';
 
 // Closed-loop race: the player plus seven AI rivals on the same model, each with its own
 // streak colour. Rolling start mid-pack behind the line, three laps, four-zone armor on
@@ -187,6 +188,13 @@ export class Race {
   constructor({ scene, model, car, fx, hud, gunsHitHook, booms, debris }) {
     Object.assign(this, { scene, car, fx, hud, booms, debris, model, hitstop: 0 });
     this.wreckage = new Wreckage(scene, fx.height);
+    this.holes = new Holes();
+    // the player's car slamming walls and props costs armor on the side that hit
+    car.onImpact = (v, nx, nz) => {
+      if (v < 7 || this.state !== 'race') return;
+      const f = [Math.sin(car.yaw), Math.cos(car.yaw)], lz = -nx * f[0] - nz * f[1], lx = -nx * -f[1] - nz * f[0];
+      this.damage(this.player, Armor.zoneOf(lx, lz, 1, 1), (v - 7) * 0.018, null, null, 'wall');
+    };
     this.playerParts = partsOf(model);
     profile ??= speedProfile(17, 9);
     this.player = { name: 'You', hex: ROSTER[0].hex, you: true, armor: new Armor(), mats: model.userData.skins };
@@ -194,8 +202,8 @@ export class Race {
     this.rivals = [];
     for (let s = 1; s < ROSTER.length; s++) this.rivals.push(new Rival(s, model, scene, fx));
     const hitTest = (o, d, range, shooter) => this.rayHit(o, d, range, shooter);
-    for (const r of this.rivals) { r.guns.hitTest = hitTest; r.guns.onTargetHit = (h) => this.damage(h.target, h.zone, 0.022, r, h.point); }
-    gunsHitHook(hitTest, (h) => { this.damage(h.target, h.zone, 0.05, this.player, h.point); car.addBoost(0.012); });
+    for (const r of this.rivals) { r.guns.hitTest = hitTest; r.guns.onTargetHit = (h) => this.damage(h.target, h.zone, 0.022, r, h.point, 'gun', h.dir); }
+    gunsHitHook(hitTest, (h) => { this.damage(h.target, h.zone, 0.05, this.player, h.point, 'gun', h.dir); car.addBoost(0.012); });
     hud.armorModel(rivalTemplate(model).model, this.hb);
     this.reset();
   }
@@ -204,7 +212,7 @@ export class Race {
   // just short of the line, cars in different lanes
   gridSlot(k) {
     const ahead = [0, 16, 34, 52, 70, 88, 108, 128][k]; // metres behind the leader
-    const prog = (-24 - ahead) / STEP;
+    const prog = (134 - ahead) / STEP; // the whole field already past the line, on the straight
     const lanes = [-0.45, 0.4, -0.1, 0.55, -0.3, 0.2, -0.55, 0.35];
     return { prog, lat: lanes[k] * latMax(wrapI(prog)) * 1.6 };
   }
@@ -224,6 +232,7 @@ export class Race {
     this.player.armor.reset();
     wear(this.player.mats, this.player.armor);
     this.wreckage.restoreAll();
+    this.holes.clear();
     this.car.dead = false;
     unchar(this.model);
     this.model.position.y = 0;
@@ -279,7 +288,7 @@ export class Race {
         if (p.y < b.y - 0.2 || p.y > b.y + 1.9) continue;
         const dx = p.x - b.x, dz = p.z - b.z;
         const lz = dx * fx + dz * fz - (hz0 + hz1) / 2, lx = dx * -fz + dz * fx;
-        best = { d: dist, point: p, target: b.ref, zone: Armor.zoneOf(lx, lz, hx, (hz1 - hz0) / 2) };
+        best = { d: dist, point: p, dir: d.clone().normalize(), target: b.ref, zone: Armor.zoneOf(lx, lz, hx, (hz1 - hz0) / 2) };
       }
     }
     return best;
@@ -288,9 +297,10 @@ export class Race {
   // Armor soaks a hit on its side until stripped; past that the hull HP (core) takes it.
   // Player hits drive the feedback: hitmarker, combo count, CRITICAL when a side breaks or
   // HP crosses a third, DESTROYED with the kill tally, small blasts on crits.
-  damage(target, zone, dmg, attacker = null, point = null) {
+  damage(target, zone, dmg, attacker = null, point = null, cause = 'gun', dir = null) {
     const a = target.armor;
     if (a.wrecked || this.state === 'done' && target === this.player) return;
+    if (cause === 'gun' && point && dir) this.holes.add(target.slot ?? 0, target === this.player ? this.model : target.model, point, dir, this.t);
     const zb = a.z[zone], hb = a.core;
     a.hit(zone, dmg);
     wear(target.mats, a);
@@ -310,7 +320,8 @@ export class Race {
         this.hud.flash(0.6);
         this.kills++;
         this.hud.hitmarker('kill');
-        this.hud.popup(`DESTROYED<small>x${this.kills}</small>`, 'kill');
+        const word = cause === 'ram' ? (Math.random() < 0.5 ? 'RAMMED' : 'CRUSHED') : 'DESTROYED';
+        this.hud.popup(`${word}<small>x${this.kills}</small>`, 'kill');
         this.car.addBoost(0.35);
       } else {
         this.hud.hitmarker(crit ? 'crit' : 'hit');
@@ -323,7 +334,7 @@ export class Race {
       this.car.hit(crit ? 6 : 1.5);
       for (const th of [0.5, 0.25, 0.1]) if (hb > th && a.core <= th) this.hud.crack();
     }
-    if (a.wrecked) this.detonate(target);
+    if (a.wrecked) this.detonate(target, cause);
   }
 
   // an armor zone stripped: its plates (and with the front, the dozer blade) come away
@@ -339,11 +350,11 @@ export class Race {
 
   // How a rival goes up. Today a coin flip between a plain blast and one that throws the
   // chassis into the air; later this keys off the kind of kill (ram, crit, overkill...).
-  killStyle(target) { return Math.random() < 0.5 ? 'launch' : 'plain'; }
+  killStyle(target, cause) { return Math.random() < (cause === 'ram' ? 0.7 : 0.45) ? 'launch' : 'plain'; }
 
   // a car going up: big blast, every bolt-on part blown off with the car's speed, and the
   // chassis left as a charred, burning wreck that slides to a stop and stays solid
-  detonate(target) {
+  detonate(target, cause = 'gun') {
     const me = target === this.player, c = this.car;
     const p = new THREE.Vector3(me ? c.x : target.x, (me ? c.y : target.y) + 0.7, me ? c.z : target.z);
     const v = me ? new THREE.Vector3(c.vx, 0, c.vz) : new THREE.Vector3(target.vx, 0, target.vz);
@@ -364,7 +375,7 @@ export class Race {
     if (me) { c.dead = true; c.vx *= 0.85; c.vz *= 0.85; this.over('wrecked'); }
     else {
       target.deadT = 0; target.spin = (Math.random() - 0.5) * 2.2; target.v *= 0.7;
-      if (this.killStyle(target) === 'launch') {
+      if (this.killStyle(target, cause) === 'launch') {
         target.v *= 0.75;
         target.air = { y: 0, vy: 10 + Math.random() * 4, rx: 0, rz: 0, wx: (Math.random() - 0.5) * 6, wz: (Math.random() < 0.5 ? -1 : 1) * (4 + Math.random() * 3), landed: false };
       }
@@ -401,10 +412,14 @@ export class Race {
         if (body.ref === this.player) { c.vx += nx * s; c.vz += nz * s; c.hit(Math.abs(s)); } else body.ref.kick(nx * s, nz * s);
       };
       kickB(A, j); kickB(C, -j);
-      if (-vrel > 4) for (const body of [A, C]) {
-        const f = [Math.sin(body.yaw), Math.cos(body.yaw)], dx = deep.px - body.x, dz = deep.pz - body.z;
-        const lz = dx * f[0] + dz * f[1] - (hz0 + hz1) / 2, lx = dx * -f[1] + dz * f[0];
-        this.damage(body.ref, Armor.zoneOf(lx, lz, hx, (hz1 - hz0) / 2), (-vrel - 4) * 0.025, body === A ? C.ref : A.ref);
+      if (-vrel > 4) {
+        const zoneOn = (body) => {
+          const f = [Math.sin(body.yaw), Math.cos(body.yaw)], dx = deep.px - body.x, dz = deep.pz - body.z;
+          return Armor.zoneOf(dx * -f[1] + dz * f[0], dx * f[0] + dz * f[1] - (hz0 + hz1) / 2, hx, (hz1 - hz0) / 2);
+        };
+        const zA = zoneOn(A), zC = zoneOn(C);
+        this.damage(A.ref, zA, (-vrel - 4) * 0.025, C.ref, null, zC === 'front' ? 'ram' : 'crash');
+        this.damage(C.ref, zC, (-vrel - 4) * 0.025, A.ref, null, zA === 'front' ? 'ram' : 'crash');
       }
     }
   }
@@ -524,6 +539,7 @@ export class Race {
     this.order = rows;
     this.hud.standings(rows.map((r) => ({ name: r.name, you: !!r.you, color: r.hex, out: r.armor.wrecked, gap: r.you ? '' : r.armor.wrecked ? 'OUT' : r.finished ? 'FIN' : `${r.prog > this.pProg ? '+' : '-'}${Math.round(Math.abs(r.prog - this.pProg) * STEP)}m` })));
     this.hud.armor(this.player.armor, this.t, dt);
+    this.holes.update(this.t, (key) => (key === 0 ? this.player.armor.core : this.rivals.find((r) => r.slot === key)?.armor.core ?? 1));
     this.wreckage.update(dt, (q, t) => {
       const g = 0.07 + Math.random() * 0.05;
       this.fx.dust.emit(q.x, q.y + 0.25, q.z, (Math.random() - 0.5) * 0.6, 1.4 + Math.random() * 1.2, (Math.random() - 0.5) * 0.6, 0.7 + Math.random() * 0.7, 1.6 + Math.random() * 1.4, g, g * 0.95, g * 0.9);

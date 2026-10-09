@@ -34,6 +34,17 @@ void main() {
   gl_FragColor = vec4(c * a * 1.6, 1.0);
 }`;
 
+// Condition colour: green (full) -> yellow -> orange -> red -> black (gone).
+const STOPS = [[0, [0.05, 0.03, 0.03]], [0.25, [1, 0.12, 0.06]], [0.5, [1, 0.55, 0.1]], [0.75, [1, 0.92, 0.2]], [1, [0.45, 1, 0.5]]];
+export function damageColor(v) {
+  v = Math.max(0, Math.min(1, v));
+  for (let k = 1; k < STOPS.length; k++) {
+    const [a, ca] = STOPS[k - 1], [b, cb] = STOPS[k];
+    if (v <= b) { const u = (v - a) / (b - a); return ca.map((c, j) => c + (cb[j] - c) * u); }
+  }
+  return STOPS[STOPS.length - 1][1];
+}
+
 export class XRay {
   constructor(canvas, model, hitbox) {
     this.canvas = canvas;
@@ -84,19 +95,14 @@ export class XRay {
     if (key === this.key) return;
     this.key = key;
     if (this.canvas.width !== Math.round(w * this.r.getPixelRatio())) { this.r.setSize(w, h, false); this.cam.aspect = w / h; this.cam.updateProjectionMatrix(); }
-    const set = (c, v, f) => {
-      if (f > 0) return c.setRGB(1, 1, 1);
-      // healthy green -> worn grey -> stripped (a faint dead red)
-      const g = [0.45, 1.0, 0.5], m = [0.55, 0.55, 0.52], z = [0.28, 0.05, 0.04];
-      const [p, q, k] = v > 0.5 ? [m, g, (v - 0.5) * 2] : [z, m, v * 2];
-      c.setRGB(p[0] + (q[0] - p[0]) * k, p[1] + (q[1] - p[1]) * k, p[2] + (q[2] - p[2]) * k);
-    };
+    // hit flash: a hot orange pop rather than white
+    const set = (c, v, f) => (f > 0 ? c.setRGB(1, 0.42, 0.08) : c.setRGB(...damageColor(v)));
     set(this.u.cF.value, a.z.front, a.flash.front);
     set(this.u.cB.value, a.z.back, a.flash.back);
     set(this.u.cL.value, a.z.left, a.flash.left);
     set(this.u.cR.value, a.z.right, a.flash.right);
     const hp = a.core;
-    this.coreM.color.setRGB(hp > 0.5 ? 0.43 + (1 - hp) * 1.1 : 1, hp > 0.5 ? 0.83 : 0.25 + hp * 1.1, hp > 0.5 ? 0.42 - (1 - hp) * 0.6 : 0.12);
+    this.coreM.color.setRGB(...damageColor(hp));
     this.coreM.opacity = 0.35 + 0.5 * (pulse / 6 * 0.5 + 0.5) * (hp > 0 ? 1 : 0.2);
     this.core.scale.y = 0.25 + 0.75 * hp; // drains as HP falls
     this.r.render(this.scene, this.cam);

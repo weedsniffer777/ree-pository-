@@ -219,6 +219,7 @@ export class CarController {
         this.z += nz * pen;
         const vn = this.vx * nx + this.vz * nz;
         if (vn < 0) {
+          this.onImpact?.(-vn, nx, nz);
           const e = this.dead ? 1 : 1.3; // wrecks don't bounce off, they stop against it
           this.vx -= nx * vn * e;
           this.vz -= nz * vn * e;
@@ -234,6 +235,7 @@ export class CarController {
     this.z -= rz * dl;
     const vn = this.vx * rx + this.vz * rz;
     if (vn * dl > 0) {
+      this.onImpact?.(Math.abs(vn), rx * -Math.sign(dl), rz * -Math.sign(dl));
       const e = this.dead ? 1 : 1.2;
       this.vx -= rx * vn * e;
       this.vz -= rz * vn * e;

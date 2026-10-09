@@ -33,7 +33,7 @@ export class SpeedLines {
 
   update(dt, car, boosting) {
     const sp = Math.hypot(car.vx, car.vz);
-    const target = Math.min(1, Math.max(0, (sp - 38) / 9)) * (boosting ? 0.85 : 0.45);
+    const target = boosting ? Math.min(1, Math.max(0, (sp - 38) / 9)) * 0.85 : 0; // boost only
     this.mat.opacity += (target - this.mat.opacity) * Math.min(1, dt * 4);
     this.lines.visible = this.mat.opacity > 0.01;
     if (!this.lines.visible) { this.seeded = false; return; }

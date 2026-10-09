@@ -285,7 +285,7 @@ function updateCamera(dt) {
   const yawC = camYaw + orbitYaw + THREE.MathUtils.degToRad(num('orbit', 0));
   const [fx, fz] = f(yawC);
   // FOV opens with speed (most of it above cruise) and kicks wider on boost
-  let fovT = 60 + Math.min(speed, 40) * 0.1 + Math.max(0, Math.min(speed, 60) - 38) * 0.45 + (car.boosting ? 9 : 0);
+  let fovT = 60 + Math.min(speed, 60) * 0.2 + Math.max(0, Math.min(speed, 60) - 32) * 0.35 + (car.boosting ? 9 : 0); // ~74° flat out
   // fast = a constant fine buzz on top of impact shake
   const buzz = Math.max(0, speed - 36) * 0.0016 + (car.boosting ? 0.02 : 0);
   const bx = (Math.random() - 0.5) * buzz, by = (Math.random() - 0.5) * buzz;
