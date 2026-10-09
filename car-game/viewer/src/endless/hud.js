@@ -262,6 +262,7 @@ html, body, #hud, #hud * { -webkit-user-select: none; user-select: none; -webkit
 #hud .title p { display: inline-block; margin: 8px 0 0; padding: 6px 14px 5px; font: 800 14px/1 var(--sign); letter-spacing: 0.16em; text-transform: uppercase; font-variant-numeric: tabular-nums; }
 
 #hud .debug { position: absolute; top: 50%; left: 16px; transform: translateY(-50%); margin: 0; font: 12px/1.5 ui-monospace, monospace; background: rgba(0,0,0,0.6); padding: 8px 10px; white-space: pre; }
+#hud .fps { position: absolute; right: calc(4px + env(safe-area-inset-right, 0px)); bottom: calc(2px + env(safe-area-inset-bottom, 0px)); font: 700 9px/1 var(--sign); color: rgba(236,230,217,0.5); font-variant-numeric: tabular-nums; z-index: 7; }
 #hud .touch { position: absolute; inset: 0; pointer-events: auto; touch-action: none; }
 #hud .touch .btn { position: absolute; width: 76px; height: 76px; border-radius: 50%; display: grid; place-items: center; font: 900 15px/1 var(--display); letter-spacing: 0.1em; color: var(--white); background: ${NOISE}, rgba(14,15,17,0.62); box-shadow: inset 0 0 0 2px rgba(236,230,217,0.22); }
 #hud .touch .boostBtn { right: 24px; bottom: calc(262px + env(safe-area-inset-bottom, 0px)); box-shadow: inset 0 0 0 3px var(--rust); }
@@ -394,7 +395,8 @@ export function createHud({ touch = false } = {}) {
     <div class="title" hidden><h3></h3><p class="panel"></p></div>
     <div class="paused" hidden><h2>PAUSED</h2><button class="main" data-a="resume">RESUME</button><button data-a="settings">SETTINGS</button><button data-a="restart">RESTART</button></div>
     <div class="settings" hidden><div class="box panel"></div></div>
-    <pre class="debug" hidden></pre>`;
+    <pre class="debug" hidden></pre>
+    <div class="fps"></div>`;
   document.body.append(root);
   // and no context menu / selection start from a held finger
   for (const ev of ['contextmenu', 'selectstart', 'dragstart']) document.addEventListener(ev, (e) => e.preventDefault());
@@ -957,6 +959,7 @@ export function createHud({ touch = false } = {}) {
       clearTimeout(titleT);
       titleT = setTimeout(() => { el.style.opacity = '0'; }, 2800);
     },
+    fps(n) { const el = $('.fps'); const t = `${n} FPS`; if (el.textContent !== t) el.textContent = t; },
     debug(text) { const d = $('.debug'); if (!d.hidden) d.textContent = typeof text === 'function' ? text() : text; },
     toggleDebug() { const d = $('.debug'); d.hidden = !d.hidden; },
     hide() { root.style.display = 'none'; },

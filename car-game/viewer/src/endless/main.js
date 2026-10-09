@@ -511,7 +511,7 @@ window.__game.lap = () => ({ lapsDone, lapProg, lapT, bestLap });
 
 // ---- Loop ----
 const H = 1 / 120;
-let acc = 0, last = performance.now(), frames = 0, fpsT = 0, fps = 0, arenaShown = false;
+let acc = 0, last = performance.now(), frames = 0, fpsT = performance.now(), fps = 0, arenaShown = false;
 
 function simulate(seconds) {
   let k = 0;
@@ -600,8 +600,8 @@ function frame(now) {
   glass.update();
   composer.render();
   frames++;
-  fpsT += dt;
-  if (fpsT > 0.5) { fps = Math.round(frames / fpsT); frames = 0; fpsT = 0; }
+  // frames per real second (wall clock: not slowed by slow motion or held by pauses)
+  if (now - fpsT > 500) { fps = Math.round((frames * 1000) / (now - fpsT)); frames = 0; fpsT = now; hud.fps(fps); }
   const info = renderer.info.render;
   const mem = performance.memory ? `${Math.round(performance.memory.usedJSHeapSize / 1048576)} MB` : 'n/a';
   hud.debug(() => `fps ${fps}\ndraw calls ${info.calls}\ntriangles ${(info.triangles / 1000).toFixed(0)}K\nheap ${mem}\nbuild ${buildMs} ms\ndist ${Math.round((car.n.i - I_START) * STEP)} m  lat ${car.n.lat.toFixed(1)}\n${car.onRoad ? 'road' : 'sand'}${car.airborne ? '  AIR' : ''}`); // built only while the overlay is open
