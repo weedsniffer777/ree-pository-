@@ -95,7 +95,6 @@ world.update(startI(), true);
 const model = buildStarterCoupe();
 bakeCar(model); // chassis + detachable parts (armor zones, plow, guns, rack, wheels)
 const flames = addFlames(model);
-if (params.get('noram') === '1') model.getObjectByName('FRONT').visible = false; // dev: see the nose without the dozer
 const car = new CarController(model, world.colliders);
 scene.add(car.rig);
 car.reset(startI(), num('lat', 1.85));
@@ -126,7 +125,6 @@ if (params.get('ui') === '0') hud.hide();
 // cracked windscreen: a refracting post pass on the frame replaces the old DOM overlay
 const glass = new Glass(composer);
 { const clr = hud.clearCracks.bind(hud); hud.crack = () => glass.add(); hud.clearCracks = () => { clr(); glass.clear(); }; }
-for (let k = 0; k < num('crack', 0); k++) glass.add(); // dev: preview the shattered glass
 if (params.get('stats') === '1') hud.toggleDebug();
 // the garage viewer: index.html in dev, garage.html next to the page in the artifact
 let devOpen = false, userPaused = false;
@@ -340,11 +338,6 @@ function updateCamera(dt) {
     camera.position.set(car.x - fx * 45, car.y + 34, car.z - fz * 45);
     camera.lookAt(car.x + fx * 45, car.y, car.z + fz * 45);
     fovT = 60;
-  } else if (view === 'cam') { // dev: free camera, &c=x,y,z&t=x,y,z
-    const v3 = (k) => (new URLSearchParams(location.search).get(k) || '0,0,0').split(',').map(Number);
-    camera.position.set(...v3('c'));
-    camera.lookAt(...v3('t'));
-    fovT = 50;
   } else if (view === 'top' && LOOP.on) {
     scene.fog = null;
     camera.position.set(world.box.cx, 1100, world.box.cz);
