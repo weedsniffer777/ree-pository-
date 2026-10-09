@@ -607,7 +607,7 @@ function frame(now) {
   if (fpsT > 0.5) { fps = Math.round(frames / fpsT); frames = 0; fpsT = 0; }
   const info = renderer.info.render;
   const mem = performance.memory ? `${Math.round(performance.memory.usedJSHeapSize / 1048576)} MB` : 'n/a';
-  hud.debug(`fps ${fps}\ndraw calls ${info.calls}\ntriangles ${(info.triangles / 1000).toFixed(0)}K\nheap ${mem}\nbuild ${buildMs} ms\ndist ${Math.round((car.n.i - I_START) * STEP)} m  lat ${car.n.lat.toFixed(1)}\n${car.onRoad ? 'road' : 'sand'}${car.airborne ? '  AIR' : ''}`);
+  hud.debug(() => `fps ${fps}\ndraw calls ${info.calls}\ntriangles ${(info.triangles / 1000).toFixed(0)}K\nheap ${mem}\nbuild ${buildMs} ms\ndist ${Math.round((car.n.i - I_START) * STEP)} m  lat ${car.n.lat.toFixed(1)}\n${car.onRoad ? 'road' : 'sand'}${car.airborne ? '  AIR' : ''}`); // built only while the overlay is open
   window.__stats = { calls: info.calls, tris: info.triangles, buildMs };
   if (++readyFrames === 3) window.__ready = true;
   requestAnimationFrame(frame);

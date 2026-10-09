@@ -274,8 +274,7 @@ html, body, #hud, #hud * { -webkit-user-select: none; user-select: none; -webkit
 #hud .touch .btn[hidden] { display: none; }
 #hud .touch .btn.small { width: 46px; height: 46px; font-size: 11px; }
 #hud .touch .lockBtn { right: 120px; bottom: calc(330px + env(safe-area-inset-bottom, 0px)); }
-#hud .touch .lockBtn .x { display: none; }
-#hud .touch .lockBtn.off .x { display: inline; }
+#hud .touch .lockBtn.off .x { display: none; } /* the X shows while targeting is on: tap to turn it off */
 #hud .touch .btn svg { display: block; }
 #hud .touch .backBtn { left: 16px; top: calc(46% + env(safe-area-inset-top, 0px)); }
 /* phones held sideways: compact, buttons left of the gauge */
@@ -408,7 +407,7 @@ export function createHud({ touch = false } = {}) {
   if (touch) {
     const layer = document.createElement('div');
     layer.className = 'touch';
-    layer.innerHTML = '<div class="btn brakeBtn">BRAKE</div><div class="btn fireBtn">FIRE</div><div class="btn boostBtn">BOOST</div><div class="btn small lockBtn"><svg viewBox="0 0 32 32" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 20l2-4h10l2 4v3H9z" stroke-linejoin="round"/><circle cx="12" cy="23.5" r="1.3"/><circle cx="20" cy="23.5" r="1.3"/><circle cx="16" cy="17" r="10"/><path d="M16 4v4M16 26v4M3 17h4M25 17h4"/><path class="x" d="M7 8l18 18M25 8L7 26" stroke="#ff3b26" stroke-width="3"/></svg></div><div class="btn small backBtn"><svg viewBox="0 0 32 32" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"><rect x="5" y="10" width="22" height="15" rx="2"/><path d="M11 10l2-3h6l2 3"/><path d="M20.5 17.5a4.5 4.5 0 1 1-1.3-3.2"/><path d="M19.6 11.6l-.4 2.9 2.9.2"/></svg></div>';
+    layer.innerHTML = '<div class="btn brakeBtn">BRAKE</div><div class="btn fireBtn">FIRE</div><div class="btn boostBtn">BOOST</div><div class="btn small lockBtn"><svg viewBox="0 0 32 32" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="16" cy="17" r="2.2" fill="currentColor"/><circle cx="16" cy="17" r="10"/><path d="M16 4v4M16 26v4M3 17h4M25 17h4"/><path class="x" d="M7 8l18 18M25 8L7 26" stroke="#ff3b26" stroke-width="3"/></svg></div><div class="btn small backBtn"><svg viewBox="0 0 32 32" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"><rect x="5" y="10" width="22" height="15" rx="2"/><path d="M11 10l2-3h6l2 3"/><path d="M20.5 17.5a4.5 4.5 0 1 1-1.3-3.2"/><path d="M19.6 11.6l-.4 2.9 2.9.2"/></svg></div>';
     root.insertBefore(layer, $('.tr'));
     const hold = (el, key) => {
       el.addEventListener('pointerdown', (e) => { e.stopPropagation(); t[key] = true; el.classList.add('down'); el.setPointerCapture(e.pointerId); });
@@ -964,7 +963,7 @@ export function createHud({ touch = false } = {}) {
       clearTimeout(titleT);
       titleT = setTimeout(() => { el.style.opacity = '0'; }, 2800);
     },
-    debug(text) { const d = $('.debug'); if (!d.hidden) d.textContent = text; },
+    debug(text) { const d = $('.debug'); if (!d.hidden) d.textContent = typeof text === 'function' ? text() : text; },
     toggleDebug() { const d = $('.debug'); d.hidden = !d.hidden; },
     hide() { root.style.display = 'none'; },
   };

@@ -271,7 +271,7 @@ export class Race {
     this.player.armor.reset();
     wear(this.player.mats, this.player.armor);
     this.wreckage.restoreAll();
-    for (const q of [this.player, ...this.rivals]) q.lamps.out = {};
+    for (const q of [this.player, ...this.rivals]) { q.lamps.out = {}; q.detailOn = undefined; }
     this.scars.clear();
     this.holes.clear();
     this.car.dead = false;
@@ -591,8 +591,28 @@ export class Race {
   hasSpikes(ref) { return (ref === this.player ? this.playerParts : ref.parts).some((p) => p.userData.part === 'wheel' && !p.userData.home); }
 
   // physics step for every rival (called at the fixed physics rate)
+  // Rival physics. Cars far from the player run at half rate (two steps' time in one):
+  // nobody can see the difference at that range, and it halves their cost.
   stepAI(h) {
-    for (const r of this.rivals) r.car.step(h, r.inp);
+    this.aiTick = (this.aiTick ?? 0) + 1;
+    const c = this.car;
+    for (const r of this.rivals) {
+      const far = Math.abs(r.x - c.x) + Math.abs(r.z - c.z) > 140;
+      if (!far) r.car.step(h, r.inp);
+      else if ((this.aiTick + r.slot) % 2 === 0) r.car.step(h * 2, r.inp);
+    }
+  }
+
+  // Far rivals drop their small detail (guns, ammo belts, roof rack: ~17k triangles a car);
+  // it pops back in closer up.
+  detailLOD() {
+    const c = this.car;
+    for (const r of this.rivals) {
+      const near = Math.abs(r.x - c.x) + Math.abs(r.z - c.z) < 60 || r.armor.wrecked;
+      if (near === r.detailOn) continue;
+      r.detailOn = near;
+      for (const p of r.parts) if ((p.userData.part === 'feed' || p.userData.part === 'rack' || p.userData.part === 'gun') && !p.userData.home) p.visible = near;
+    }
   }
 
   // The driver: pick a speed and a lateral line, then steer at a point down the road.
@@ -726,6 +746,7 @@ export class Race {
     this.contacts(dt);
     this.scrapes(dt);
     for (const r of this.rivals) r.sync(dt);
+    this.detailLOD();
     // damage tiers from hull HP: untouched = clean; hurt = light smoke; heavy = black
     // smoke; critical = black smoke and flame licking out of the engine bay
     for (const r of [...this.rivals, this.player]) {
