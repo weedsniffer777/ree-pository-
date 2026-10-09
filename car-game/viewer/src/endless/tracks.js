@@ -29,7 +29,7 @@ export const TRACKS = {
     ground: { a: '#d6965a', b: '#e4b07a', dark: '#b77a48', pale: '#ecc898', rock: '#a55636', gravel: '#c79a6c' },
     hills: 52, density: { bush: 1, grass: 1, sag: 1, rock: 1 },
     features: [
-      { type: 'bridge', at: 0.14 }, { type: 'bridge', at: 0.675 },
+      
       { type: 'sideroad', at: 0.35, side: -1 }, { type: 'sideroad', at: 0.48, side: 1 }, { type: 'sideroad', at: 0.95, side: 1 },
       { type: 'billboard', at: 0.05, side: 1 }, { type: 'billboard', at: 0.22, side: -1 }, { type: 'billboard', at: 0.33, side: 1 }, { type: 'billboard', at: 0.47, side: -1 },
       { type: 'billboard', at: 0.66, side: 1 }, { type: 'billboard', at: 0.9, side: -1 }, { type: 'billboard', at: 0.94, side: 1 },
@@ -62,7 +62,7 @@ export const TRACKS = {
     ground: { a: '#e6dccb', b: '#f1ebe0', dark: '#d2c3aa', pale: '#faf6ef', rock: '#b38a6c', gravel: '#d8ccb8' },
     hills: 30, density: { bush: 0.15, grass: 0.2, sag: 0, rock: 0.3 },
     features: [
-      { type: 'bridge', at: 0.2 },
+      
       { type: 'sideroad', at: 0.1, side: -1 }, { type: 'sideroad', at: 0.48, side: 1 }, { type: 'sideroad', at: 0.92, side: -1 },
       { type: 'billboard', at: 0.15, side: 1 }, { type: 'billboard', at: 0.3, side: -1 }, { type: 'billboard', at: 0.5, side: -1 },
       { type: 'billboard', at: 0.83, side: 1 }, { type: 'billboard', at: 0.95, side: 1 },
@@ -93,7 +93,7 @@ export const TRACKS = {
     ground: { a: '#c8794a', b: '#d99260', dark: '#a65c36', pale: '#e3a676', rock: '#9c4128', gravel: '#b8805a' },
     hills: 80, density: { bush: 0.6, grass: 0.5, sag: 0.45, rock: 1.8 },
     features: [
-      { type: 'bridge', at: 0.12 }, { type: 'bridge', at: 0.56 },
+      
       { type: 'sideroad', at: 0.38, side: 1 }, { type: 'sideroad', at: 0.78, side: -1 },
       { type: 'billboard', at: 0.05, side: -1 }, { type: 'billboard', at: 0.34, side: 1 }, { type: 'billboard', at: 0.53, side: -1 },
       { type: 'billboard', at: 0.75, side: 1 }, { type: 'billboard', at: 0.82, side: -1 },
