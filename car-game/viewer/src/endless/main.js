@@ -95,6 +95,7 @@ world.update(startI(), true);
 const model = buildStarterCoupe();
 bakeCar(model); // chassis + detachable parts (armor zones, plow, guns, rack, wheels)
 const flames = addFlames(model);
+if (params.get('noram') === '1') model.getObjectByName('FRONT').visible = false; // dev: see the nose without the dozer
 const car = new CarController(model, world.colliders);
 scene.add(car.rig);
 car.reset(startI(), num('lat', 1.85));

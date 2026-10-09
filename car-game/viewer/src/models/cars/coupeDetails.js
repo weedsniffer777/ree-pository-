@@ -51,15 +51,29 @@ export function addDetails(car, { skinMats, dloRear }) {
     armor.add(box(0.02, 0.05, 0.14, metal, { pos: [s * (sideX(0.7, 0.68) + 0.04), 0.68, 0.7] }));
   }
 
-  // =================== Front: grille, quad lamps ===================
-  car.add(box(0.84, 0.21, 0.04, dark, { pos: [0, 0.5, 2.255] }));
-  for (let i = 0; i < 5; i++) car.add(box(0.8, 0.016, 0.03, metal, { pos: [0, 0.42 + i * 0.04, 2.272] }));
-  car.add(box(0.03, 0.2, 0.03, metal, { pos: [0, 0.5, 2.275] }));
-  for (const x of [-0.7, -0.53, 0.53, 0.7]) {
-    car.add(cyl(0.07, 0.07, 0.06, 16, dark, { pos: [x, 0.5, 2.27], rot: [Math.PI / 2, 0, 0] }));
-    car.add(cyl(0.058, 0.058, 0.01, 16, glowMat('light', 0.55), { pos: [x, 0.5, 2.3], rot: [Math.PI / 2, 0, 0] }));
-    car.add(mesh(new THREE.TorusGeometry(0.064, 0.008, 4, 16), steelMaterial(0x6b7177), { pos: [x, 0.5, 2.302] }));
+  // =================== Front: 80s Japanese nose ===================
+  // slim flush headlamps in recessed housings with chrome bezels, a narrow slot grille,
+  // a black wraparound bumper with amber corner lamps, an air dam with fog lamps, a lip
+  const chrome = steelMaterial(0x8a9096), FZ = 2.255, LY = 0.5;
+  for (const s of [-1, 1]) {
+    car.add(box(0.4, 0.105, 0.02, chrome, { pos: [s * 0.5, LY, FZ] })); // bezel
+    car.add(box(0.37, 0.08, 0.03, darkMaterial(0x0a0b0c), { pos: [s * 0.5, LY, FZ + 0.004] })); // housing
+    for (const dx of [-0.085, 0.085]) {
+      car.add(box(0.15, 0.052, 0.012, glowMat('light', 0.55), { pos: [s * 0.5 + dx, LY, FZ + 0.02] })); // lens
+      for (let k = -2; k <= 2; k++) car.add(box(0.004, 0.05, 0.004, chrome, { pos: [s * 0.5 + dx + k * 0.028, LY, FZ + 0.028] })); // lens fluting
+    }
   }
+  car.add(box(0.46, 0.032, 0.03, darkMaterial(0x060606), { pos: [0, LY + 0.005, FZ + 0.004] })); // slot grille
+  car.add(box(0.06, 0.03, 0.012, chrome, { pos: [0, LY + 0.005, FZ + 0.024] })); // badge plate
+  const frontBumper = darkMaterial(0x141516);
+  car.add(box(1.7, 0.15, 0.16, frontBumper, { pos: [0, 0.335, 2.29] }));
+  for (const s of [-1, 1]) {
+    car.add(box(0.12, 0.15, 0.42, frontBumper, { pos: [s * 0.82, 0.335, 2.08], rot: [0, s * 0.08, 0] })); // wrap round the corners
+    car.add(box(0.13, 0.045, 0.012, glowMat('#e08a1c', 0.5), { pos: [s * 0.66, 0.37, 2.374] })); // amber indicators
+    car.add(box(0.08, 0.04, 0.012, glowMat('light', 0.4), { pos: [s * 0.3, 0.29, 2.374] })); // fog lamps
+  }
+  car.add(box(0.4, 0.045, 0.012, darkMaterial(0x050505), { pos: [0, 0.29, 2.374] })); // air dam slot
+  car.add(box(1.62, 0.022, 0.12, frontBumper, { pos: [0, 0.255, 2.33] })); // lip spoiler
 
   // =================== Exposed supercharged V8 in the hood opening ===================
   const engine = buildEngineV8();
