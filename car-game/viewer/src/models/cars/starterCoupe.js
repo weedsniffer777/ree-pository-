@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Brush, Evaluator, SUBTRACTION } from 'three-bvh-csg';
+import { Brush, Evaluator, SUBTRACTION, INTERSECTION } from 'three-bvh-csg';
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import { mesh, box, cyl, tube, slabAlong, socket } from '../../lib/geo.js';
 import { loft, projectAndGroup } from '../../lib/loft.js';
@@ -60,6 +60,20 @@ export function buildStarterCoupe() {
     car.add(roof);
     car.add(box(0.02, ARCH_R + 0.1, ARCH_R * 2 + 0.02, tubMat, { pos: [s * 0.625, AXLE_Y + 0.03 + (ARCH_R + 0.1) / 2 - 0.06, AXLE_R] }));
   }
+  // the doors: cut out of the shell exactly between the door gaps, so they look the same,
+  // but each is its own piece of side armor that falls off when that side is stripped
+  const doors = [];
+  for (const s of [-1, 1]) {
+    const db = new Brush(new THREE.BoxGeometry(0.42, 0.62, 1.213), skins.side);
+    db.position.set(s * 0.91, 0.55, 0.21);
+    db.updateMatrixWorld();
+    const d = ev.evaluate(shell, db, INTERSECTION);
+    shell = ev.evaluate(shell, db, SUBTRACTION);
+    const door = mesh(project(toCreasedNormals(d.geometry, deg(25)), [well, interior, gap].map((m) => d.material.indexOf(m))), [...skinMats, well, interior, gap]);
+    Object.assign(door.userData, { zone: s > 0 ? 'left' : 'right', stage: 3 });
+    door.name = s > 0 ? 'door_l' : 'door_r';
+    doors.push(door);
+  }
   const bodyMesh = mesh(project(toCreasedNormals(shell.geometry, deg(25)), [well, interior, gap].map((m) => shell.material.indexOf(m))), [...skinMats, well, interior, gap]);
   bodyMesh.name = 'body';
   car.add(bodyMesh);
@@ -114,6 +128,7 @@ export function buildStarterCoupe() {
   addDetails(car, { skinMats, dloFront, dloRear });
   // pull the tagged armor pieces into one detachable group per zone and stage
   const armor = car.getObjectByName('armor');
+  for (const door of doors) armor.add(door);
   for (const zone of ['front', 'back', 'left', 'right']) {
     for (const stage of [1, 2, 3]) {
       const g = new THREE.Group();
