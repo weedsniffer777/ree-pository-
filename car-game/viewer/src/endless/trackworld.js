@@ -4,6 +4,7 @@ import { paintRoad, LATS as ROAD_LATS, DY as ROAD_DY, roadSurfaceY } from '../le
 import { FACES, std, metal, billboard, waterTower, windpump, shed } from '../level/structures.js';
 import { vcMat, bushGeo, grassGeo, saguaroGeo, ocotilloGeo, rockGeo, mesaGeo } from '../level/props.js';
 import { box, tube } from '../lib/geo.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { bakeGroup } from '../level/bake.js';
 import { S, LOOP, ROAD_HALF, ROAD_BEVEL, RAIL_LAT, FENCE, wAt, pointAt, nearest, gridNearest } from './route.js';
 import { railSide } from './world.js';
@@ -320,24 +321,69 @@ export class TrackWorld {
     const steel = std(this.def.kind === 'yard' ? 0x4a4c4e : 0x3b3d40, { roughness: 0.55, metalness: 0.6 });
     const ct = checkerTexture();
     ct.repeat.set(18, 1);
-    const half = RL(0) + 1.4, H = 7.4;
-    const gantry = new THREE.Group();
+    // start/finish gantry, death-race style: two lattice steel towers outside the rails, a
+    // twin-girder truss across the road with a checker banner on both faces, and signal
+    // lamps (green, always) hung on rods from the cross ties between the girders
+    const X = RL(0) + 1.7, H = 8.2, TW = 0.5, GZ = 0.55, BOT = H - 1.4;
+    const geos = [], V = THREE.Vector3, zAx = new V(0, 0, 1), qq = new THREE.Quaternion(), mm = new THREE.Matrix4(), one = new V(1, 1, 1);
+    const bar = (a, b, t = 0.12) => {
+      const A = new V(...a), B = new V(...b), d = B.clone().sub(A), len = d.length();
+      const g = new THREE.BoxGeometry(t, t, len);
+      qq.setFromUnitVectors(zAx, d.normalize());
+      g.applyMatrix4(mm.compose(A.add(B).multiplyScalar(0.5), qq, one));
+      geos.push(g);
+    };
     for (const s of [-1, 1]) {
-      const post = new THREE.Mesh(new THREE.BoxGeometry(0.5, H, 0.5), steel);
-      post.position.set(s * half, H / 2, 0);
-      const brace = new THREE.Mesh(new THREE.BoxGeometry(0.2, 3.4, 0.2), steel);
-      brace.position.set(s * (half - 0.9), H - 1.4, 0);
-      brace.rotation.z = -s * 0.6;
-      gantry.add(post, brace);
+      const cx = s * X, xs = [cx - TW, cx + TW], zs = [-TW, TW];
+      for (const x of xs) for (const z of zs) bar([x, 0, z], [x, H, z], 0.2); // corner legs
+      for (let y = 0; y <= H - 0.01; y += H / 4) {
+        const y1 = y + H / 4;
+        for (const z of zs) { bar([xs[0], y1, z], [xs[1], y1, z]); bar([xs[0], y, z], [xs[1], y1, z], 0.09); } // rings and X braces
+        for (const x of xs) { bar([x, y1, zs[0]], [x, y1, zs[1]]); bar([x, y, zs[0]], [x, y1, zs[1]], 0.09); }
+      }
+      bar([xs[0], 0.12, zs[0]], [xs[1], 0.12, zs[0]], 0.24); bar([xs[0], 0.12, zs[1]], [xs[1], 0.12, zs[1]], 0.24); // base
     }
-    const beam = new THREE.Mesh(new THREE.BoxGeometry(half * 2 + 0.5, 1.1, 0.5), new THREE.MeshStandardMaterial({ map: ct, roughness: 0.6 }));
-    beam.position.y = H - 0.2;
-    gantry.add(beam);
-    for (const x of [-half * 0.6, -half * 0.2, half * 0.2, half * 0.6]) {
-      const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.25, 0.4), new THREE.MeshBasicMaterial({ color: 0xffe9b0 }));
-      lamp.position.set(x, H - 0.95, 0.4);
-      gantry.add(lamp);
+    // truss: top and bottom chords on two girders, diagonal webs, ties across at each panel
+    const n = Math.max(6, Math.round((2 * X) / 1.4)), x0 = -X - TW, x1 = X + TW, pw = (x1 - x0) / n;
+    for (const z of [-GZ, GZ]) {
+      bar([x0, H, z], [x1, H, z], 0.2); bar([x0, BOT, z], [x1, BOT, z], 0.2);
+      for (let k = 0; k <= n; k++) {
+        const x = x0 + k * pw;
+        bar([x, BOT, z], [x, H, z], 0.1);
+        if (k < n) bar(k % 2 ? [x, BOT, z] : [x, H, z], k % 2 ? [x + pw, H, z] : [x + pw, BOT, z], 0.1);
+      }
     }
+    for (let k = 0; k <= n; k++) { const x = x0 + k * pw; bar([x, H, -GZ], [x, H, GZ], 0.1); bar([x, BOT, -GZ], [x, BOT, GZ], 0.1); }
+    const gantry = new THREE.Group();
+    gantry.add(new THREE.Mesh(mergeGeometries(geos), steel));
+    // checker banner across the middle of the truss, on both faces, clear of the webs
+    const bw = 2 * X - 2 * TW - 1.2;
+    ct.repeat.set(Math.round(bw / 1.1), 1);
+    for (const z of [-GZ - 0.12, GZ + 0.12]) {
+      const ban = new THREE.Mesh(new THREE.BoxGeometry(bw, 0.95, 0.04), new THREE.MeshStandardMaterial({ map: ct, roughness: 0.7 }));
+      ban.position.set(0, (H + BOT) / 2, z);
+      gantry.add(ban);
+      for (const x of [-bw / 2, bw / 2]) { const cl = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.05, 0.12), steel); cl.position.set(x, (H + BOT) / 2, z); gantry.add(cl); } // end clamps
+    }
+    // hanging signal lamps under the ties: dark housing, three green lenses with visors each way
+    const house = new THREE.MeshStandardMaterial({ color: 0x17181a, roughness: 0.7, metalness: 0.4 });
+    const green = new THREE.MeshBasicMaterial({ color: 0x46ff6a });
+    const lampGeos = [], lensGeos = [];
+    const put = (list, g, x, y, z, rx = 0) => { g.rotateX(rx); g.translate(x, y, z); list.push(g); };
+    const picks = [Math.round(n * 0.22), Math.round(n * 0.4), Math.round(n * 0.6), Math.round(n * 0.78)];
+    for (const k of picks) {
+      const x = x0 + k * pw, top = BOT - 0.75, hh = 1.25, cy = top - hh / 2;
+      for (const dx of [-0.16, 0.16]) put(lampGeos, new THREE.CylinderGeometry(0.025, 0.025, 0.75, 6), x + dx, BOT - 0.375, 0);
+      put(lampGeos, new THREE.BoxGeometry(0.5, hh, 0.42), x, cy, 0);
+      for (let j = 0; j < 3; j++) {
+        const ly = top - 0.22 - j * 0.4;
+        for (const sz of [-1, 1]) {
+          put(lensGeos, new THREE.CylinderGeometry(0.13, 0.13, 0.03, 16), x, ly, sz * 0.215, Math.PI / 2);
+          put(lampGeos, new THREE.BoxGeometry(0.34, 0.03, 0.16), x, ly + 0.16, sz * 0.29); // visor
+        }
+      }
+    }
+    gantry.add(new THREE.Mesh(mergeGeometries(lampGeos), house), new THREE.Mesh(mergeGeometries(lensGeos), green));
     const p = pointAt(0, 0);
     gantry.position.set(p.x, S.y[0], p.z);
     gantry.rotation.y = p.yaw;

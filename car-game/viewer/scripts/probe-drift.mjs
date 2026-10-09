@@ -7,7 +7,7 @@ await server.listen();
 const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const page = await browser.newPage({ viewport: { width: 640, height: 360 } });
 page.on('pageerror', (e) => console.log('PAGEERROR', e.message));
-await page.goto('http://localhost:5197/endless.html?map=salt&ui=0');
+await page.goto(`http://localhost:5197/endless.html?map=${process.argv[2] || 'yard'}&ui=0&v0=${process.argv[3] ?? 32}`);
 await page.waitForFunction(() => window.__ready === true, null, { timeout: 150000 });
 const out = await page.evaluate(() => {
   const c = window.__game.car, H = 1 / 120, rows = [], deg = (a) => Math.round((a * 180) / Math.PI);
@@ -20,7 +20,7 @@ const out = await page.evaluate(() => {
       }
     }
   };
-  const y0 = c.yaw; c.vf = 32; c.vx = Math.sin(y0) * 32; c.vz = Math.cos(y0) * 32;
+  const y0 = c.yaw, v0 = Number(new URLSearchParams(location.search).get('v0') ?? 32); c.vx = Math.sin(y0) * v0; c.vz = Math.cos(y0) * v0;
   run(0.5, { throttle: 1 }, 'straight');
   run(0.7, { brake: 1, steer: 1 }, 'S+D');
   run(0.6, { throttle: 1, steer: 1 }, 'W+D');

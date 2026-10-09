@@ -136,7 +136,7 @@ export class CarController {
       const braking = inp.brake > 0 && vf > 6;
       if (inp.brake > 0) {
         if (vf < -3) { if (vf > -REV_V) vf = Math.max(-REV_V, vf - 9 * dt); }
-        else if (vf > 0.5) vf -= (7 + 13 * Math.min(1, vf / 22)) * (1 - 0.85 * D) * dt;
+        else if (vf > 0.5) vf -= (7 + 13 * Math.min(1, vf / 22)) * (1 - 0.85 * Math.max(D, kick * (0.4 + 0.6 * sm(0, 0.08, slip)))) * dt; // eases off as the slide angle opens
         else if (this.revOK || (this.stopT += dt) > 0.3) vf = Math.max(-REV_V, vf - 9 * dt);
         else vf = Math.max(0, vf - 7 * dt);
       }
@@ -149,14 +149,15 @@ export class CarController {
       // pull far less, so in a drift the nose comes round faster than the path does and
       // the car carries wide on its old line. Scrub bleeds a little speed with the slip.
       const grip = surf.grip * (1 - 0.6 * D), aLat = surf.lat * (1 - 0.55 * D);
-      if (spd0 > 0.3) {
+      const spd = Math.hypot(vf, vl); // after throttle and brakes
+      if (spd > 0.3) {
         const fwd = vf >= 0 ? 1 : -1;
         let beta = Math.atan2(vl, Math.abs(vf));
-        const turn = Math.min(Math.abs(beta) * (1 - Math.exp(-grip * dt)), (aLat / Math.max(spd0, 1)) * dt);
+        const turn = Math.min(Math.abs(beta) * (1 - Math.exp(-grip * dt)), (aLat / Math.max(spd, 1)) * dt);
         beta -= Math.sign(beta) * turn;
         const sb = Math.abs(Math.sin(beta));
-        const scrub = Math.exp(-dt * (0.04 + 0.12 * sb ** 1.5 * (0.5 + 0.5 * D) + 0.06 * sb * (1 - D)) * (spd0 > 12 ? 1 : 2));
-        const s2 = spd0 * scrub;
+        const scrub = Math.exp(-dt * (0.04 + 0.12 * sb ** 1.5 * (0.5 + 0.5 * D) + 0.06 * sb * (1 - D)) * (spd > 12 ? 1 : 2));
+        const s2 = spd * scrub;
         vf = fwd * s2 * Math.cos(beta);
         vl = s2 * Math.sin(beta);
       }
