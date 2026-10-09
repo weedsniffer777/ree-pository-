@@ -134,7 +134,8 @@ export class Guns {
     }
     this.light.intensity = Math.max(0, this.light.intensity - dt * 120);
     this.kick = Math.max(0, this.kick - dt * 6);
-    if (!firing || !this.guns.length) return;
+    // idle: don't bank shots (otherwise the first pull dumps them all at once)
+    if (!firing || !this.guns.length) { this.cool = Math.max(this.cool, 0); return; }
     while (this.cool <= 0) {
       this.cool += 1 / this.rate; // rounds/s across both guns
       this.shoot(car, aim);
