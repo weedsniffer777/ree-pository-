@@ -76,16 +76,29 @@ const CSS = `
 #hud .armor .hp { text-align: center; font: 900 17px/1 var(--display); letter-spacing: 0.04em; font-variant-numeric: tabular-nums; text-shadow: 0 2px 0 rgba(0,0,0,0.6); }
 #hud .armor .hp small { font-size: 11px; color: var(--dim); }
 #hud .armor .hp.low b { color: #ff4a2a; }
-/* lock-on: reticle circle where the guns point, box on the locked car */
-#hud .ret { position: absolute; left: 0; top: 0; border-radius: 50%; border: 2px solid rgba(236,230,217,0.5); box-shadow: 0 0 0 1px rgba(0,0,0,0.35), inset 0 0 0 1px rgba(0,0,0,0.25); transform: translate(-50%, -50%); }
-#hud .ret::before, #hud .ret::after { content: ''; position: absolute; left: 50%; width: 2px; height: 10px; margin-left: -1px; background: rgba(236,230,217,0.75); }
-#hud .ret::before { top: -6px; } #hud .ret::after { bottom: -6px; }
-#hud .ret i { position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px; border-radius: 50%; background: rgba(236,230,217,0.85); }
-#hud .ret.on { border-color: rgba(216,100,42,0.8); }
-#hud .lockbox { position: absolute; left: 0; top: 0; border: 2px solid var(--rust); box-shadow: 0 0 0 1px rgba(0,0,0,0.5), 0 0 12px rgba(216,100,42,0.5); transform: translate(-50%, -50%); }
-#hud .lockbox span { position: absolute; top: calc(100% + 4px); left: 50%; transform: translateX(-50%); padding: 2px 6px 1px; background: var(--rust); color: var(--black); font: 900 12px/1 var(--display); letter-spacing: 0.16em; white-space: nowrap; }
-#hud .lockbox.new { animation: lockIn 0.18s ease-out both; }
-@keyframes lockIn { from { opacity: 0; transform: translate(-50%, -50%) scale(1.8); } }
+/* lock-on, military fire-control style: thin off-white reticle with mil ticks; a lock is
+   red corner brackets with a monospace LOCK + range readout */
+#hud { --lock: #ff3524; --mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace; }
+#hud .ret { position: absolute; left: 0; top: 0; border-radius: 50%; border: 1.5px solid rgba(240,240,232,0.55); box-shadow: 0 0 0 1px rgba(0,0,0,0.25); transform: translate(-50%, -50%); }
+#hud .ret b { position: absolute; background: rgba(240,240,232,0.85); box-shadow: 0 0 0 1px rgba(0,0,0,0.3); }
+#hud .ret b:nth-of-type(1) { left: 50%; top: -1px; width: 1.5px; height: 12px; margin-left: -0.75px; }
+#hud .ret b:nth-of-type(2) { left: 50%; bottom: -1px; width: 1.5px; height: 12px; margin-left: -0.75px; }
+#hud .ret b:nth-of-type(3) { top: 50%; left: -1px; height: 1.5px; width: 12px; margin-top: -0.75px; }
+#hud .ret b:nth-of-type(4) { top: 50%; right: -1px; height: 1.5px; width: 12px; margin-top: -0.75px; }
+#hud .ret i { position: absolute; left: 50%; top: 50%; width: 3px; height: 3px; margin: -1.5px; background: rgba(240,240,232,0.9); }
+#hud .ret.on { border-color: rgba(255,53,36,0.45); }
+#hud .ret.on b, #hud .ret.on i { background: var(--lock); }
+#hud .lockbox { position: absolute; left: 0; top: 0; transform: translate(-50%, -50%); filter: drop-shadow(0 0 1px rgba(0,0,0,0.8)) drop-shadow(0 0 6px rgba(255,53,36,0.45));
+  --c: var(--lock); --l: 30%; --w: 2px;
+  background:
+    linear-gradient(var(--c), var(--c)) top left / var(--l) var(--w) no-repeat, linear-gradient(var(--c), var(--c)) top left / var(--w) var(--l) no-repeat,
+    linear-gradient(var(--c), var(--c)) top right / var(--l) var(--w) no-repeat, linear-gradient(var(--c), var(--c)) top right / var(--w) var(--l) no-repeat,
+    linear-gradient(var(--c), var(--c)) bottom left / var(--l) var(--w) no-repeat, linear-gradient(var(--c), var(--c)) bottom left / var(--w) var(--l) no-repeat,
+    linear-gradient(var(--c), var(--c)) bottom right / var(--l) var(--w) no-repeat, linear-gradient(var(--c), var(--c)) bottom right / var(--w) var(--l) no-repeat; }
+#hud .lockbox i { position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px; background: var(--lock); }
+#hud .lockbox span { position: absolute; top: calc(100% + 5px); left: 50%; transform: translateX(-50%); color: var(--lock); font: 700 11px/1 var(--mono); letter-spacing: 0.14em; white-space: nowrap; text-shadow: 0 0 2px #000, 0 1px 0 #000; }
+#hud .lockbox.new { animation: lockIn 0.32s steps(1) both; }
+@keyframes lockIn { 0% { opacity: 1; transform: translate(-50%, -50%) scale(1.6); } 25% { opacity: 0; } 50% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 75% { opacity: 0; } 100% { opacity: 1; } }
 /* white flash on kills / crits */
 #hud .flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
 /* hits: centre hitmarker, combo / critical / destroyed popups, damage vignette, cracked glass */
@@ -258,8 +271,8 @@ export function createHud({ touch = false } = {}) {
     <div class="glass"></div>
     <div class="vig"></div>
     <div class="flash"></div>
-    <div class="ret" hidden><i></i></div>
-    <div class="lockbox" hidden><span>LOCKED</span></div>
+    <div class="ret" hidden><b></b><b></b><b></b><b></b><i></i></div>
+    <div class="lockbox" hidden><i></i><span>LOCK 000M</span></div>
     <div class="hm"><i></i><i></i><i></i><i></i></div>
     <div class="pops"></div>
     <div class="count" hidden></div>
@@ -585,13 +598,14 @@ export function createHud({ touch = false } = {}) {
       el.hidden = false;
       Object.assign(el.style, { left: `${x}px`, top: `${y}px`, width: `${r * 2}px`, height: `${r * 2}px` });
     },
-    lock(x, y, size, id) {
+    lock(x, y, size, id, dist = 0) {
       const el = $('.lockbox');
       $('.ret').classList.toggle('on', x !== null);
       if (x === null) { el.hidden = true; el.dataset.id = ''; return; }
       if (el.dataset.id !== String(id)) { el.dataset.id = String(id); el.classList.remove('new'); void el.offsetWidth; el.classList.add('new'); }
       el.hidden = false;
       Object.assign(el.style, { left: `${x}px`, top: `${y}px`, width: `${size}px`, height: `${size}px` });
+      el.querySelector('span').textContent = `LOCK ${String(Math.round(dist)).padStart(3, '0')}M`;
     },
     hurt(amount) { vigT = Math.min(0.9, vigT + 0.18 + amount * 4); },
     // cracked glass when HP crosses a threshold; cleared on a new race

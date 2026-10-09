@@ -236,7 +236,7 @@ function updateLock() {
   }
   if (!best) { hud.lock(null); return null; }
   const size = Math.max(30, Math.min(150, 1100 / bd));
-  hud.lock(best.sp[0], best.sp[1], size, best.r.slot);
+  hud.lock(best.sp[0], best.sp[1], size, best.r.slot, bd);
   const lead = bd / 420; // round flight time
   return lockAim.set(best.r.x + best.r.vx * lead, best.r.y + 0.8, best.r.z + best.r.vz * lead);
 }
