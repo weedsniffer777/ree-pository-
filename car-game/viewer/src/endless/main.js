@@ -217,7 +217,7 @@ function readInput() {
 
 // ---- Lock-on: the reticle sits where the guns point (60 m ahead, so it rides hills);
 // the nearest live rival inside it is locked, boxed, and the guns lead it ----
-const LOCK_R = coarse ? 70 : 95, lockV = new THREE.Vector3(), lockAim = new THREE.Vector3();
+const LOCK_R = coarse ? 52 : 71, lockV = new THREE.Vector3(), lockAim = new THREE.Vector3();
 function updateLock() {
   if (!race || params.get('ui') === '0') return null;
   const fx = Math.sin(car.yaw), fz = Math.cos(car.yaw), W = innerWidth, Hh = innerHeight;

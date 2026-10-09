@@ -105,7 +105,28 @@ export class Guns {
     this.fwd = new THREE.Vector3();
   }
 
+  // Swing each gun mount toward the aim point (traverse ±35°, elevation -12°..+18°), easing
+  // back to straight ahead without one. Rounds leave the muzzle, so they follow the guns.
+  traverse(dt, aim) {
+    const k = 1 - Math.exp(-dt * 10);
+    this.lv ??= new THREE.Vector3();
+    for (const gun of this.guns) {
+      const mount = gun.parent;
+      if (!mount?.parent) continue;
+      let yaw = 0, pitch = 0;
+      if (aim) {
+        const d = mount.parent.worldToLocal(this.lv.copy(aim)).sub(mount.position);
+        yaw = THREE.MathUtils.clamp(Math.atan2(d.x, d.z), -0.6, 0.6);
+        pitch = THREE.MathUtils.clamp(-Math.atan2(d.y, Math.hypot(d.x, d.z)), -0.31, 0.21);
+      }
+      mount.rotation.order = 'YXZ';
+      mount.rotation.y += (yaw - mount.rotation.y) * k;
+      mount.rotation.x += (pitch - mount.rotation.x) * k;
+    }
+  }
+
   update(dt, firing, car, aim = null) {
+    this.traverse(dt, aim);
     this.cool -= dt;
     for (const f of this.flashes) {
       f.life -= dt;
