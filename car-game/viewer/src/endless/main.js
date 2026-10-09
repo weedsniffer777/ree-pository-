@@ -220,7 +220,7 @@ function readInput() {
     steer: (k('right') ? 1 : 0) - (k('left') ? 1 : 0) || t.steer,
     boost: k('boost') || t.boost,
     // auto fire: shoot whenever something is locked (the fire key still works too)
-    fire: (k('fire') || t.fire || (settings.fire === 'auto' && lockedNow)) && (!race || race.canFire),
+    fire: (k('fire') || t.fire || (settings.fire === 'auto' && lockedNow)) && !t.gunsOff && (!race || race.canFire), // phones: guns toggle
   };
   freeCam = k('look') || rightDrag;
   lookBack = k('back') || t.back;
@@ -247,8 +247,8 @@ function updateLock() {
     cands.push({ r, sp, d });
   }
   cands.sort((a, b) => a.d - b.d);
-  // nearest in the circle (the phone lock toggle turns locking off altogether)
-  const best = hud.touch.lockOff ? null : cands[0], bd = best?.d ?? Infinity;
+  // nearest in the circle
+  const best = cands[0], bd = best?.d ?? Infinity;
   lockedNow = !!best && bd <= LOCK_MAX;
   if (!best) { hud.lock(null); hud.reticleState('idle'); return null; }
   if (bd > LOCK_MAX) {
