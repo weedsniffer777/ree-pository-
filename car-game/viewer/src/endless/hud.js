@@ -532,6 +532,15 @@ export function createHud({ touch = false } = {}) {
   }
 
   // ---- damage feedback ----
+  // the reticle's tag; only touched when its text changes, so its blink keeps running
+  let farTag = '', tagNow = null;
+  const retTag = (text) => {
+    if (text === tagNow) return;
+    tagNow = text;
+    const tag = $('.ret .tag');
+    tag.hidden = !text;
+    tag.textContent = text;
+  };
   let xrRes = null, xrSrc = null, xray = null, vigT = 0, vigBase = 0, hpShown = -1, flashV = 0;
   const cracks = [];
   const flashEl = $('.flash');
@@ -636,7 +645,7 @@ export function createHud({ touch = false } = {}) {
     set({ speed, boost, boosting, throttle, lap, laps, lapT, bestLap, heat = 0, overheated = false, dt = 1 / 60 }) {
       $('.ret .heatv i').style.height = `${Math.round(heat * 100)}%`;
       $('.ret').classList.toggle('hot', overheated);
-      if (overheated) { const tag = $('.ret .tag'); tag.hidden = false; tag.textContent = 'OVERHEAT'; } // takes the tag over from OUT OF RANGE
+      retTag(overheated ? 'OVERHEAT' : farTag); // overheat takes the tag over from OUT OF RANGE
       const kmh = Math.abs(speed);
       const ng = speed < -2 ? 'R' : kmh < 3 && !throttle ? 'N' : gearFor(kmh, gear);
       if (typeof ng === 'number' && typeof gear === 'number' && ng !== gear) shiftT = 0.18;
@@ -717,11 +726,11 @@ export function createHud({ touch = false } = {}) {
     },
     // 'idle' (white), 'lock' (green), 'far' (red: a target in the circle beyond lock range)
     reticleState(state, dist = 0) {
-      const el = $('.ret'), tag = el.querySelector('.tag');
+      const el = $('.ret');
       el.classList.toggle('lock', state === 'lock');
       el.classList.toggle('far', state === 'far');
-      tag.hidden = state !== 'far';
-      if (state === 'far') tag.textContent = `OUT OF RANGE ${String(Math.round(dist)).padStart(3, '0')}M`;
+      farTag = state === 'far' ? `OUT OF RANGE ${String(Math.round(dist)).padStart(3, '0')}M` : '';
+      if (!el.classList.contains('hot')) retTag(farTag);
     },
     hurt(amount) { vigT = Math.min(0.9, vigT + 0.18 + amount * 4); },
     // cracked glass on a solid chunk of damage while hurt (race decides when); at most 3

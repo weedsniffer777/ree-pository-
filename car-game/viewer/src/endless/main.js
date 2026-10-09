@@ -210,7 +210,7 @@ function readInput() {
   // BRAKE lifts it. The tutorial rolls along at a fixed lower speed until W is learned.
   const tutDrive = !tut.done && !t.active;
   const inp = {
-    throttle: w || ((t.active || tutDrive) && !sKey && !t.brake) ? 1 : 0,
+    throttle: (w || t.active || tutDrive) && !sKey && !t.brake ? 1 : 0, // S lifts the throttle, same as BRAKE on a phone
     cap: race?.inputCap || (tutDrive && !w ? TUT_SPEED : 0),
     brake: sKey || t.brake ? 1 : 0,
     steer: (k('KeyD', 'ArrowRight') ? 1 : 0) - (k('KeyA', 'ArrowLeft') ? 1 : 0) || t.steer,
