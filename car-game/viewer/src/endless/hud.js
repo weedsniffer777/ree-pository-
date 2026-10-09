@@ -5,6 +5,7 @@
 // yellow tutorial cards still spotlight the HUD part they are about.
 
 import { XRay, damageColor } from './xray.js';
+import { ACTIONS, settings, saveSettings, resetKeys, keyName } from './settings.js';
 
 const NOISE = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.62  0 0 0 0 0.33  0 0 0 0 0.16  0 0 0 0.55 -0.12'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>")`;
 
@@ -223,6 +224,22 @@ html, body, #hud, #hud * { -webkit-user-select: none; user-select: none; -webkit
 #hud .paused h2 { margin: 0 0 6px; font: 900 64px/0.9 var(--display); letter-spacing: 0.08em; transform: skewX(-6deg); }
 #hud .paused button { width: 220px; height: 46px; border: 0; cursor: pointer; font: 900 20px/1 var(--display); letter-spacing: 0.14em; color: var(--white); background: ${NOISE}, rgba(30,31,33,0.95); clip-path: var(--cut); }
 #hud .paused button:hover, #hud .paused button.main { background: var(--rust); color: var(--black); }
+/* settings: over the pause screen */
+#hud .settings { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(8,9,10,0.72); pointer-events: auto; z-index: 6; }
+#hud .settings[hidden] { display: none; }
+#hud .settings .box { width: min(520px, calc(100% - 32px)); max-height: calc(100% - 32px); overflow-y: auto; padding: 16px 18px 18px; display: grid; gap: 14px; scrollbar-width: none; }
+#hud .settings h2 { margin: 0; font: 900 40px/0.9 var(--display); letter-spacing: 0.06em; transform: skewX(-6deg); }
+#hud .settings section { display: grid; gap: 6px; }
+#hud .settings .kb { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2px 10px; font: 700 13px/1.2 var(--sign); }
+#hud .settings .kb button, #hud .settings .seg button { min-width: 92px; height: 30px; border: 0; cursor: pointer; font: 800 13px/1 var(--sign); letter-spacing: 0.06em; color: var(--white); background: rgba(236,230,217,0.1); clip-path: var(--cut); }
+#hud .settings .kb button.wait { background: var(--rust); color: var(--black); }
+#hud .settings .seg { display: flex; gap: 6px; }
+#hud .settings .seg button.on { background: var(--rust); color: var(--black); }
+#hud .settings input[type=range] { width: 100%; accent-color: #d8642a; }
+#hud .settings .note { font: 600 12px/1.3 var(--sign); color: var(--dim); }
+#hud .settings .row2 { display: flex; gap: 8px; }
+#hud .settings .row2 button { flex: 1; height: 42px; border: 0; cursor: pointer; font: 900 18px/1 var(--display); letter-spacing: 0.14em; color: var(--white); background: rgba(236,230,217,0.1); clip-path: var(--cut); }
+#hud .settings .row2 button.main { background: var(--rust); color: var(--black); }
 
 /* tutorial: centred card, plus a dimmed screen with a cut-out over the HUD part it is about */
 #hud .spot { position: absolute; border-radius: 10px; box-shadow: 0 0 0 200vmax rgba(10,10,12,0.42), 0 0 0 3px var(--yellow), 0 0 22px 4px rgba(242,194,27,0.6); transition: left 0.3s, top 0.3s, width 0.3s, height 0.3s, opacity 0.3s; opacity: 0; }
@@ -254,6 +271,10 @@ html, body, #hud, #hud * { -webkit-user-select: none; user-select: none; -webkit
 #hud .touch.sl::before { left: 0; opacity: 1; background: linear-gradient(90deg, rgba(236,230,217,0.13), transparent 70%); }
 #hud .touch.sr::before { right: 0; opacity: 1; background: linear-gradient(270deg, rgba(236,230,217,0.13), transparent 70%); }
 #hud .touch .btn.down { transform: scale(0.94); background: rgba(216,100,42,0.6); }
+#hud .touch .btn[hidden] { display: none; }
+#hud .touch .btn.small { width: 46px; height: 46px; font-size: 11px; }
+#hud .touch .switchBtn { right: 120px; bottom: calc(330px + env(safe-area-inset-bottom, 0px)); font-size: 22px; }
+#hud .touch .backBtn { left: 16px; top: calc(46% + env(safe-area-inset-top, 0px)); }
 /* phones held sideways: compact, buttons left of the gauge */
 @media (orientation: landscape) and (max-height: 520px) {
   #hud { --gx: calc(10px + env(safe-area-inset-left, 0px)); --gxr: calc(10px + env(safe-area-inset-right, 0px)); --gy: 8px; --gyb: calc(8px + env(safe-area-inset-bottom, 0px)); }
@@ -299,6 +320,8 @@ html, body, #hud, #hud * { -webkit-user-select: none; user-select: none; -webkit
   #hud .touch .boostBtn { right: calc(170px + env(safe-area-inset-right, 0px)); bottom: calc(14px + env(safe-area-inset-bottom, 0px)); }
   #hud .touch .fireBtn { right: calc(246px + env(safe-area-inset-right, 0px)); bottom: calc(36px + env(safe-area-inset-bottom, 0px)); }
   #hud .touch .brakeBtn { right: calc(176px + env(safe-area-inset-right, 0px)); bottom: calc(90px + env(safe-area-inset-bottom, 0px)); width: 52px; height: 52px; font-size: 12px; }
+  #hud .touch .switchBtn { right: calc(250px + env(safe-area-inset-right, 0px)); bottom: calc(112px + env(safe-area-inset-bottom, 0px)); }
+  #hud .touch .backBtn { left: calc(10px + env(safe-area-inset-left, 0px)); top: 40%; }
 }
 @media (max-width: 720px) and (orientation: portrait) {
   #hud .tl { width: 200px; }
@@ -370,18 +393,19 @@ export function createHud({ touch = false } = {}) {
     <div class="spot"></div>
     <div class="card out"><h4></h4><p></p></div>
     <div class="title" hidden><h3></h3><p class="panel"></p></div>
-    <div class="paused" hidden><h2>PAUSED</h2><button class="main" data-a="resume">RESUME</button><button data-a="restart">RESTART</button></div>
+    <div class="paused" hidden><h2>PAUSED</h2><button class="main" data-a="resume">RESUME</button><button data-a="settings">SETTINGS</button><button data-a="restart">RESTART</button></div>
+    <div class="settings" hidden><div class="box panel"></div></div>
     <pre class="debug" hidden></pre>`;
   document.body.append(root);
   // and no context menu / selection start from a held finger
   for (const ev of ['contextmenu', 'selectstart', 'dragstart']) document.addEventListener(ev, (e) => e.preventDefault());
   const $ = (s) => root.querySelector(s);
   // left half of the screen steers left, right half steers right; buttons take their own touches
-  const t = { left: false, right: false, boost: false, brake: false, fire: false, active: touch, get steer() { return (this.right ? 1 : 0) - (this.left ? 1 : 0); } };
+  const t = { left: false, right: false, boost: false, brake: false, fire: false, back: false, switchN: 0, active: touch, get steer() { return (this.right ? 1 : 0) - (this.left ? 1 : 0); } };
   if (touch) {
     const layer = document.createElement('div');
     layer.className = 'touch';
-    layer.innerHTML = '<div class="btn brakeBtn">BRAKE</div><div class="btn fireBtn">FIRE</div><div class="btn boostBtn">BOOST</div>';
+    layer.innerHTML = '<div class="btn brakeBtn">BRAKE</div><div class="btn fireBtn">FIRE</div><div class="btn boostBtn">BOOST</div><div class="btn small switchBtn">⟳</div><div class="btn small backBtn">BACK</div>';
     root.insertBefore(layer, $('.tr'));
     const hold = (el, key) => {
       el.addEventListener('pointerdown', (e) => { e.stopPropagation(); t[key] = true; el.classList.add('down'); el.setPointerCapture(e.pointerId); });
@@ -392,6 +416,9 @@ export function createHud({ touch = false } = {}) {
     hold(layer.querySelector('.boostBtn'), 'boost');
     hold(layer.querySelector('.fireBtn'), 'fire');
     hold(layer.querySelector('.brakeBtn'), 'brake');
+    hold(layer.querySelector('.backBtn'), 'back');
+    layer.querySelector('.switchBtn').addEventListener('pointerdown', (e) => { e.stopPropagation(); t.switchN++; });
+    layer.querySelector('.fireBtn').hidden = settings.fire === 'auto';
     const steerPtr = new Map();
     const side = (e) => (e.clientX < innerWidth / 2 ? -1 : 1);
     const upd = () => {
@@ -421,9 +448,53 @@ export function createHud({ touch = false } = {}) {
   pausedEl.addEventListener('click', (e) => {
     const a = e.target.dataset?.a;
     if (a === 'resume') setPaused(false);
+    if (a === 'settings') openSettings();
     if (a === 'restart') location.reload();
   });
-  addEventListener('keydown', (e) => { if (e.code === 'Escape' || e.code === 'KeyP') setPaused(pausedEl.hidden); });
+  addEventListener('keydown', (e) => {
+    if (e.code !== 'Escape' && e.code !== 'KeyP') return;
+    if (!settingsEl.hidden) { settingsEl.hidden = true; return; } // Esc backs out of settings first
+    setPaused(pausedEl.hidden);
+  });
+
+  // settings: key bindings (keyboards), fire mode, free-look sensitivity, volume (later)
+  const settingsEl = $('.settings'), sbox = settingsEl.querySelector('.box');
+  let waiting = null; // the action being rebound
+  addEventListener('keydown', (e) => { // capture the next key for a rebind before anything else sees it
+    if (!waiting) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    if (e.code !== 'Escape') { settings.keys[waiting] = [e.code]; saveSettings(); }
+    waiting = null;
+    drawSettings();
+  }, true);
+  const drawSettings = () => {
+    sbox.innerHTML = `<h2>SETTINGS</h2>
+      ${touch ? '' : `<section><span class="lbl">Controls</span><div class="kb">${ACTIONS.map(([a, label]) => `<span>${label}</span><button data-bind="${a}" class="${waiting === a ? 'wait' : ''}">${waiting === a ? 'PRESS A KEY' : settings.keys[a].map(keyName).join(' / ')}</button>`).join('')}</div></section>`}
+      <section><span class="lbl">Firing</span><div class="seg"><button data-fire="manual" class="${settings.fire === 'manual' ? 'on' : ''}">MANUAL</button><button data-fire="auto" class="${settings.fire === 'auto' ? 'on' : ''}">AUTO</button></div>
+        <span class="note">${settings.fire === 'auto' ? 'The guns fire on their own whenever a target is locked.' : touch ? 'Hold FIRE to shoot.' : `Hold ${keyName(settings.keys.fire[0])} to shoot.`}</span></section>
+      ${touch ? '<section><span class="lbl">Buttons</span><span class="note">⟳ switches target, BACK looks behind you. Moving the buttons around is coming.</span></section>' : `<section><span class="lbl">Free look sensitivity · ${settings.sens.toFixed(1)}</span><input type="range" min="0.4" max="4" step="0.1" value="${settings.sens}" data-sens></section>`}
+      <section><span class="lbl">Volume (no sound yet)</span><input type="range" min="0" max="1" step="0.05" value="${settings.volume}" data-vol disabled></section>
+      <div class="row2">${touch ? '' : '<button data-a="keys">RESET KEYS</button>'}<button class="main" data-a="back">BACK</button></div>`;
+  };
+  const openSettings = () => { drawSettings(); settingsEl.hidden = false; };
+  const kbdBoost = () => { const k = $('.bk kbd'); if (k) k.textContent = keyName(settings.keys.boost[0]); };
+  kbdBoost();
+  sbox.addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.bind) { waiting = b.dataset.bind; drawSettings(); }
+    if (b.dataset.fire) {
+      settings.fire = b.dataset.fire; saveSettings(); drawSettings();
+      const fb = root.querySelector('.fireBtn');
+      if (fb) fb.hidden = settings.fire === 'auto';
+    }
+    if (b.dataset.a === 'keys') { resetKeys(); drawSettings(); }
+    kbdBoost();
+    if (b.dataset.a === 'back') settingsEl.hidden = true;
+  });
+  sbox.addEventListener('input', (e) => {
+    if (e.target.dataset.sens !== undefined) { settings.sens = Number(e.target.value); saveSettings(); e.target.previousElementSibling.textContent = `Free look sensitivity · ${settings.sens.toFixed(1)}`; }
+  });
 
   // ---- tacho ----
   const sc = $('.speed canvas'), sx = sc.getContext('2d');

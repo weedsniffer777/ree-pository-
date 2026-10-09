@@ -10,6 +10,7 @@ import { S, STEP, I_START, LOOP, pointAt, ensure } from './route.js';
 import { World } from './world.js';
 import { TrackWorld } from './trackworld.js';
 import { currentMap } from './maps.js';
+import { settings, held } from './settings.js';
 import { biomeIndexAt, BIOMES } from './biomes.js';
 import { bakeGroup } from '../level/bake.js';
 import { CarController, setTerrain } from './car.js';
@@ -110,7 +111,7 @@ const guns = new Guns(model, scene, { tracers, dust, sparks: lineSparks, height:
 const gunImpact = guns.impact.bind(guns);
 guns.heatCfg = { perShot: 0.017, cool: 0.42, resume: 0.3 }; // ~4 s of fire to overheat
 if (!LOOP.on) guns.impact = (p) => { gunImpact(p); car.addBoost(0.0045); };
-let runTime = 0, biomeShown = -1, best = 0, freeCam = false;
+let runTime = 0, biomeShown = -1, best = 0, freeCam = false, lookBack = false, lockedNow = false, lockPin = null, switchSeen = 0;
 const pursuer = new Pursuer();
 const skids = new Skids(scene);
 const streaks = new SpeedLines(scene);
@@ -167,6 +168,7 @@ window.__game.race = race;
 
 const keys = new Set();
 addEventListener('keydown', (e) => {
+  if (isPaused()) return; // paused (settings may be listening for a key)
   keys.add(e.code);
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
   if (e.code === 'KeyR') location.reload();
@@ -184,8 +186,8 @@ renderer.domElement.addEventListener('pointerdown', (e) => { if (e.button === 2)
 addEventListener('pointerup', (e) => { if (e.button === 2) rightDrag = false; });
 addEventListener('pointermove', (e) => {
   if (!freeCam) return;
-  orbitYaw -= e.movementX * 0.006;
-  orbitPitch = THREE.MathUtils.clamp(orbitPitch + e.movementY * 0.004, -0.25, 0.7);
+  orbitYaw -= e.movementX * 0.006 * settings.sens;
+  orbitPitch = THREE.MathUtils.clamp(orbitPitch + e.movementY * 0.004 * settings.sens, -0.25, 0.7);
 });
 
 const auto = params.get('auto') === '1';
@@ -205,8 +207,8 @@ function readInput() {
     return { ...autopilot(), boost: car.boost > 0.05, fire: false, cap: 0 }; // flat out past the camera
   }
   if (auto) return { ...autopilot(), cap: race?.inputCap || 0, fire: race ? race.canFire && params.get('fire') === '1' : params.get('fire') === '1' };
-  const k = (...c) => c.some((x) => keys.has(x));
-  const w = k('KeyW', 'ArrowUp'), sKey = k('KeyS', 'ArrowDown');
+  const k = (a) => held(keys, a); // bound keys (settings)
+  const w = k('throttle'), sKey = k('brake');
   const t = hud.touch;
   // keyboard: W is the throttle. Phones have no pedal, so they drive on full throttle and
   // BRAKE lifts it. The tutorial rolls along at a fixed lower speed until W is learned.
@@ -215,11 +217,13 @@ function readInput() {
     throttle: (w || t.active || tutDrive) && !sKey && !t.brake ? 1 : 0, // S lifts the throttle, same as BRAKE on a phone
     cap: race?.inputCap || (tutDrive && !w ? TUT_SPEED : 0),
     brake: sKey || t.brake ? 1 : 0,
-    steer: (k('KeyD', 'ArrowRight') ? 1 : 0) - (k('KeyA', 'ArrowLeft') ? 1 : 0) || t.steer,
-    boost: k('ShiftLeft', 'ShiftRight') || t.boost,
-    fire: (k('Space') || t.fire) && (!race || race.canFire),
+    steer: (k('right') ? 1 : 0) - (k('left') ? 1 : 0) || t.steer,
+    boost: k('boost') || t.boost,
+    // auto fire: shoot whenever something is locked (the fire key still works too)
+    fire: (k('fire') || t.fire || (settings.fire === 'auto' && lockedNow)) && (!race || race.canFire),
   };
-  freeCam = k('KeyC') || rightDrag;
+  freeCam = k('look') || rightDrag;
+  lookBack = k('back') || t.back;
   return inp;
 }
 
@@ -231,17 +235,28 @@ function updateLock() {
   const fx = Math.sin(car.yaw), fz = Math.cos(car.yaw), W = innerWidth, Hh = innerHeight;
   const toScreen = (x, y, z) => { lockV.set(x, y, z).project(camera); return lockV.z < 1 ? [(lockV.x * 0.5 + 0.5) * W, (-lockV.y * 0.5 + 0.5) * Hh] : null; };
   const c0 = toScreen(car.x + fx * 60, car.y + 0.9, car.z + fz * 60);
-  if (!c0 || race.player.armor.wrecked || race.state === 'done') { hud.reticle(null); hud.lock(null); hud.reticleState('idle'); return null; }
+  if (!c0 || race.player.armor.wrecked || race.state === 'done') { lockedNow = false; hud.reticle(null); hud.lock(null); hud.reticleState('idle'); return null; }
   hud.reticle(c0[0], c0[1], LOCK_R);
-  let best = null, bd = Infinity;
+  const cands = [];
   for (const r of race.rivals) {
     if (r.armor.wrecked || !r.rig.visible) continue;
     const dx = r.x - car.x, dz = r.z - car.z, d = Math.hypot(dx, dz);
     if (d > SEEK_MAX || d < 3 || dx * fx + dz * fz <= 0) continue;
     const sp = toScreen(r.x, r.y + 0.8, r.z);
     if (!sp || Math.hypot(sp[0] - c0[0], sp[1] - c0[1]) > LOCK_R) continue;
-    if (d < bd) { bd = d; best = { r, sp }; }
+    cands.push({ r, sp, d });
   }
+  cands.sort((a, b) => a.d - b.d);
+  // nearest by default; the switch button (phones) pins the next one along while it stays in sight
+  if (hud.touch.switchN !== switchSeen) {
+    switchSeen = hud.touch.switchN;
+    const lockable = cands.filter((c) => c.d <= LOCK_MAX);
+    if (lockable.length) { const k = lockable.findIndex((c) => c.r === (lockPin ?? lockable[0].r)); lockPin = lockable[(k + 1) % lockable.length].r; }
+  }
+  const pinned = lockPin && cands.find((c) => c.r === lockPin && c.d <= LOCK_MAX);
+  if (!pinned) lockPin = null;
+  const best = pinned || cands[0], bd = best?.d ?? Infinity;
+  lockedNow = !!best && bd <= LOCK_MAX;
   if (!best) { hud.lock(null); hud.reticleState('idle'); return null; }
   if (bd > LOCK_MAX) {
     // seen, but too far to lock: the guns still match its height (elevation only), so
@@ -297,7 +312,7 @@ function updateCamera(dt) {
     orbitYaw *= Math.exp(-dt * 3);
     orbitPitch *= Math.exp(-dt * 3);
   }
-  const yawC = camYaw + orbitYaw + THREE.MathUtils.degToRad(num('orbit', 0));
+  const yawC = camYaw + orbitYaw + THREE.MathUtils.degToRad(num('orbit', 0)) + (lookBack ? Math.PI : 0); // look back: turn the camera round
   const [fx, fz] = f(yawC);
   // FOV opens with speed (most of it above cruise) and kicks wider on boost
   let fovT = 60 + Math.min(speed, 60) * 0.2 + Math.max(0, Math.min(speed, 60) - 32) * 0.35 + (car.boosting ? 9 : 0); // ~74° flat out
@@ -439,7 +454,7 @@ const STEPS = [
   { title: `Now ${K('S')} + ${K('A')}/${K('D')} to slide`, sub: 'Brake and steer together: the tail swings out', touchTitle: 'Hold BRAKE and steer to slide', touchSub: 'The tail swings out',
     done: (dt) => (tut.acc += car.driftMode ? dt : 0) > 0.8 },
   { title: `${K('Space')} to fire`, sub: 'Hits charge your boost', spot: 'boost', touchTitle: 'Hold FIRE',
-    done: (dt) => (tut.acc += keys.has('Space') || hud.touch.fire ? dt : 0) > 1.2 },
+    done: (dt) => (tut.acc += held(keys, 'fire') || hud.touch.fire || (settings.fire === 'auto' && lockedNow) ? dt : 0) > 1.2 },
   { title: 'The pursuer is closing in', sub: `Hold ${K('Shift')} to boost away`, touchSub: 'Hold BOOST to get away', spot: 'track', kind: 'warn',
     enter: () => { pursuer.summon(Math.max(0, (car.n.i - I_START) * STEP), 150); hud.pulseTrack(); slowmo = 1.4; car.addBoost(1); },
     done: (dt) => (tut.acc += car.boosting ? dt : 0) > 1 },
