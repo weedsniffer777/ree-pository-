@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { S, STEP, I_START, LOOP, wAt, RAIL_LAT, ROAD_HALF, ROAD_BEVEL, nearest, corridor, pointAt } from './route.js';
 import { roadSurfaceY } from '../level/road.js';
 import { railSide } from './world.js';
+import { rampHeight } from './ramps.js';
 
 // The world supplies terrain height; set once at startup.
 let terrainHeight = () => 0;
@@ -35,6 +36,8 @@ export function groundAt(x, z, n) {
   if (n) {
     const w = wAt(n.i);
     if (Math.abs(n.lat) < ROAD_BEVEL * w) h = Math.max(h, n.y + roadSurfaceY(n.lat / w));
+    const rh = rampHeight(n);
+    if (rh > 0) h = Math.max(h, n.y + roadSurfaceY(n.lat / w) + rh);
   }
   return h;
 }
@@ -61,6 +64,7 @@ export class CarController {
       bob: 0, bobV: 0, hint: i, prevLat: lat, onRoad: true, prevVf: 0,
     });
     this.n = nearest(this.x, this.z, i);
+    this.near = null; this.spin = 0;
     this.y = this.prevG = this.groundCenter();
     this.sync(0);
   }
@@ -120,7 +124,11 @@ export class CarController {
       const driftWant = braking ? Math.min(1, Math.abs(this.steerS) * 1.3) * Math.min(1, (vf - 6) / 14) : 0;
       this.drift += (driftWant - this.drift) * Math.min(1, dt * (driftWant > this.drift ? 4.5 : 2.5));
       this.driftMode = this.drift > 0.35;
-      if (brake > 0) {
+      if (inp.brake > 0 && vf < -3) {
+        // already rolling backwards (after a J-turn): S keeps driving it backwards, Death
+        // Race style, instead of killing the momentum
+        vf = Math.max(-30, vf - 7 * dt);
+      } else if (brake > 0) {
         // in a committed drift the brake mostly unloads the rear instead of stopping the
         // car: speed bleeds off gently, and less still with the throttle down
         if (vf > 0.5) vf -= 20 * (1 - this.drift * (inp.throttle > 0 ? 0.94 : 0.86)) * dt * brake;
@@ -141,11 +149,14 @@ export class CarController {
       const sp = Math.abs(vf);
       // turn rate falls off with speed (a squared term so top speed and boost are clearly
       // heavier: ~1.8 rad/s at 36 km/h, ~0.6 at 165, ~0.5 boosting); drifting adds rotation back
-      this.yawRate = -this.steerS * 2.4 * Math.min(1, sp / 4) / (1 + sp / 30 + (sp / 40) ** 2) * (vf < -0.1 ? -1 : 1) * (1 + this.drift * 0.6);
+      this.yawRate = -this.steerS * 2.4 * Math.min(1, sp / 4) / (1 + sp / 30 + (sp / 40) ** 2) * (vf < -0.1 ? -1 : 1) * (1 + this.drift * (0.6 + Math.max(0, Math.abs(this.steerS) - 0.7) * 2.2)); // hard lock in a drift whips the car round
     } else {
       this.yawRate *= Math.exp(-dt * 2);
     }
-    this.yaw += this.yawRate * dt;
+    this.yaw += (this.yawRate + this.spin) * dt;
+    // spin from side impacts (PIT maneuvers): decays, and loosens the grip while it lasts
+    this.spin *= Math.exp(-dt * 2.2);
+    if (Math.abs(this.spin) > 0.8) this.drift = Math.max(this.drift, 0.75);
     if (this.boosting) this.boost = Math.max(0, this.boost - dt / 3.4);
     this.nitro = this.boost; // legacy name used by shared effects
 
@@ -192,7 +203,12 @@ export class CarController {
 
   collide() {
     const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
-    for (const c of this.colliders) {
+    // only obstacles near the car (re-gathered every ~12 m): eight physics cars stay cheap
+    if (!this.near || Math.abs(this.x - this.nearX) > 12 || Math.abs(this.z - this.nearZ) > 12) {
+      this.near = this.colliders.filter((c) => Math.abs(c.x - this.x) < 40 && Math.abs(c.z - this.z) < 40);
+      this.nearX = this.x; this.nearZ = this.z;
+    }
+    for (const c of this.near) {
       if (Math.abs(c.x - this.x) > 14 || Math.abs(c.z - this.z) > 14) continue;
       const HIT_R = this.hitbox.r;
       for (const o of this.hitbox.offs) {

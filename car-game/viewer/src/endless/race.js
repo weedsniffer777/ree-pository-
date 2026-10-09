@@ -6,6 +6,7 @@ import { paintTopSkin } from '../models/cars/starterCoupe.js';
 import { bakeGroup } from '../level/bake.js';
 import { partsOf, charModel, unchar, Wreckage } from './carparts.js';
 import { Holes } from './holes.js';
+import { CarController } from './car.js';
 
 // Closed-loop race: the player plus seven AI rivals on the same model, each with its own
 // streak colour. Rolling start mid-pack behind the line, three laps, four-zone armor on
@@ -125,46 +126,54 @@ function speedProfile(aLat, dec) {
 const wrapI = (i) => ((Math.floor(i) % LOOP.n) + LOOP.n) % LOOP.n;
 const latMax = (i) => RAIL_LAT * wAt(wrapI(i)) - 1.3;
 
+// A rival drives the same physics car as the player (walls, ramps, drift, collisions,
+// spin-outs all identical); a driver on top turns the race situation into steer /
+// throttle / brake. Personality: racers run their line and dodge fire; fighters hunt a
+// target, ride its lane, ram it and go for PIT maneuvers.
 class Rival {
-  constructor(slot, base, scene, fx) {
+  constructor(slot, base, scene, fx, colliders) {
     const r = ROSTER[slot];
     Object.assign(this, { slot, name: r.name, hex: r.hex, ai: true });
     const { model, mats, wheels } = cloneCar(base, r.color);
     Object.assign(this, { model, mats, wheels, parts: partsOf(model) });
-    this.rig = new THREE.Group();
-    this.rig.add(model);
+    this.car = new CarController(model, colliders);
+    this.rig = this.car.rig;
     scene.add(this.rig);
     this.armor = new Armor();
+    this.personality = slot % 2 ? 'fighter' : 'racer';
     this.skill = 0.86 + (slot / ROSTER.length) * 0.05 + Math.random() * 0.03; // easy: well under the player's top speed
     this.guns = new Guns(model, scene, { ...fx, light: false, color: 0xffa21c, rate: 5, spread: 3.2 });
+    this.guns.owner = this;
     this.burst = 0;
     this.cool = 2 + Math.random() * 3;
+    this.inp = { throttle: 1, brake: 0, steer: 0, boost: false, fire: false, cap: 0 };
   }
+  get x() { return this.car.x; } get y() { return this.car.y; } get z() { return this.car.z; }
+  get yaw() { return this.car.yaw; } get vx() { return this.car.vx; } get vz() { return this.car.vz; }
+  get v() { return this.car.vf; } get lat() { return this.car.n.lat; }
   place(prog, lat, v) {
-    Object.assign(this, { prog, lat, latT: lat, latV: 0, v, finished: false, finishT: 0, deadT: 0, smokeAcc: 0 });
+    const i = wrapI(prog);
+    this.car.reset(i, lat);
+    const p = pointAt(i, lat);
+    this.car.vx = Math.sin(p.yaw) * v; this.car.vz = Math.cos(p.yaw) * v; this.car.vf = v;
+    this.car.dead = false;
+    Object.assign(this, { prog, pI: i, latT: lat, finished: false, finishT: 0, deadT: 0, smokeAcc: 0, stuckT: 0, hitT: -9, air: null, target: null });
     this.armor.reset();
     wear(this.mats, this.armor);
-    this.pose(0);
+    this.sync(0);
   }
-  pose(dt) {
-    const i0 = Math.floor(this.prog), f = this.prog - i0, a = pointAt(i0, this.lat), b = pointAt(i0 + 1, this.lat);
-    this.x = a.x + (b.x - a.x) * f;
-    this.z = a.z + (b.z - a.z) * f;
-    const ia = wrapI(i0), ib = wrapI(i0 + 1), w = wAt(ia);
-    this.y = S.y[ia] + (S.y[ib] - S.y[ia]) * f + roadSurfaceY(this.lat / w);
-    this.tx = S.tx[ia]; this.tz = S.tz[ia];
-    const slip = this.armor.wrecked ? (this.spin ?? 0) * Math.min(1, this.deadT * 2) : Math.atan2(this.latV, Math.max(4, this.v));
-    this.yaw = Math.atan2(this.tx, this.tz) - slip;
-    this.vx = this.tx * this.v - this.tz * this.latV;
-    this.vz = this.tz * this.v + this.tx * this.latV;
-    this.rig.position.set(this.x, this.y, this.z);
+  // progress along the loop, unwrapped so laps count
+  track() {
+    const N = LOOP.n, i = this.car.n.i;
+    this.prog += ((i - this.pI + N + N / 2) % N) - N / 2;
+    this.pI = i;
+  }
+  sync(dt) {
+    this.car.sync(dt);
     this.rig.visible = Math.hypot(this.x - (Race.camX ?? this.x), this.z - (Race.camZ ?? this.z)) < 420;
-    this.rig.rotation.set(-Math.atan2(S.y[ib] - S.y[ia], STEP), this.yaw, 0, 'YXZ');
-    for (const wh of this.wheels) wh.rotation.x += (this.v / 0.332) * dt;
-    // a launched wreck: height and tumble, turning about the body's middle (0.6 m up)
+    // a launched wreck tumbles about the body's middle (0.6 m up) while it flies
     if (this.air) {
       const A = this.air;
-      this.rig.position.y += A.y;
       this.model.rotation.set(A.rx, 0, A.rz);
       const o = Rival.piv.set(0, 0.6, 0).applyEuler(this.model.rotation);
       const flipped = Math.cos(A.rx) * Math.cos(A.rz) < 0;
@@ -172,15 +181,6 @@ class Rival {
     }
   }
   static piv = new THREE.Vector3();
-  // world displacement / velocity change applied to the spline state
-  push(dx, dz) {
-    this.prog += (dx * this.tx + dz * this.tz) / STEP;
-    this.lat += dx * -this.tz + dz * this.tx;
-  }
-  kick(dvx, dvz) {
-    this.v = Math.max(0, this.v + dvx * this.tx + dvz * this.tz);
-    this.latV += dvx * -this.tz + dvz * this.tx;
-  }
 }
 
 // ---------------------------------------------------------------- race
@@ -200,7 +200,7 @@ export class Race {
     this.player = { name: 'You', hex: ROSTER[0].hex, you: true, armor: new Armor(), mats: model.userData.skins };
     this.hb = car.hitbox;
     this.rivals = [];
-    for (let s = 1; s < ROSTER.length; s++) this.rivals.push(new Rival(s, model, scene, fx));
+    for (let s = 1; s < ROSTER.length; s++) this.rivals.push(new Rival(s, model, scene, fx, car.colliders));
     const hitTest = (o, d, range, shooter) => this.rayHit(o, d, range, shooter);
     for (const r of this.rivals) { r.guns.hitTest = hitTest; r.guns.onTargetHit = (h) => this.damage(h.target, h.zone, 0.022, r, h.point, 'gun', h.dir); }
     gunsHitHook(hitTest, (h) => { this.damage(h.target, h.zone, 0.05, this.player, h.point, 'gun', h.dir); car.addBoost(0.012); });
@@ -236,7 +236,7 @@ export class Race {
     this.car.dead = false;
     unchar(this.model);
     this.model.position.y = 0;
-    for (const r of this.rivals) { unchar(r.model); r.model.position.set(0, 0, 0); r.model.rotation.set(0, 0, 0); r.air = null; }
+    for (const r of this.rivals) { unchar(r.model); r.model.position.set(0, 0, 0); r.model.rotation.set(0, 0, 0); }
     this.kills = 0;
     this.combo = { n: 0, t: -9 };
     this.hud.clearCracks();
@@ -265,8 +265,8 @@ export class Race {
   // every car as a uniform body for collisions and hit tests
   bodies() {
     const c = this.car;
-    const out = this.player.gone ? [] : [{ ref: this.player, x: c.x, y: c.y, z: c.z, yaw: c.yaw, prog: this.pProg }];
-    for (const r of this.rivals) if (!r.gone && !(r.air && r.air.y > 1.2)) out.push({ ref: r, x: r.x, y: r.y, z: r.z, yaw: r.yaw, prog: r.prog });
+    const out = [{ ref: this.player, car: c, x: c.x, y: c.y, z: c.z, yaw: c.yaw, prog: this.pProg }];
+    for (const r of this.rivals) if (!(r.air && !r.air.landed && r.car.airborne)) out.push({ ref: r, car: r.car, x: r.x, y: r.y, z: r.z, yaw: r.yaw, prog: r.prog });
     return out;
   }
 
@@ -302,6 +302,7 @@ export class Race {
     if (a.wrecked || this.state === 'done' && target === this.player) return;
     if (cause === 'gun' && point && dir) this.holes.add(target.slot ?? 0, target === this.player ? this.model : target.model, point, dir, this.t);
     const zb = a.z[zone], hb = a.core;
+    if (target.ai) target.hitT = this.t;
     a.hit(zone, dmg);
     wear(target.mats, a);
     const broke = zb > 0 && a.z[zone] === 0, tier = (h) => (h > 0.66 ? 0 : h > 0.33 ? 1 : 2);
@@ -374,18 +375,32 @@ export class Race {
     }
     if (me) { c.dead = true; c.vx *= 0.85; c.vz *= 0.85; this.over('wrecked'); }
     else {
-      target.deadT = 0; target.spin = (Math.random() - 0.5) * 2.2; target.v *= 0.7;
+      const tc = target.car;
+      target.deadT = 0;
+      tc.dead = true;
+      tc.spin += (Math.random() - 0.5) * 4; // the blast slews the wreck round
+      tc.vx *= 0.7; tc.vz *= 0.7;
+      tc.model.position.y = -0.3;
       if (this.killStyle(target, cause) === 'launch') {
-        target.v *= 0.75;
-        target.air = { y: 0, vy: 10 + Math.random() * 4, rx: 0, rz: 0, wx: (Math.random() - 0.5) * 6, wz: (Math.random() < 0.5 ? -1 : 1) * (4 + Math.random() * 3), landed: false };
+        tc.vx *= 0.75; tc.vz *= 0.75;
+        tc.vy = 10 + Math.random() * 4; tc.airborne = true; // real flight, real landing
+        target.air = { t: 0, rx: 0, rz: 0, wx: (Math.random() - 0.5) * 6, wz: (Math.random() < 0.5 ? -1 : 1) * (4 + Math.random() * 3), landed: false };
       }
     }
     if (!me && this.rivals.every((r) => r.armor.wrecked) && this.state === 'race') this.over('annihilation');
   }
 
-  // circle-pair contact between every two cars: separate, swap normal velocity, scrape armor
-  contacts() {
-    const B = this.bodies(), { r, offs, hx, hz0, hz1 } = this.hb, c = this.car;
+  // Car-to-car contact, the same for every car: separate the hulls, trade momentum along
+  // the contact normal, and spin each car by where it was struck (a hit on the rear
+  // quarter swings the tail round: PIT). Damage goes to the struck zone; a car hitting
+  // with an intact ram deals far more and takes less; spiked wheels grind down a car
+  // they scrape alongside.
+  contacts(dt) {
+    const B = this.bodies(), { r, offs, hx, hz0, hz1 } = this.hb;
+    const zoneOn = (body, px, pz) => {
+      const f = [Math.sin(body.yaw), Math.cos(body.yaw)], dx = px - body.x, dz = pz - body.z;
+      return Armor.zoneOf(dx * -f[1] + dz * f[0], dx * f[0] + dz * f[1] - (hz0 + hz1) / 2, hx, (hz1 - hz0) / 2);
+    };
     for (let a = 0; a < B.length; a++) for (let b = a + 1; b < B.length; b++) {
       const A = B[a], C = B[b];
       if (Math.abs(A.x - C.x) > 9 || Math.abs(A.z - C.z) > 9) continue;
@@ -397,99 +412,144 @@ export class Race {
         if (d < 2 * r && (!deep || d < deep.d)) deep = { d, nx: d > 1e-4 ? dx / d : 1, nz: d > 1e-4 ? dz / d : 0, px: (ax + cx) / 2, pz: (az + cz) / 2 };
       }
       if (!deep) continue;
-      const pen = 2 * r - deep.d, { nx, nz } = deep;
-      const vA = A.ref === this.player ? [c.vx, c.vz] : [A.ref.vx, A.ref.vz];
-      const vC = C.ref === this.player ? [c.vx, c.vz] : [C.ref.vx, C.ref.vz];
-      const move = (body, s) => {
-        if (body.ref === this.player) { c.x += nx * s; c.z += nz * s; } else body.ref.push(nx * s, nz * s);
-      };
-      const wA = A.ref.armor?.wrecked ? 0.7 : 1, wC = C.ref.armor?.wrecked ? 0.7 : 1; // wrecks are heavy, solid obstacles
-      move(A, pen * wA / (wA + wC)); move(C, -pen * wC / (wA + wC));
-      const vrel = (vA[0] - vC[0]) * nx + (vA[1] - vC[1]) * nz;
+      const pen = 2 * r - deep.d, { nx, nz, px, pz } = deep, ca = A.car, cc = C.car;
+      const wA = A.ref.armor.wrecked ? 0.7 : 1, wC = C.ref.armor.wrecked ? 0.7 : 1; // wrecks are heavy, solid obstacles
+      ca.x += nx * pen * wA / (wA + wC); ca.z += nz * pen * wA / (wA + wC);
+      cc.x -= nx * pen * wC / (wA + wC); cc.z -= nz * pen * wC / (wA + wC);
+      const zA = zoneOn(A, px, pz), zC = zoneOn(C, px, pz);
+      // spiked wheels: scraping side to side grinds the other car down
+      const tx = -nz, tz = nx, vt = (ca.vx - cc.vx) * tx + (ca.vz - cc.vz) * tz;
+      if (Math.abs(vt) > 3 && (zA === 'left' || zA === 'right') && (zC === 'left' || zC === 'right')) {
+        const g = Math.min(1, Math.abs(vt) / 15) * 0.22 * dt;
+        if (this.hasSpikes(A.ref)) this.damage(C.ref, zC, g, A.ref, null, 'crash');
+        if (this.hasSpikes(C.ref)) this.damage(A.ref, zA, g, C.ref, null, 'crash');
+        if (Math.random() < dt * 30) for (let k = 0; k < 3; k++) this.fx.sparks.emit(px, (A.y + C.y) / 2 + 0.4, pz, (Math.random() - 0.5) * 6 + (ca.vx + cc.vx) / 2, 1 + Math.random() * 3, (Math.random() - 0.5) * 6 + (ca.vz + cc.vz) / 2, 0.1, 0.25, 1, 0.8, 0.4);
+      }
+      const vrel = (ca.vx - cc.vx) * nx + (ca.vz - cc.vz) * nz;
       if (vrel >= 0) continue;
-      const j = -(A.ref.armor?.wrecked || C.ref.armor?.wrecked ? 1 : 1.3) * vrel / 2; // wrecks: dead stop, no rebound
-      const kickB = (body, s) => {
-        if (body.ref === this.player) { c.vx += nx * s; c.vz += nz * s; c.hit(Math.abs(s)); } else body.ref.kick(nx * s, nz * s);
-      };
-      kickB(A, j); kickB(C, -j);
+      const j = -(A.ref.armor.wrecked || C.ref.armor.wrecked ? 1 : 1.3) * vrel / 2; // wrecks: dead stop, no rebound
+      ca.vx += nx * j; ca.vz += nz * j;
+      cc.vx -= nx * j; cc.vz -= nz * j;
+      // spin from the off-centre impulse (y of r x J); bigger when the tail is hit
+      const spinOf = (body, s) => { const rx = px - body.x, rz = pz - body.z; return (rz * nx * s - rx * nz * s) * 0.13; };
+      if (!A.ref.armor.wrecked) ca.spin += spinOf(A, j);
+      if (!C.ref.armor.wrecked) cc.spin += spinOf(C, -j);
+      if (A.ref === this.player) ca.hit(j); if (C.ref === this.player) cc.hit(j);
       if (-vrel > 4) {
-        const zoneOn = (body) => {
-          const f = [Math.sin(body.yaw), Math.cos(body.yaw)], dx = deep.px - body.x, dz = deep.pz - body.z;
-          return Armor.zoneOf(dx * -f[1] + dz * f[0], dx * f[0] + dz * f[1] - (hz0 + hz1) / 2, hx, (hz1 - hz0) / 2);
-        };
-        const zA = zoneOn(A), zC = zoneOn(C);
-        this.damage(A.ref, zA, (-vrel - 4) * 0.025, C.ref, null, zC === 'front' ? 'ram' : 'crash');
-        this.damage(C.ref, zC, (-vrel - 4) * 0.025, A.ref, null, zA === 'front' ? 'ram' : 'crash');
+        const base = (-vrel - 4) * 0.025;
+        const ramA = zA === 'front' && this.hasRam(A.ref), ramC = zC === 'front' && this.hasRam(C.ref);
+        // a ram hitting deals x2.4 and soaks its own blow; the hit car takes it full
+        this.damage(A.ref, zA, base * (ramC ? 2.4 : 1) * (ramA ? 0.4 : 1), C.ref, null, zC === 'front' ? 'ram' : 'crash');
+        this.damage(C.ref, zC, base * (ramA ? 2.4 : 1) * (ramC ? 0.4 : 1), A.ref, null, zA === 'front' ? 'ram' : 'crash');
+        if (A.ref.ai) A.ref.hitT = this.t; if (C.ref.ai) C.ref.hitT = this.t;
       }
     }
   }
+  hasRam(ref) { return (ref === this.player ? this.playerParts : ref.parts).some((p) => p.name === 'FRONT' && !p.userData.home); }
+  hasSpikes(ref) { return (ref === this.player ? this.playerParts : ref.parts).some((p) => p.userData.part === 'wheel' && !p.userData.home); }
 
+  // physics step for every rival (called at the fixed physics rate)
+  stepAI(h) {
+    for (const r of this.rivals) r.car.step(h, r.inp);
+  }
+
+  // The driver: pick a speed and a lateral line, then steer at a point down the road.
   updateRival(r, dt, all) {
-    const N = LOOP.n, i = wrapI(r.prog);
-    if (r.armor.wrecked) { // slide to a stop, burning
+    const N = LOOP.n, c = r.car, i = c.n.i;
+    r.track();
+    if (r.armor.wrecked) { // slides to a stop under its own physics, burning
       r.deadT += dt;
+      c.dead = true;
+      Object.assign(r.inp, { throttle: 0, brake: 0, steer: 0 });
       const A = r.air;
-      if (A && !A.landed) { // thrown by the blast: fly, tumble, bounce once, settle on wheels or roof
-        A.vy -= 24 * dt;
-        A.y += A.vy * dt;
+      if (A && !A.landed) { // thrown by the blast: tumble while airborne, settle on wheels or roof
+        A.t += dt;
         A.rx += A.wx * dt; A.rz += A.wz * dt;
-        if (A.y <= 0 && A.vy < 0) {
-          A.y = 0;
-          if (A.vy < -5) { A.vy *= -0.28; A.wx *= 0.5; A.wz *= 0.5; this.booms.blast(new THREE.Vector3(r.x, r.y + 0.4, r.z), new THREE.Vector3(r.vx, 0, r.vz).multiplyScalar(0.3), false); }
+        if (A.t > 0.25 && !c.airborne) {
+          if (!A.bounced && Math.abs(A.wx) + Math.abs(A.wz) > 2) { A.bounced = true; c.vy = 3.5; c.airborne = true; A.wx *= 0.45; A.wz *= 0.45; this.booms.blast(new THREE.Vector3(r.x, r.y + 0.4, r.z), new THREE.Vector3(r.vx, 0, r.vz).multiplyScalar(0.3), false); }
           else { A.landed = true; A.rx = Math.round(A.rx / Math.PI) * Math.PI; A.rz = Math.round(A.rz / Math.PI) * Math.PI; }
         }
       }
-      r.v = Math.max(0, r.v - 7 * dt);
-      r.latV *= Math.exp(-dt * 3);
-      r.lat += r.latV * dt;
-      r.prog += r.v * dt / STEP;
       return;
     }
-    let want;
-    {
-      want = Math.min(profile[i], 45.8 * r.skill);
-      // rubber band against the player: ease off when well ahead, push when behind
-      const gap = (r.prog - this.pProg) * STEP;
-      if (!r.finished && this.state === 'race') want *= gap > 60 ? Math.max(0.88, 1 - (gap - 60) / 1500) : gap < -90 ? Math.min(1.1, 1 + (-gap - 90) / 1200) : 1;
-      if (r.finished) want = Math.min(want, 22);
-      // traffic ahead in my lane: pass on the roomier side or tuck in behind
-      if (this.state === 'race') for (const o of all) {
+    const v = Math.max(0, c.vf), me = all.find((o) => o.ref === r);
+    // ---- speed: the corner profile ahead, rubber band, finishing cool-down
+    let want = Math.min(profile[(i + Math.round(v * 0.35)) % N], 45.8 * r.skill);
+    const gap = (r.prog - this.pProg) * STEP;
+    if (!r.finished && this.state === 'race') want *= gap > 60 ? Math.max(0.88, 1 - (gap - 60) / 1500) : gap < -90 ? Math.min(1.1, 1 + (-gap - 90) / 1200) : 1;
+    if (r.finished) want = Math.min(want, 22);
+    // ---- who matters: the fighter's quarry, and anyone in my way
+    const fighter = r.personality === 'fighter' && this.state === 'race' && !r.finished;
+    if (fighter && (!r.target || r.target.ref.armor.wrecked || Math.random() < dt * 0.2)) {
+      let best = null, bs = Infinity;
+      for (const o of all) {
+        if (o.ref === r || o.ref.armor.wrecked) continue;
+        const d = Math.abs((o.prog - r.prog) * STEP);
+        const score = d * (o.ref === this.player ? 0.6 : 1); // the player is the favourite quarry
+        if (d < 60 && score < bs) { bs = score; best = o; }
+      }
+      r.target = best;
+    }
+    const tgt = fighter && r.target ? all.find((o) => o.ref === r.target.ref) : null;
+    const room = latMax(i);
+    if (tgt) {
+      const ahead = (tgt.prog - r.prog) * STEP;
+      if (ahead > -3 && ahead < 45) {
+        want = Math.max(want, Math.min(45.8, tgt.ref === this.player ? Math.max(0, this.car.vf) + 4 : tgt.ref.v + 4)); // close in
+        r.latT = tgt.lat;
+        // alongside its rear quarter: cut in hard for the PIT
+        if (ahead > 0.5 && ahead < 4 && Math.abs(tgt.lat - me.lat) < 3.6) r.latT = tgt.lat + Math.sign(tgt.lat - me.lat) * 1.5;
+      }
+    } else if (this.state === 'race') {
+      // racers (and fighters with nobody near): pass slower traffic on the roomier side
+      for (const o of all) {
         if (o.ref === r) continue;
-        const ahead = (o.prog - r.prog) * STEP, dl = o.lat - r.lat;
-        if (ahead < 1 || ahead > 22 || Math.abs(dl) > 2.6) continue;
+        const ahead = (o.prog - r.prog) * STEP, dl = o.lat - me.lat;
+        if (ahead < 1 || ahead > 24 || Math.abs(dl) > 2.6) continue;
         const ov = o.ref === this.player ? Math.max(0, this.car.vf) : o.ref.armor.wrecked ? 0 : o.ref.v;
-        if (ov >= r.v - 0.5) continue;
-        const room = latMax(i), left = o.lat - 3.2, right = o.lat + 3.2;
-        const canL = left > -room, canR = right < room;
-        if (canL || canR) r.latT = !canR || (canL && Math.abs(left - r.lat) < Math.abs(right - r.lat)) ? left : right;
+        if (ov >= v - 0.5) continue;
+        const left = o.lat - 3.2, right = o.lat + 3.2, canL = left > -room, canR = right < room;
+        if (canL || canR) r.latT = !canR || (canL && Math.abs(left - me.lat) < Math.abs(right - me.lat)) ? left : right;
         else want = Math.min(want, ov);
       }
+      if (Math.random() < dt * 0.15) r.latT = (Math.random() - 0.5) * 2 * room * 0.7;
     }
-    r.v += Math.max(-13 * dt, Math.min(8 * dt, want - r.v));
-    // steer toward the target lane (slowly drifting it back toward a home lane)
-    if (this.state === 'race' && Math.random() < dt * 0.15) r.latT = (Math.random() - 0.5) * 2 * latMax(i) * 0.7;
-    r.latT = Math.max(-latMax(i), Math.min(latMax(i), r.latT));
-    const wantV = Math.max(-4, Math.min(4, (r.latT - r.lat) * 1.2));
-    r.latV += (wantV - r.latV) * Math.min(1, dt * 3);
-    r.lat += r.latV * dt;
-    if (Math.abs(r.lat) > latMax(i)) { r.lat = Math.sign(r.lat) * latMax(i); r.latV *= -0.3; }
-    r.prog += r.v * dt / STEP;
+    // ---- evasive: weave when shot at or when someone sits on my tail
+    let threat = this.t - r.hitT < 1.6;
+    if (!threat) for (const o of all) { const behind = (r.prog - o.prog) * STEP; if (o.ref !== r && behind > 4 && behind < 35 && Math.abs(o.lat - me.lat) < 2.5 && !o.ref.armor.wrecked) { threat = true; break; } }
+    let lat = r.latT;
+    if (threat && !(tgt && Math.abs((tgt.prog - r.prog) * STEP) < 10)) lat += Math.sin(this.t * (r.personality === 'racer' ? 2.4 : 1.6) + r.slot) * (r.personality === 'racer' ? 3 : 1.8);
+    lat = Math.max(-room, Math.min(room, lat));
+    r.latT = Math.max(-room, Math.min(room, r.latT));
+    // ---- steer at a point down the road on my line
+    const look = 9 + v * 0.55, tp = pointAt(i + Math.round(look / STEP), lat);
+    let diff = Math.atan2(tp.x - c.x, tp.z - c.z) - c.yaw;
+    diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+    const steer = THREE.MathUtils.clamp(-diff * 2.6, -1, 1);
+    // brake hard only when well over and fairly straight (braking while steering drifts)
+    const over = v - want;
+    Object.assign(r.inp, { steer, throttle: over < -0.5 ? 1 : 0, brake: over > (Math.abs(steer) > 0.3 ? 7 : 3) ? 1 : 0, cap: 45.8 * r.skill * (want > 45.8 * r.skill ? 1.05 : 1) });
+    // ---- unstick: spun round or stopped against something for a while -> back on the road
+    r.stuckT = v < 4 || Math.abs(diff) > 1.7 ? r.stuckT + dt : 0;
+    if (r.stuckT > 2.5) { r.stuckT = 0; const k = i; c.reset(k, Math.max(-room, Math.min(room, me.lat))); const p = pointAt(k, me.lat); c.vx = Math.sin(p.yaw) * 16; c.vz = Math.cos(p.yaw) * 16; c.vf = 16; r.pI = k; }
     if (!r.finished && r.prog >= LAPS * N) { r.finished = true; r.finishT = this.raceT; }
-    // guns: short bursts at whoever is just ahead and roughly in line
+    // ---- guns: fighters shoot their quarry, racers only what's straight ahead
     r.cool -= dt;
-    let tgt = null;
-    if (this.state === 'race' && r.cool <= 0) for (const o of all) {
-      if (o.ref === r || o.ref.armor.wrecked) continue;
-      const ahead = (o.prog - r.prog) * STEP;
-      if (ahead > 8 && ahead < 70 && Math.abs(o.lat - r.lat) < 4 + ahead * 0.05 && (o.ref === this.player || Math.random() < 0.6)) { tgt = o; break; }
+    let shoot = null;
+    if (this.state === 'race' && r.cool <= 0) {
+      if (tgt && (tgt.prog - r.prog) * STEP > 6) shoot = tgt;
+      else for (const o of all) {
+        if (o.ref === r || o.ref.armor.wrecked) continue;
+        const ahead = (o.prog - r.prog) * STEP;
+        if (ahead > 8 && ahead < 70 && Math.abs(o.lat - me.lat) < (r.personality === 'racer' ? 2.5 : 4) + ahead * 0.05) { shoot = o; break; }
+      }
     }
-    if (tgt && r.burst <= 0) r.burst = 0.9 + Math.random() * 0.8;
+    if (shoot && r.burst <= 0) r.burst = 0.9 + Math.random() * 0.8;
     const firing = r.burst > 0;
-    if (firing) { r.burst -= dt; if (r.burst <= 0) r.cool = 2.2 + Math.random() * 2.5; }
+    if (firing) { r.burst -= dt; if (r.burst <= 0) r.cool = (r.personality === 'racer' ? 3.2 : 2) + Math.random() * 2.5; }
     r.aim = r.aim ?? new THREE.Vector3();
-    if (tgt) r.aim.set(tgt.x, tgt.y + 0.8, tgt.z);
-    r.guns.owner = r;
-    r.guns.update(dt, firing && !!tgt, r, tgt ? r.aim : null);
+    if (shoot) r.aim.set(shoot.x, shoot.y + 0.8, shoot.z);
+    r.guns.update(dt, firing && !!shoot, r, shoot ? r.aim : null);
   }
 
   update(dt) {
@@ -512,9 +572,9 @@ export class Race {
     if (this.state === 'race' && this.pProg >= LAPS * N) { this.pFinish = this.raceT; this.over('finished'); }
 
     const all = this.bodies().map((b) => ({ ...b, lat: b.ref === this.player ? c.n.lat : b.ref.lat }));
-    for (const r of this.rivals) { this.updateRival(r, dt, all); r.pose(dt); }
-    this.contacts();
-    for (const r of this.rivals) r.pose(0);
+    for (const r of this.rivals) this.updateRival(r, dt, all);
+    this.contacts(dt);
+    for (const r of this.rivals) r.sync(dt);
     // damage tiers from hull HP: untouched = clean; hurt = light smoke; heavy = black
     // smoke; critical = black smoke and flame licking out of the engine bay
     for (const r of [...this.rivals, this.player]) {
