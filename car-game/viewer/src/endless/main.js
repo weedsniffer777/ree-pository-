@@ -111,7 +111,7 @@ const guns = new Guns(model, scene, { tracers, dust, sparks: lineSparks, height:
 const gunImpact = guns.impact.bind(guns);
 guns.heatCfg = { perShot: 0.017, cool: 0.42, resume: 0.3 }; // ~4 s of fire to overheat
 if (!LOOP.on) guns.impact = (p) => { gunImpact(p); car.addBoost(0.0045); };
-let runTime = 0, biomeShown = -1, best = 0, freeCam = false, lookBack = false, lockedNow = false, lockPin = null, switchSeen = 0;
+let runTime = 0, biomeShown = -1, best = 0, freeCam = false, lookBack = false, lockedNow = false;
 const pursuer = new Pursuer();
 const skids = new Skids(scene);
 const streaks = new SpeedLines(scene);
@@ -247,15 +247,8 @@ function updateLock() {
     cands.push({ r, sp, d });
   }
   cands.sort((a, b) => a.d - b.d);
-  // nearest by default; the switch button (phones) pins the next one along while it stays in sight
-  if (hud.touch.switchN !== switchSeen) {
-    switchSeen = hud.touch.switchN;
-    const lockable = cands.filter((c) => c.d <= LOCK_MAX);
-    if (lockable.length) { const k = lockable.findIndex((c) => c.r === (lockPin ?? lockable[0].r)); lockPin = lockable[(k + 1) % lockable.length].r; }
-  }
-  const pinned = lockPin && cands.find((c) => c.r === lockPin && c.d <= LOCK_MAX);
-  if (!pinned) lockPin = null;
-  const best = pinned || cands[0], bd = best?.d ?? Infinity;
+  // nearest in the circle (the phone lock toggle turns locking off altogether)
+  const best = hud.touch.lockOff ? null : cands[0], bd = best?.d ?? Infinity;
   lockedNow = !!best && bd <= LOCK_MAX;
   if (!best) { hud.lock(null); hud.reticleState('idle'); return null; }
   if (bd > LOCK_MAX) {
