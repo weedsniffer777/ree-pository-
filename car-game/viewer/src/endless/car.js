@@ -149,7 +149,7 @@ export class CarController {
       // car points, but only as hard as they can pull sideways (aLat, m/s^2). Sliding tyres
       // pull far less, so in a drift the nose comes round faster than the path does and
       // the car carries wide on its old line. Scrub bleeds a little speed with the slip.
-      const grip = surf.grip * (1 - 0.6 * D), aLat = surf.lat * (1 - 0.55 * D);
+      const grip = surf.grip * (1 - 0.7 * D), aLat = surf.lat * (1 - 0.7 * D);
       const spd = Math.hypot(vf, vl); // after throttle and brakes
       if (spd > 0.3) {
         const fwd = vf >= 0 ? 1 : -1;
