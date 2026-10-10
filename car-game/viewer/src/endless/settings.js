@@ -21,7 +21,8 @@ function defaults() {
     fire: touchDevice ? 'auto' : 'manual', // auto: the guns fire whenever something is locked
     sens: 1.6, // free-look mouse sensitivity
     volume: 0.8,
-    quality: 'high', // graphics preset: 'max' | 'high' | 'medium'
+    quality: 'high', // graphics preset: 'max' | 'high' | 'medium' | 'low'
+    autoRes: true, // drop the resolution a step when frames stay low, back up when they recover
   };
 }
 
@@ -43,9 +44,11 @@ const PRESETS = {
   max: { pixelRatio: 1.75, shadowSize: [3072, 4096], shadowHalf: [95, 130], softShadows: true, smallShadows: true, reflectAll: true, simpleScenery: false, smoke: 1, standIn: 30, speedBlur: true },
   high: { pixelRatio: 1.25, shadowSize: [2048, 2048], shadowHalf: [75, 100], softShadows: false, smallShadows: false, reflectAll: false, simpleScenery: true, smoke: 0.6, standIn: 20, speedBlur: true },
   medium: { pixelRatio: 1, shadowSize: [1024, 1024], shadowHalf: [55, 70], softShadows: false, smallShadows: false, reflectAll: false, simpleScenery: true, smoke: 0.4, standIn: 14, speedBlur: true },
+  // Low: no real-time shadows (soft blobs under the cars instead), below-screen resolution
+  low: { pixelRatio: 0.85, shadows: false, shadowSize: [512, 512], shadowHalf: [40, 40], softShadows: false, smallShadows: false, reflectAll: false, simpleScenery: true, smoke: 0.3, standIn: 10, speedBlur: false },
 };
 let qOverride = null;
-try { qOverride = new URLSearchParams(location.search).get('q'); } catch { /* ignore */ } // ?q=max|high|medium (screenshots)
+try { qOverride = new URLSearchParams(location.search).get('q'); } catch { /* ignore */ } // ?q=max|high|medium|low (screenshots)
 export const Q = PRESETS[qOverride ?? settings.quality] ?? PRESETS.high;
 
 export function saveSettings() {

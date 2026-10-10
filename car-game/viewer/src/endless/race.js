@@ -298,10 +298,20 @@ export class Race {
     this.hud.results(null);
     this.hud.ended(false);
     // intro: hold on black for a beat, then the screen splits open onto the race
-    this.holdUntil = performance.now() + 450;
     this.hud.intro(false, true);
+    if (Race.loading) { this.holdUntil = Infinity; return; } // first load: main opens it once the first frames are out
+    this.holdUntil = performance.now() + 450;
     setTimeout(() => this.hud.intro(true), 450);
   }
+
+  // first load done (shaders ready, textures up): a beat on black, then split open
+  begin() {
+    Race.loading = false;
+    this.hud.loading(false);
+    this.holdUntil = performance.now() + 450;
+    setTimeout(() => this.hud.intro(true), 450);
+  }
+  static loading = true;
 
   // Play again: close the split, reset behind it, open again
   again() {

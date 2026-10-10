@@ -37,9 +37,10 @@ const num = (k, d) => (params.has(k) ? Number(params.get(k)) : d);
 const tBuild = performance.now();
 
 const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' }); // the frame is drawn into the composer's target, so canvas MSAA only cost time
-renderer.setPixelRatio(Math.min(devicePixelRatio, Q.pixelRatio)); // graphics preset
+const PR0 = Math.min(devicePixelRatio, Q.pixelRatio); // graphics preset
+renderer.setPixelRatio(Math.max(1, PR0)); // the canvas never goes below 1x; lower scales shrink the 3D render inside it
 renderer.setSize(innerWidth, innerHeight);
-renderer.shadowMap.enabled = true;
+renderer.shadowMap.enabled = Q.shadows !== false; // Low: no real-time shadows
 renderer.shadowMap.type = Q.softShadows ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.12;
@@ -56,6 +57,7 @@ scene.environmentIntensity = 0.22;
 // nothing is drawn past the point where the fog has fully hidden it
 const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.1, scene.fog.far + 60);
 const composer = new EffectComposer(renderer);
+composer.setPixelRatio(PR0);
 composer.addPass(new RenderPass(scene, camera));
 const grade = screenPass(renderer); // tone map + output + windscreen glass + grade, one pass
 const GR = THEME ? THEME.grade : { saturation: 1.58, contrast: 1.04, lift: 0.07, toon: 0.45 };
@@ -70,7 +72,7 @@ const HEMI = THEME ? THEME.hemi : [0xe6eef4, 0xd9a06a, 1.9], SUNL = THEME ? THEM
 scene.add(new THREE.HemisphereLight(HEMI[0], HEMI[1], HEMI[2] * (Q.reflectAll ? 1 : 1.18))); // High: makes up the fill the world's reflection map gave
 const sun = new THREE.DirectionalLight(SUNL[0], SUNL[1]);
 const SUN_DIR = new THREE.Vector3(70, 85, 45).normalize();
-sun.castShadow = true;
+sun.castShadow = Q.shadows !== false;
 // One big shadow box (instead of a tight one that makes shadows pop in at ~40 m), pushed
 // ahead of the car and snapped to whole shadow texels so edges don't crawl as you drive.
 const phoneish = matchMedia('(pointer: coarse)').matches ? 0 : 1;
@@ -168,6 +170,17 @@ const race = LOOP.on && params.get('race') !== '0'
 if (race) for (const r of race.rivals) r.guns.blockTest = guns.blockTest;
 if (LOOP.on) hud.map(world, S, LOOP.n, I_START);
 window.__game.race = race;
+// Low (no real-time shadows): a soft dark blob under every car so they still sit on the road
+if (Q.shadows === false) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d'), grd = g.createRadialGradient(32, 32, 4, 32, 32, 32);
+  grd.addColorStop(0, 'rgba(0,0,0,0.55)'); grd.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = grd; g.fillRect(0, 0, 64, 64);
+  const mat = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  const geo = new THREE.PlaneGeometry(2.6, 5.4).rotateX(-Math.PI / 2);
+  for (const cc of [car, ...(race?.rivals.map((r) => r.car) ?? [])]) { const b = new THREE.Mesh(geo, mat); b.position.y = 0.04; cc.rig.add(b); }
+}
 // High preset: only the cars keep the reflection sheen; the world goes without it
 if (!Q.reflectAll) {
   const env = scene.environment, cars = [car.model, ...(race?.rivals.map((r) => r.model) ?? [])];
@@ -617,7 +630,10 @@ function frame(now) {
   hud.drawXRay(now); // damage x-ray on top, same renderer
   frames++;
   // frames per real second (wall clock: not slowed by slow motion or held by pauses)
-  if (now - fpsT > 500) { fps = Math.round((frames * 1000) / (now - fpsT)); frames = 0; fpsT = now; hud.fps(fps); }
+  if (now - fpsT > 500) { fps = Math.round((frames * 1000) / (now - fpsT)); frames = 0; fpsT = now; hud.fps(fps); autoRes(now); }
+  // first load: rendering behind the black shutters until shaders and textures have settled
+  firstFrameT ??= now;
+  if (Race.loading && (readyFrames > 40 || now - firstFrameT > 2200)) { if (race) race.begin(); else { Race.loading = false; hud.loading(false); hud.intro(true); } }
   const info = renderer.info.render;
   const mem = performance.memory ? `${Math.round(performance.memory.usedJSHeapSize / 1048576)} MB` : 'n/a';
   hud.debug(() => `fps ${fps}\ndraw calls ${info.calls}\ntriangles ${(info.triangles / 1000).toFixed(0)}K\nheap ${mem}\nbuild ${buildMs} ms\ndist ${Math.round((car.n.i - I_START) * STEP)} m  lat ${car.n.lat.toFixed(1)}\n${car.onRoad ? 'road' : 'sand'}${car.airborne ? '  AIR' : ''}`); // built only while the overlay is open
@@ -639,6 +655,28 @@ function frame(now) {
   });
   scene.remove(scar);
   for (const o of hidden) o.visible = false;
+}
+// Auto resolution (a setting): checked twice a second off the FPS count already taken. Two
+// low readings in a row (under 45) drop the resolution a step; three seconds of 58+ bring
+// it back toward the preset. At most one change every 3 s, never below 60% of the preset.
+let resNow = PR0, resLow = 0, resHigh = 0, resT = 0, firstFrameT = null;
+const resTop = PR0, resFloor = Math.max(0.6, resTop * 0.6);
+function setRes(r) {
+  resNow = r;
+  renderer.setPixelRatio(Math.max(1, r));
+  composer.setPixelRatio(r);
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+  dust.resize(); embers.resize();
+}
+window.__game.setRes = (r) => setRes(r); // tests
+function autoRes(now) {
+  if (!settings.autoRes || Race.loading || isPaused() || race?.state === 'done') { resLow = resHigh = 0; return; }
+  resLow = fps < 45 ? resLow + 1 : 0;
+  resHigh = fps >= 58 ? resHigh + 1 : 0;
+  if (now - resT < 3000) return;
+  if (resLow >= 2 && resNow > resFloor) { setRes(Math.max(resFloor, resNow - 0.15)); resT = now; resLow = 0; }
+  else if (resHigh >= 6 && resNow < resTop) { setRes(Math.min(resTop, resNow + 0.1)); resT = now; resHigh = 0; }
 }
 let readyFrames = 0;
 requestAnimationFrame((t) => { last = t; frame(t); });

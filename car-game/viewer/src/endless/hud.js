@@ -154,6 +154,9 @@ html, body, #hud, #hud * { -webkit-user-select: none; user-select: none; -webkit
 #hud .intro.open .t { transform: translateY(-101%); }
 #hud .intro.open .b { transform: translateY(101%); }
 #hud .intro.instant i { transition: none; }
+#hud .intro .load { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%) skewX(-6deg); font: 900 22px/1 var(--display); letter-spacing: 0.3em; color: rgba(236,230,217,0.6); animation: loadPulse 1s ease-in-out infinite alternate; }
+#hud .intro .load[hidden] { display: none; }
+@keyframes loadPulse { to { opacity: 0.35; } }
 
 /* countdown */
 #hud .count { position: absolute; left: 50%; top: 32%; transform: translate(-50%, -50%) skewX(-6deg); font: 900 clamp(70px, 14vw, 150px)/1 var(--display); color: var(--white); -webkit-text-stroke: 3px #0e0f11; paint-order: stroke fill; text-shadow: 0 5px 0 rgba(0,0,0,0.55); }
@@ -375,7 +378,7 @@ export function createHud({ touch = false } = {}) {
     <div class="hm"><i></i><i></i><i></i><i></i></div>
     <div class="pops"></div>
     <div class="count" hidden></div>
-    <div class="intro shut instant"><i class="t"></i><i class="b"></i></div>
+    <div class="intro shut instant"><i class="t"></i><i class="b"></i><span class="load">LOADING</span></div>
     <div class="place" hidden><b></b><span></span></div>
     <div class="results" hidden><div class="rbox">
       <div class="rhead panel"><div class="badge"></div><div class="rt"><h2></h2><div class="sub"></div></div><div class="rtime"><span class="lbl">Time</span><b class="num"></b></div></div>
@@ -470,8 +473,10 @@ export function createHud({ touch = false } = {}) {
   const drawSettings = () => {
     sbox.innerHTML = `<h2>SETTINGS</h2>
       ${touch ? '' : `<section><span class="lbl">Controls</span><div class="kb">${ACTIONS.map(([a, label]) => `<span>${label}</span><button data-bind="${a}" class="${waiting === a ? 'wait' : ''}">${waiting === a ? 'PRESS A KEY' : settings.keys[a].map(keyName).join(' / ')}</button>`).join('')}</div></section>`}
-      <section><span class="lbl">Graphics</span><div class="seg">${['max', 'high', 'medium'].map((q) => `<button data-q="${q}" class="${(settings.quality ?? 'high') === q ? 'on' : ''}">${q.toUpperCase()}</button>`).join('')}</div>
-        <span class="note">${{ max: 'Full sharpness, shadows and effects.', high: 'Slightly softer, lighter shadows and smoke: smoother on phones.', medium: 'Softer still, small shadows, less smoke: for slower phones.' }[settings.quality] ?? ''} Gameplay is the same on every setting. Changing it restarts the race.</span></section>
+      <section><span class="lbl">Graphics</span><div class="seg">${['max', 'high', 'medium', 'low'].map((q) => `<button data-q="${q}" class="${(settings.quality ?? 'high') === q ? 'on' : ''}">${q.toUpperCase()}</button>`).join('')}</div>
+        <span class="note">${{ max: 'Full sharpness, shadows and effects.', high: 'Slightly softer, lighter shadows and smoke: smoother on phones.', medium: 'Softer still, small shadows, less smoke: for slower phones.', low: 'No real-time shadows, lowest resolution: for the slowest phones.' }[settings.quality] ?? ''} Gameplay is the same on every setting. Changing it restarts the race.</span></section>
+      <section><span class="lbl">Auto resolution</span><div class="seg"><button data-auto="1" class="${settings.autoRes !== false ? 'on' : ''}">ON</button><button data-auto="0" class="${settings.autoRes === false ? 'on' : ''}">OFF</button></div>
+        <span class="note">Lowers the resolution a little when the frame rate drops, and brings it back when it recovers.</span></section>
       <section><span class="lbl">Firing</span><div class="seg"><button data-fire="manual" class="${settings.fire === 'manual' ? 'on' : ''}">MANUAL</button><button data-fire="auto" class="${settings.fire === 'auto' ? 'on' : ''}">AUTO</button></div>
         <span class="note">${settings.fire === 'auto' ? 'The guns fire on their own whenever a target is locked.' : touch ? 'Hold FIRE to shoot.' : `Hold ${keyName(settings.keys.fire[0])} to shoot.`}</span></section>
       ${touch ? '<section><span class="lbl">Buttons</span><span class="note">The camera button looks behind you. Moving the buttons around is coming.</span></section>' : `<section><span class="lbl">Free look sensitivity · ${settings.sens.toFixed(1)}</span><input type="range" min="0.4" max="4" step="0.1" value="${settings.sens}" data-sens></section>`}
@@ -491,6 +496,7 @@ export function createHud({ touch = false } = {}) {
       if (fb) fb.hidden = settings.fire === 'auto';
     }
     if (b.dataset.q && b.dataset.q !== settings.quality) { settings.quality = b.dataset.q; saveSettings(); location.reload(); }
+    if (b.dataset.auto) { settings.autoRes = b.dataset.auto === '1'; saveSettings(); drawSettings(); }
     if (b.dataset.a === 'keys') { resetKeys(); drawSettings(); }
     kbdBoost();
     if (b.dataset.a === 'back') settingsEl.hidden = true;
@@ -868,6 +874,7 @@ export function createHud({ touch = false } = {}) {
       el.classList.toggle('shut', !open);
       if (snap) void el.offsetWidth;
     },
+    loading(on) { $('.intro .load').hidden = !on; },
     countdown(text) {
       const el = $('.count');
       if (text === null) { el.hidden = true; el.textContent = ''; return; }
