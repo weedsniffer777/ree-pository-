@@ -38,11 +38,11 @@ export const settings = load();
 // Graphics presets, applied once at load (changing one restarts the race). They only
 // change how things are drawn: physics, AI, damage and controls are identical on all.
 // Max is the full look; High trades a little sharpness and some effects for speed;
-// Medium goes further (screen resolution, small shadows, less smoke, no speed blur).
+// Medium goes further (screen resolution, small shadows, less smoke).
 const PRESETS = {
   max: { pixelRatio: 1.75, shadowSize: [3072, 4096], shadowHalf: [95, 130], softShadows: true, smallShadows: true, reflectAll: true, simpleScenery: false, smoke: 1, standIn: 30, speedBlur: true },
   high: { pixelRatio: 1.25, shadowSize: [2048, 2048], shadowHalf: [75, 100], softShadows: false, smallShadows: false, reflectAll: false, simpleScenery: true, smoke: 0.6, standIn: 20, speedBlur: true },
-  medium: { pixelRatio: 1, shadowSize: [1024, 1024], shadowHalf: [55, 70], softShadows: false, smallShadows: false, reflectAll: false, simpleScenery: true, smoke: 0.4, standIn: 14, speedBlur: false },
+  medium: { pixelRatio: 1, shadowSize: [1024, 1024], shadowHalf: [55, 70], softShadows: false, smallShadows: false, reflectAll: false, simpleScenery: true, smoke: 0.4, standIn: 14, speedBlur: true },
 };
 let qOverride = null;
 try { qOverride = new URLSearchParams(location.search).get('q'); } catch { /* ignore */ } // ?q=max|high|medium (screenshots)
