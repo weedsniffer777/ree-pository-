@@ -406,7 +406,7 @@ function updateCamera(dt) {
   }
   fov += (fovT - fov) * (1 - Math.exp(-dt * 4));
   if (num('sim', 0) > 0 || view !== 'chase') fov = fovT;
-  grade.uniforms.blur.value += ((car.boosting ? 0.045 : Math.max(0, speed - 44) * 0.002) - grade.uniforms.blur.value) * Math.min(1, dt * 5);
+  if (Q.speedBlur) grade.uniforms.blur.value += ((car.boosting ? 0.045 : Math.max(0, speed - 44) * 0.002) - grade.uniforms.blur.value) * Math.min(1, dt * 5);
   camera.fov = fov;
   camera.updateProjectionMatrix();
 }
