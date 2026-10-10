@@ -3,8 +3,9 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // Damage readout: the car model itself as a glowing x-ray, seen from above and behind,
 // split into four armor panels (front / back / left / right); everything outside the
-// panels is the hull and takes the hull-HP colour. Its own small renderer; it only
-// redraws when a value changes.
+// panels is the hull and takes the hull-HP colour. Drawn by the game's own renderer
+// straight onto the screen where its (empty) HUD canvas sits, after the frame: no second
+// graphics context.
 
 const VERT = `
 varying vec3 vP; varying vec3 vN; varying vec3 vV;
@@ -45,10 +46,12 @@ export function damageColor(v) {
 }
 
 export class XRay {
-  constructor(canvas, model, hitbox) {
+  static renderer = null; // the game's renderer (set once by main)
+  // own: a renderer of its own on its canvas (the results screen, where the x-ray sits on
+  // a panel the game canvas can't show through; only ever made once the race is over)
+  constructor(canvas, model, hitbox, own = false) {
     this.canvas = canvas;
-    this.r = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
-    this.r.setPixelRatio(Math.min(2, devicePixelRatio || 1));
+    if (own) { this.r = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true }); this.r.setPixelRatio(Math.min(2, devicePixelRatio || 1)); }
     this.scene = new THREE.Scene();
     // one geometry from the model's meshes, positions + normals only
     model.updateMatrixWorld(true);
@@ -68,9 +71,13 @@ export class XRay {
       cF: { value: new THREE.Color() }, cB: { value: new THREE.Color() }, cL: { value: new THREE.Color() }, cR: { value: new THREE.Color() }, cH: { value: new THREE.Color() },
       zc: { value: (hz0 + hz1) / 2 }, hz: { value: (hz1 - hz0) / 2 }, hx: { value: hx },
     };
-    const mat = new THREE.ShaderMaterial({ uniforms: this.u, vertexShader: VERT, fragmentShader: FRAG, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+    const mat = new THREE.ShaderMaterial({ uniforms: this.u, vertexShader: VERT, fragmentShader: FRAG, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, side: THREE.DoubleSide, toneMapped: false });
     this.car = new THREE.Mesh(geo, mat);
-    this.scene.add(this.car);
+    this.car.renderOrder = 1;
+    // a black silhouette under the glow, so it reads the same over bright ground as it did
+    // on its own transparent canvas
+    const under = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x000000, depthTest: false, depthWrite: false, side: THREE.DoubleSide, toneMapped: false, fog: false }));
+    this.scene.add(under, this.car);
     this.cam = new THREE.PerspectiveCamera(30, 1, 0.1, 100);
     this.cam.up.set(0, 0, 1);
     this.cam.position.set(0, 9.6, -4.7);
@@ -78,20 +85,39 @@ export class XRay {
     this.key = '';
   }
 
-  // armor: { z: { front, back, left, right }, core }
-  update(a, t) {
-    const w = this.canvas.clientWidth, h = this.canvas.clientHeight;
-    if (!w || !h) return;
-    const key = [a.z.front, a.z.back, a.z.left, a.z.right, a.core].map((v) => v.toFixed(2)).join() + w + 'x' + h;
-    if (key === this.key) return;
-    this.key = key;
-    if (this.canvas.width !== Math.round(w * this.r.getPixelRatio())) { this.r.setSize(w, h, false); this.cam.aspect = w / h; this.cam.updateProjectionMatrix(); }
-    // each part's colour simply follows what's left of it (no hit flashes)
+  // armor: { z: { front, back, left, right }, core }: just sets the colours
+  update(a) {
     this.u.cF.value.setRGB(...damageColor(a.z.front));
     this.u.cB.value.setRGB(...damageColor(a.z.back));
     this.u.cL.value.setRGB(...damageColor(a.z.left));
     this.u.cR.value.setRGB(...damageColor(a.z.right));
     this.u.cH.value.setRGB(...damageColor(a.core));
-    this.r.render(this.scene, this.cam);
+    if (this.r) { // own renderer: draw now, at the canvas's size
+      const w = this.canvas.clientWidth, h = this.canvas.clientHeight;
+      if (!w || !h) return;
+      if (this.canvas.width !== Math.round(w * this.r.getPixelRatio())) { this.r.setSize(w, h, false); this.cam.aspect = w / h; this.cam.updateProjectionMatrix(); }
+      this.r.render(this.scene, this.cam);
+    }
+  }
+
+  // after the frame: draw into the screen rectangle of the HUD canvas (looked up a few
+  // times a second, not every frame, so the HUD never forces a layout)
+  draw(now) {
+    const r = XRay.renderer;
+    if (!r || this.r) return;
+    if (!this.rect || now - this.rectT > 400) { this.rect = this.canvas.getBoundingClientRect(); this.rectT = now; }
+    const { left, top, width: w, height: h } = this.rect;
+    if (w < 2 || h < 2 || this.canvas.offsetParent === null) return;
+    if (Math.abs(this.cam.aspect - w / h) > 1e-3) { this.cam.aspect = w / h; this.cam.updateProjectionMatrix(); }
+    const H = r.domElement.clientHeight, auto = r.autoClear;
+    r.setRenderTarget(null);
+    r.autoClear = false;
+    r.setViewport(left, H - top - h, w, h);
+    r.setScissor(left, H - top - h, w, h);
+    r.setScissorTest(true);
+    r.render(this.scene, this.cam);
+    r.setScissorTest(false);
+    r.setViewport(0, 0, r.domElement.clientWidth, H);
+    r.autoClear = auto;
   }
 }

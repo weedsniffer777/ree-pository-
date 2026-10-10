@@ -766,7 +766,7 @@ export function createHud({ touch = false } = {}) {
     mapDots(list) { dots = list; },
     armorModel(model, hitbox) { if (root.style.display !== 'none') { xray = new XRay($('.armor canvas'), model, hitbox); xrSrc = { model, hitbox }; } },
     armor(a, t = performance.now() / 1000, dt = 1 / 60) {
-      xray?.update(a, t);
+      xray?.update(a);
       const now = performance.now() / 1000;
       for (let k = cracks.length - 1; k >= 0; k--) {
         const age = now - cracks[k].t0;
@@ -905,7 +905,7 @@ export function createHud({ touch = false } = {}) {
       // pointer to each part, then split into weapons and collisions
       const d = r.taken, tot = r.dealt, mx = Math.max(1, d.front, d.back, d.left, d.right, d.core);
       const cv = el.querySelector('.xr canvas');
-      if (!xrRes && xrSrc) xrRes = new XRay(cv, xrSrc.model, xrSrc.hitbox);
+      if (!xrRes && xrSrc) xrRes = new XRay(cv, xrSrc.model, xrSrc.hitbox, true);
       xrRes?.update({ z: { front: 1 - d.front / mx, back: 1 - d.back / mx, left: 1 - d.left / mx, right: 1 - d.right / mx }, core: 1 - d.core / mx });
       // pointers: label position, then the point on the car (percent of the box)
       const P = [['front', 'Front', 50, 2, 50, 20, 'center'], ['back', 'Rear', 50, 86, 50, 80, 'center'], ['left', 'Left', 0, 42, 38, 50, 'left'], ['right', 'Right', 100, 42, 62, 50, 'right'], ['core', 'Hull', 100, 4, 54, 38, 'right']];
@@ -960,6 +960,8 @@ export function createHud({ touch = false } = {}) {
       titleT = setTimeout(() => { el.style.opacity = '0'; }, 2800);
     },
     fps(n) { const el = $('.fps'); const t = `${n} FPS`; if (el.textContent !== t) el.textContent = t; },
+    // the x-ray readouts, drawn by the game renderer after each frame
+    drawXRay(now) { if (!root.classList.contains('ended') && root.style.display !== 'none') xray?.draw(now); },
     debug(text) { const d = $('.debug'); if (!d.hidden) d.textContent = typeof text === 'function' ? text() : text; },
     toggleDebug() { const d = $('.debug'); d.hidden = !d.hidden; },
     hide() { root.style.display = 'none'; },

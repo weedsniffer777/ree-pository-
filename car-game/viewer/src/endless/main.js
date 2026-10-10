@@ -22,6 +22,7 @@ import { Booms, Bits, LineSparks } from './boom.js';
 import { bakeCar } from './carparts.js';
 import { Glass } from './glass.js';
 import { scarMaterial } from './scars.js';
+import { XRay } from './xray.js';
 import { nearest, wAt, RAIL_LAT } from './route.js';
 import { createDevKit } from './devkit.js';
 import { Tracers, Guns } from '../level/combat.js';
@@ -123,6 +124,7 @@ window.__game = { car, pursuer, skids };
 // ---- Input ----
 const coarse = matchMedia('(pointer: coarse)').matches;
 const hud = createHud({ touch: coarse });
+XRay.renderer = renderer; // the HUD's damage x-ray draws with the game renderer
 if (params.get('ui') === '0') hud.hide();
 // cracked windscreen: a refracting post pass on the frame replaces the old DOM overlay
 const glass = new Glass(grade);
@@ -603,6 +605,7 @@ function frame(now) {
   renderer.info.reset();
   glass.update();
   composer.render();
+  hud.drawXRay(now); // damage x-ray on top, same renderer
   frames++;
   // frames per real second (wall clock: not slowed by slow motion or held by pauses)
   if (now - fpsT > 500) { fps = Math.round((frames * 1000) / (now - fpsT)); frames = 0; fpsT = now; hud.fps(fps); }
