@@ -8,7 +8,8 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { bakeGroup } from '../level/bake.js';
 import { S, LOOP, ROAD_HALF, ROAD_BEVEL, RAIL_LAT, FENCE, wAt, pointAt, nearest, gridNearest } from './route.js';
 import { railSide } from './world.js';
-import { chunkWorld } from './chunks.js';
+import { chunkWorld, trimShadowCasters, simplifyMaterials } from './chunks.js';
+import { Q } from './settings.js';
 import { hash, C, wrap, RL, EDGE, tex, canvas, chainTexture, inst, UNIT, applyDecor } from './kit.js';
 import { buildTerminal, slabMap, homestead } from './yard.js';
 
@@ -104,6 +105,8 @@ export class TrackWorld {
     applyDecor(this, [...(def.decor ?? []), ...this.extraDecor]);
     this.buildFeatures();
     chunkWorld(this.group, 250); // tiles, so only what the camera sees gets drawn
+    if (!Q.smallShadows) trimShadowCasters(this.group); // graphics preset
+    if (Q.simpleScenery) simplifyMaterials(this.group);
     this.disc = new THREE.Mesh(new THREE.CircleGeometry(4000, 48).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: this.pal.a, roughness: 1 }));
     this.disc.position.y = DISC_Y;
     scene.add(this.disc);

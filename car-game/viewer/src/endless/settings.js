@@ -21,6 +21,7 @@ function defaults() {
     fire: touchDevice ? 'auto' : 'manual', // auto: the guns fire whenever something is locked
     sens: 1.6, // free-look mouse sensitivity
     volume: 0.8,
+    quality: 'high', // graphics preset: 'max' | 'high'
   };
 }
 
@@ -33,6 +34,16 @@ function load() {
 }
 
 export const settings = load();
+
+// Graphics presets, applied once at load (changing one restarts the race). Max is the
+// full look; High trades a little sharpness and some effects for speed.
+const PRESETS = {
+  max: { pixelRatio: 1.75, shadowSize: [3072, 4096], shadowHalf: [95, 130], softShadows: true, smallShadows: true, reflectAll: true, simpleScenery: false, smoke: 1, standIn: 30 },
+  high: { pixelRatio: 1.25, shadowSize: [2048, 2048], shadowHalf: [75, 100], softShadows: false, smallShadows: false, reflectAll: false, simpleScenery: true, smoke: 0.6, standIn: 20 },
+};
+let qOverride = null;
+try { qOverride = new URLSearchParams(location.search).get('q'); } catch { /* ignore */ } // ?q=max|high (screenshots)
+export const Q = PRESETS[qOverride ?? settings.quality] ?? PRESETS.high;
 
 export function saveSettings() {
   try { localStorage.setItem(KEY, JSON.stringify(settings)); } catch { /* ignore */ }

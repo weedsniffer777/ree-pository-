@@ -2,7 +2,9 @@ import * as THREE from 'three';
 
 // Pooled soft particles for kicked-up sand and tyre smoke.
 export class Dust {
+  static thin = 1; // share of smoke puffs actually emitted (graphics preset); glowing ones are never thinned
   constructor(max = 700, { additive = false, fade = 1.6 } = {}) {
+    this.additive = additive;
     this.fade = fade;
     this.max = max;
     this.next = 0;
@@ -48,6 +50,7 @@ export class Dust {
   }
 
   emit(x, y, z, vx, vy, vz, size, life, r, g, b) {
+    if (!this.additive && Dust.thin < 1) { if (Math.random() > Dust.thin) return; size *= 1 + (1 - Dust.thin) * 0.5; } // fewer, slightly bigger
     const k = this.next;
     this.next = (k + 1) % this.max;
     this.pos.set([x, y, z], k * 3);

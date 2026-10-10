@@ -470,6 +470,8 @@ export function createHud({ touch = false } = {}) {
   const drawSettings = () => {
     sbox.innerHTML = `<h2>SETTINGS</h2>
       ${touch ? '' : `<section><span class="lbl">Controls</span><div class="kb">${ACTIONS.map(([a, label]) => `<span>${label}</span><button data-bind="${a}" class="${waiting === a ? 'wait' : ''}">${waiting === a ? 'PRESS A KEY' : settings.keys[a].map(keyName).join(' / ')}</button>`).join('')}</div></section>`}
+      <section><span class="lbl">Graphics</span><div class="seg"><button data-q="max" class="${settings.quality === 'max' ? 'on' : ''}">MAX</button><button data-q="high" class="${settings.quality !== 'max' ? 'on' : ''}">HIGH</button></div>
+        <span class="note">${settings.quality === 'max' ? 'Full sharpness, shadows and effects.' : 'Slightly softer, lighter shadows and smoke: smoother on phones.'} Changing it restarts the race.</span></section>
       <section><span class="lbl">Firing</span><div class="seg"><button data-fire="manual" class="${settings.fire === 'manual' ? 'on' : ''}">MANUAL</button><button data-fire="auto" class="${settings.fire === 'auto' ? 'on' : ''}">AUTO</button></div>
         <span class="note">${settings.fire === 'auto' ? 'The guns fire on their own whenever a target is locked.' : touch ? 'Hold FIRE to shoot.' : `Hold ${keyName(settings.keys.fire[0])} to shoot.`}</span></section>
       ${touch ? '<section><span class="lbl">Buttons</span><span class="note">The camera button looks behind you. Moving the buttons around is coming.</span></section>' : `<section><span class="lbl">Free look sensitivity · ${settings.sens.toFixed(1)}</span><input type="range" min="0.4" max="4" step="0.1" value="${settings.sens}" data-sens></section>`}
@@ -488,6 +490,7 @@ export function createHud({ touch = false } = {}) {
       const fb = root.querySelector('.fireBtn');
       if (fb) fb.hidden = settings.fire === 'auto';
     }
+    if (b.dataset.q && b.dataset.q !== settings.quality) { settings.quality = b.dataset.q; saveSettings(); location.reload(); }
     if (b.dataset.a === 'keys') { resetKeys(); drawSettings(); }
     kbdBoost();
     if (b.dataset.a === 'back') settingsEl.hidden = true;

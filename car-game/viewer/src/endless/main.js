@@ -8,7 +8,7 @@ import { S, STEP, I_START, LOOP, pointAt, ensure } from './route.js';
 import { World } from './world.js';
 import { TrackWorld } from './trackworld.js';
 import { currentMap } from './maps.js';
-import { settings, held } from './settings.js';
+import { settings, held, Q } from './settings.js';
 import { biomeIndexAt, BIOMES } from './biomes.js';
 import { bakeGroup } from '../level/bake.js';
 import { CarController, setTerrain } from './car.js';
@@ -37,10 +37,10 @@ const num = (k, d) => (params.has(k) ? Number(params.get(k)) : d);
 const tBuild = performance.now();
 
 const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' }); // the frame is drawn into the composer's target, so canvas MSAA only cost time
-renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+renderer.setPixelRatio(Math.min(devicePixelRatio, Q.pixelRatio)); // graphics preset
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = Q.softShadows ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.12;
 renderer.info.autoReset = false;
@@ -67,13 +67,14 @@ grade.uniforms.toon.value = GR.toon; // punchier than the garage; the sky dome i
 composer.addPass(grade);
 
 const HEMI = THEME ? THEME.hemi : [0xe6eef4, 0xd9a06a, 1.9], SUNL = THEME ? THEME.sun : [0xffdcae, 3.6];
-scene.add(new THREE.HemisphereLight(HEMI[0], HEMI[1], HEMI[2]));
+scene.add(new THREE.HemisphereLight(HEMI[0], HEMI[1], HEMI[2] * (Q.reflectAll ? 1 : 1.18))); // High: makes up the fill the world's reflection map gave
 const sun = new THREE.DirectionalLight(SUNL[0], SUNL[1]);
 const SUN_DIR = new THREE.Vector3(70, 85, 45).normalize();
 sun.castShadow = true;
 // One big shadow box (instead of a tight one that makes shadows pop in at ~40 m), pushed
 // ahead of the car and snapped to whole shadow texels so edges don't crawl as you drive.
-const SHADOW = matchMedia('(pointer: coarse)').matches ? { size: 3072, half: 95 } : { size: 4096, half: 130 };
+const phoneish = matchMedia('(pointer: coarse)').matches ? 0 : 1;
+const SHADOW = { size: Q.shadowSize[phoneish], half: Q.shadowHalf[phoneish] };
 sun.shadow.mapSize.set(SHADOW.size, SHADOW.size);
 Object.assign(sun.shadow.camera, { left: -SHADOW.half, right: SHADOW.half, top: SHADOW.half, bottom: -SHADOW.half, near: 1, far: 500 });
 sun.shadow.bias = -0.0004;
@@ -167,6 +168,14 @@ const race = LOOP.on && params.get('race') !== '0'
 if (race) for (const r of race.rivals) r.guns.blockTest = guns.blockTest;
 if (LOOP.on) hud.map(world, S, LOOP.n, I_START);
 window.__game.race = race;
+// High preset: only the cars keep the reflection sheen; the world goes without it
+if (!Q.reflectAll) {
+  const env = scene.environment, cars = [car.model, ...(race?.rivals.map((r) => r.model) ?? [])];
+  for (const m of cars) m.traverse((o) => { for (const mat of [].concat(o.material ?? [])) if (mat.isMeshStandardMaterial) { mat.envMap = env; mat.envMapIntensity = scene.environmentIntensity; mat.needsUpdate = true; } });
+  scene.environment = null;
+}
+Dust.thin = Q.smoke; // smoke particle density
+Booms.thin = Q.smoke;
 
 const keys = new Set();
 addEventListener('keydown', (e) => {

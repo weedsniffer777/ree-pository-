@@ -72,6 +72,7 @@ void main(){
 }`;
 
 export class Booms {
+  static thin = 1; // share of smoke lobes (graphics preset)
   constructor(scene, { dust, sparks, max = 96, sun = new THREE.Vector3(0.4, 1, 0.3) }) {
     Object.assign(this, { dust, sparks });
     const geo = new THREE.IcosahedronGeometry(1, 4);
@@ -135,11 +136,11 @@ export class Booms {
       this.puff(p.x + Math.cos(a) * r, p.y + 0.3 + Math.random() * (big ? 1.2 : 0.4), p.z + Math.sin(a) * r, size, (big ? 0.75 : 0.4) * (0.8 + Math.random() * 0.45), core ? 1.05 : 0.85 + Math.random() * 0.15, tv, core ? 0 : Math.random() * (big ? 0.1 : 0.03));
     }
     // black smoke rolls up out of the fire and hangs, fading slowly
-    const smokes = big ? 11 : 3;
+    const smokes = Math.max(1, Math.round((big ? 11 : 3) * Booms.thin)), grow = 1 + (1 - Booms.thin) * 0.4; // fewer, bigger on lighter presets
     for (let k = 0; k < smokes; k++) {
       tv.set(vel.x * (big ? 0.3 : 0.5) + (Math.random() - 0.5) * 2, (big ? 3 : 2) + Math.random() * 2.5, vel.z * (big ? 0.3 : 0.5) + (Math.random() - 0.5) * 2);
       this.puff(p.x + (Math.random() - 0.5) * (big ? 2.5 : 0.8), p.y + (big ? 1.2 + k * 0.45 : 0.8), p.z + (Math.random() - 0.5) * (big ? 2.5 : 0.8),
-        big ? 2.0 + Math.random() * 1.8 : 0.9 + Math.random() * 0.5, big ? 8 + Math.random() * 4 : 3.5 + Math.random() * 1.5, 1, tv, (big ? 0.12 : 0.08) + k * (big ? 0.05 : 0.04), true);
+        (big ? 2.0 + Math.random() * 1.8 : 0.9 + Math.random() * 0.5) * grow, big ? 8 + Math.random() * 4 : 3.5 + Math.random() * 1.5, 1, tv, (big ? 0.12 : 0.08) + k * (big ? 0.05 : 0.04), true);
     }
     for (const [k, f] of this.flares.entries()) {
       if (!big && k) break;

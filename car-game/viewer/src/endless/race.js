@@ -1,5 +1,6 @@
 import { Scars } from './scars.js';
 import { Impostor } from './impostor.js';
+import { Q } from './settings.js';
 import * as THREE from 'three';
 import { S, STEP, LOOP, wAt, RAIL_LAT, pointAt } from './route.js';
 import { roadSurfaceY } from '../level/road.js';
@@ -218,7 +219,7 @@ class Rival {
     const d = Math.hypot(this.x - (Race.camX ?? this.x), this.z - (Race.camZ ?? this.z));
     this.rig.visible = d < 420;
     // far and in one piece: the baked stand-in; close, wrecked or flying: the real car
-    const far = d > 30 && !this.armor.wrecked && !this.air;
+    const far = d > Q.standIn && !this.armor.wrecked && !this.air;
     this.model.visible = !far;
     this.imp.mesh.visible = far;
     // a launched wreck tumbles about the body's middle (0.6 m up) while it flies

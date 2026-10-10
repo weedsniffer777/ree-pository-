@@ -93,3 +93,30 @@ export function chunkWorld(group, size = 120) {
   }
 }
 
+// Small props don't cast shadows (bushes, rocks, cones, posts); big things keep theirs.
+export function trimShadowCasters(group, minRadius = 1.6) {
+  const M = new THREE.Matrix4(), sc = new THREE.Vector3(), q = new THREE.Quaternion(), p = new THREE.Vector3();
+  group.traverse((o) => {
+    if (!o.isMesh || !o.castShadow) return;
+    if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+    let scale = Math.max(o.scale.x, o.scale.y, o.scale.z);
+    if (o.isInstancedMesh && o.count) { o.getMatrixAt(0, M); M.decompose(p, q, sc); scale *= Math.max(sc.x, sc.y, sc.z); }
+    if (o.geometry.boundingSphere.radius * scale < minRadius) o.castShadow = false;
+  });
+}
+
+// Scenery on the simpler lighting model (Lambert): same colours, textures and shadows,
+// no specular / roughness work per pixel.
+export function simplifyMaterials(group) {
+  const done = new Map();
+  const swap = (m) => {
+    if (!m?.isMeshStandardMaterial) return m;
+    if (!done.has(m)) {
+      const l = new THREE.MeshLambertMaterial();
+      for (const k of ['color', 'map', 'vertexColors', 'transparent', 'opacity', 'side', 'alphaTest', 'depthWrite', 'polygonOffset', 'polygonOffsetFactor', 'polygonOffsetUnits', 'emissive', 'emissiveMap', 'emissiveIntensity', 'fog', 'flatShading', 'name']) if (m[k] !== undefined) l[k] = m[k]?.isColor ? m[k].clone() : m[k];
+      done.set(m, l);
+    }
+    return done.get(m);
+  };
+  group.traverse((o) => { if (o.isMesh) o.material = Array.isArray(o.material) ? o.material.map(swap) : swap(o.material); });
+}
